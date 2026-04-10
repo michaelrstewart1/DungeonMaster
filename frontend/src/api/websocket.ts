@@ -23,7 +23,7 @@ export class GameWebSocket {
   private shouldReconnect = true;
 
   constructor(sessionId: string, baseUrl?: string) {
-    const wsBase = baseUrl || import.meta.env.VITE_WS_URL || 'ws://localhost:8000';
+    const wsBase = baseUrl || import.meta.env.VITE_WS_URL || `ws://${window.location.host}`;
     this.url = `${wsBase}/ws/game/${sessionId}`;
   }
 

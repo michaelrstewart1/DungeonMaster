@@ -2,11 +2,17 @@ import { render, screen } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import App from './App'
 
+vi.mock('./api/client', () => ({
+  getCampaigns: vi.fn().mockResolvedValue([]),
+  createCampaign: vi.fn(),
+  getCampaign: vi.fn().mockResolvedValue({ id: '1', name: 'Test', description: '', character_ids: [], world_state: {}, dm_settings: {}, created_at: '', updated_at: '' }),
+  getCharacters: vi.fn().mockResolvedValue([]),
+  createCharacter: vi.fn(),
+  createGameSession: vi.fn(),
+}))
+
 beforeEach(() => {
-  global.fetch = vi.fn().mockResolvedValue({
-    ok: true,
-    json: () => Promise.resolve([]),
-  })
+  vi.clearAllMocks()
 })
 
 describe('App', () => {
