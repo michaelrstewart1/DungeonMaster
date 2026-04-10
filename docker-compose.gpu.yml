@@ -1,15 +1,22 @@
-# GPU overlay for voice & local LLM services
+# GPU overlay for AMD ROCm GPUs (RX 6000/7000 series)
 # Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+#
+# Requires: ROCm-compatible AMD GPU with /dev/kfd and /dev/dri available
+# The host VM needs the amdgpu driver and ROCm userspace libraries.
+# HSA_OVERRIDE_GFX_VERSION=10.3.0 covers RDNA2 (RX 6000 series).
+
 services:
-  # --- Ollama with GPU ---
+  # --- Ollama with AMD ROCm GPU ---
   ollama:
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    image: ollama/ollama:rocm
+    devices:
+      - /dev/kfd:/dev/kfd
+      - /dev/dri:/dev/dri
+    group_add:
+      - video
+      - render
+    environment:
+      - HSA_OVERRIDE_GFX_VERSION=10.3.0
     profiles: []  # Override: always start with GPU compose
 
   # --- Backend with GPU env ---
