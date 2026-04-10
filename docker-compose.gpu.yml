@@ -17,6 +17,11 @@ services:
       - "992"   # render
     environment:
       - HSA_OVERRIDE_GFX_VERSION=10.3.0
+      - HSA_ENABLE_SDMA=0
+      - OLLAMA_LLM_LIBRARY=rocm
+      - OLLAMA_DEBUG=1
+    security_opt:
+      - seccomp:unconfined
     profiles: []  # Override: always start with GPU compose
 
   # --- Backend with GPU env ---
