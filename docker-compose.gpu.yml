@@ -8,7 +8,7 @@
 services:
   # --- Ollama with AMD ROCm GPU ---
   ollama:
-    image: ollama/ollama:rocm
+    image: ollama/ollama:latest
     devices:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
@@ -16,9 +16,7 @@ services:
       - "44"    # video
       - "992"   # render
     environment:
-      - HSA_OVERRIDE_GFX_VERSION=10.3.0
-      - HSA_ENABLE_SDMA=0
-      - OLLAMA_LLM_LIBRARY=rocm
+      - OLLAMA_VULKAN=1
       - OLLAMA_DEBUG=1
     security_opt:
       - seccomp:unconfined
