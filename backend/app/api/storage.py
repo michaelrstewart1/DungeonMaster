@@ -7,6 +7,10 @@ from typing import Any
 campaigns: dict[str, dict[str, Any]] = {}
 characters: dict[str, dict[str, Any]] = {}
 game_sessions: dict[str, dict[str, Any]] = {}
+maps: dict[str, dict[str, Any]] = {}
+users: dict[str, dict[str, Any]] = {}
+tokens: dict[str, str] = {}  # token -> user_id
+vision_analyses: dict[str, dict[str, Any]] = {}
 
 
 def reset() -> None:
@@ -14,6 +18,10 @@ def reset() -> None:
     campaigns.clear()
     characters.clear()
     game_sessions.clear()
+    maps.clear()
+    users.clear()
+    tokens.clear()
+    vision_analyses.clear()
 
 
 def generate_id() -> str:

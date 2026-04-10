@@ -57,6 +57,9 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
     - ping/pong: {"type": "ping"} -> {"type": "pong", "timestamp": "..."}
     - chat: {"type": "chat", "message": "...", "sender": "..."} 
     - action: {"type": "action", "character_id": "...", "action": "..."}
+    - token_move: {"type": "token_move", "token_id": "...", "x": int, "y": int}
+    - fog_update: {"type": "fog_update", "revealed": [[x,y], ...]}
+    - map_sync: {"type": "map_sync", "map_data": {...}}
     - player_joined/left events on connect/disconnect
     """
     player_id = str(uuid.uuid4())
@@ -114,6 +117,35 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     "timestamp": datetime.now().isoformat(),
                 }
                 await manager.broadcast(session_id, turn_result)
+            
+            elif message_type == "token_move":
+                # Broadcast token move to all players
+                token_move_msg = {
+                    "type": "token_move",
+                    "token_id": message.get("token_id"),
+                    "x": message.get("x"),
+                    "y": message.get("y"),
+                    "timestamp": datetime.now().isoformat(),
+                }
+                await manager.broadcast(session_id, token_move_msg)
+            
+            elif message_type == "fog_update":
+                # Broadcast fog of war update to all players
+                fog_update_msg = {
+                    "type": "fog_update",
+                    "revealed": message.get("revealed", []),
+                    "timestamp": datetime.now().isoformat(),
+                }
+                await manager.broadcast(session_id, fog_update_msg)
+            
+            elif message_type == "map_sync":
+                # Broadcast full map state to all players
+                map_sync_msg = {
+                    "type": "map_sync",
+                    "map_data": message.get("map_data", {}),
+                    "timestamp": datetime.now().isoformat(),
+                }
+                await manager.broadcast(session_id, map_sync_msg)
             
             # Other message types are ignored gracefully
     
