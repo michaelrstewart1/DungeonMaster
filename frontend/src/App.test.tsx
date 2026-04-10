@@ -1,16 +1,22 @@
 import { render, screen } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import App from './App'
+
+beforeEach(() => {
+  global.fetch = vi.fn().mockResolvedValue({
+    ok: true,
+    json: () => Promise.resolve([]),
+  })
+})
 
 describe('App', () => {
   it('renders without crashing', () => {
     render(<App />)
-    // Vite default template renders a heading or content
     expect(document.body).toBeTruthy()
   })
 
-  it('renders the app container', () => {
+  it('renders the app with router', () => {
     const { container } = render(<App />)
-    expect(container.firstChild).toBeTruthy()
+    expect(container.querySelector('.app')).toBeTruthy()
   })
 })
