@@ -21,7 +21,7 @@ export function GameSession() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [combatants, setCombatants] = useState<CombatantDisplay[]>([])
   const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null)
-  const [mapData, setMapData] = useState<GameMap | null>(null)
+  const [mapData, _setMapData] = useState<GameMap | null>(null)
   const [avatarState, setAvatarState] = useState({ expression: 'neutral', isSpeaking: false, amplitude: 0 })
   const [audioState, setAudioState] = useState({ micOn: false, muted: false })
   const [selectedToken, setSelectedToken] = useState<string | null>(null)

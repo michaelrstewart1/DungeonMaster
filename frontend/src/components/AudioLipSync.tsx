@@ -37,7 +37,7 @@ export function useAudioAnalyser(
       const analyser = audioContext.createAnalyser()
       analyser.fftSize = 256
       analyserRef.current = analyser
-      dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount)
+      dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount) as Uint8Array<ArrayBuffer>
     } catch (error) {
       console.error('Failed to create analyser:', error)
       setAmplitude(0)

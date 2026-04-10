@@ -156,7 +156,7 @@ describe('BattleMap', () => {
         .map(() => Array(5).fill(false)),
     }
 
-    const { container } = render(
+    render(
       <BattleMap map={map} selectedTokenId="token-1" />
     )
 
