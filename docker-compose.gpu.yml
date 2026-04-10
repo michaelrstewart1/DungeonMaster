@@ -13,8 +13,8 @@ services:
       - /dev/kfd:/dev/kfd
       - /dev/dri:/dev/dri
     group_add:
-      - video
-      - render
+      - "44"    # video
+      - "992"   # render
     environment:
       - HSA_OVERRIDE_GFX_VERSION=10.3.0
     profiles: []  # Override: always start with GPU compose
