@@ -1,1 +1,0 @@
-"""Board vision package."""

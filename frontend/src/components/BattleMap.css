@@ -1,0 +1,125 @@
+.battle-map {
+  display: flex;
+  justify-content: center;
+  padding: 1rem;
+  background-color: #1a1a1a;
+  border-radius: 8px;
+}
+
+.battle-map-grid {
+  border-collapse: collapse;
+  background-color: #2a2a2a;
+  border: 2px solid #444;
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+}
+
+.battle-map-grid th,
+.battle-map-grid td {
+  border: 1px solid #444;
+  padding: 0;
+  width: 40px;
+  height: 40px;
+  text-align: center;
+  vertical-align: middle;
+  font-size: 12px;
+  position: relative;
+  cursor: pointer;
+}
+
+.corner-header {
+  background-color: #1a1a1a;
+  border: 1px solid #444;
+}
+
+.column-header,
+.row-header {
+  background-color: #333;
+  color: #ddd;
+  font-weight: bold;
+  cursor: default;
+}
+
+/* Terrain types */
+.cell {
+  cursor: pointer;
+  transition: background-color 0.2s ease;
+}
+
+.cell:hover {
+  opacity: 0.8;
+}
+
+.cell-empty {
+  background-color: #3a3a3a;
+}
+
+.cell-wall {
+  background-color: #5a4a3a;
+  cursor: not-allowed;
+}
+
+.cell-water {
+  background-color: #3a4a5a;
+  cursor: not-allowed;
+}
+
+.cell-difficult {
+  background-color: #4a5a3a;
+}
+
+.cell-pit {
+  background-color: #3a2a2a;
+  cursor: not-allowed;
+}
+
+.cell-fog {
+  background-color: #2a2a2a;
+  opacity: 0.5;
+  position: relative;
+}
+
+.cell-fog::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(100, 100, 100, 0.3),
+    rgba(100, 100, 100, 0.3) 2px,
+    transparent 2px,
+    transparent 4px
+  );
+  pointer-events: none;
+}
+
+/* Token styling */
+.token {
+  font-size: 10px;
+  color: #fff;
+  font-weight: bold;
+  background-color: rgba(76, 175, 80, 0.8);
+  border: 1px solid #4caf50;
+  border-radius: 3px;
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: inline-block;
+  width: 90%;
+  text-align: center;
+}
+
+.token-selected {
+  background-color: rgba(255, 193, 7, 0.9);
+  border: 2px solid #ffc107;
+  box-shadow: 0 0 6px #ffc107;
+  color: #000;
+}

@@ -1,0 +1,139 @@
+.token-layer {
+  padding: 1rem;
+  background-color: #1a1a1a;
+  border-radius: 8px;
+  border: 1px solid #444;
+}
+
+.token-layer h2 {
+  margin-top: 0;
+  color: #ddd;
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+}
+
+.token-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.token-item {
+  display: flex;
+  flex-direction: column;
+  padding: 0.75rem 1rem;
+  border: 1px solid #555;
+  border-radius: 4px;
+  background-color: #2a2a2a;
+  color: #ddd;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: left;
+  font-family: inherit;
+  font-size: 0.95rem;
+}
+
+.token-item:hover {
+  background-color: #333;
+  border-color: #666;
+}
+
+/* Player vs Monster styling */
+.token-player {
+  border-left: 4px solid #4caf50;
+}
+
+.token-player:hover {
+  background-color: rgba(76, 175, 80, 0.1);
+}
+
+.token-monster {
+  border-left: 4px solid #f44336;
+}
+
+.token-monster:hover {
+  background-color: rgba(244, 67, 54, 0.1);
+}
+
+/* Selected/Active state */
+.token-item-active {
+  background-color: rgba(255, 193, 7, 0.15);
+  border: 2px solid #ffc107;
+  border-left: 4px solid #ffc107;
+  padding-left: calc(1rem - 1px);
+}
+
+.token-item-active:hover {
+  background-color: rgba(255, 193, 7, 0.25);
+}
+
+/* Defeated state */
+.token-defeated {
+  opacity: 0.6;
+  text-decoration: line-through;
+}
+
+.token-defeated .defeated-label {
+  color: #f44336;
+  font-weight: bold;
+  text-decoration: none;
+}
+
+/* Token content */
+.token-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  gap: 0.5rem;
+}
+
+.token-name {
+  font-weight: bold;
+  color: #fff;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.token-position {
+  color: #aaa;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.token-stats {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: #bbb;
+}
+
+.token-hp {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.hp-value {
+  color: #4caf50;
+  font-weight: bold;
+}
+
+.hp-max {
+  color: #aaa;
+}
+
+.defeated-label {
+  color: #f44336;
+  font-weight: bold;
+}
+
+/* Empty state */
+.token-layer:empty::before {
+  content: 'No tokens';
+  color: #666;
+  font-style: italic;
+  padding: 1rem;
+}

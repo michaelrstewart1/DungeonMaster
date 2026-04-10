@@ -1,0 +1,93 @@
+# Production Docker Compose — Full Stack AI Dungeon Master
+services:
+  # --- Frontend ---
+  frontend:
+    build: ./frontend
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # --- Backend API ---
+  backend:
+    build: ./backend
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://dm:${POSTGRES_PASSWORD:-changeme}@postgres:5432/dungeon_master
+      - REDIS_URL=redis://redis:6379/0
+      - MONGODB_URL=mongodb://mongo:27017/srd
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - LLM_MODEL=${LLM_MODEL:-llama3.1:8b}
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - TTS_PROVIDER=${TTS_PROVIDER:-piper}
+      - STT_PROVIDER=${STT_PROVIDER:-whisper}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+
+  # --- Databases ---
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: dungeon_master
+      POSTGRES_USER: dm
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dm -d dungeon_master"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    volumes:
+      - mongodata:/data/db
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # --- Local LLM (optional) ---
+  ollama:
+    image: ollama/ollama:latest
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "11434:11434"
+    profiles:
+      - local-llm
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  mongodata:
+  redisdata:
+  ollama_models:

@@ -1,0 +1,21 @@
+# GPU overlay for voice & local LLM services
+# Usage: docker compose -f docker-compose.yml -f docker-compose.gpu.yml up
+services:
+  # --- Ollama with GPU ---
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    profiles: []  # Override: always start with GPU compose
+
+  # --- Backend with GPU env ---
+  backend:
+    environment:
+      - STT_DEVICE=cuda
+      - TTS_DEVICE=cuda
+      - WHISPER_MODEL_SIZE=medium
+      - TTS_PROVIDER=coqui
