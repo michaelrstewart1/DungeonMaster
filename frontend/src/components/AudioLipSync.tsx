@@ -23,7 +23,7 @@ export function useAudioAnalyser(
   const [isSpeaking, setIsSpeaking] = useState(false)
   const analyserRef = useRef<AnalyserNode | null>(null)
   const animationIdRef = useRef<number | null>(null)
-  const dataArrayRef = useRef<Uint8Array | null>(null)
+  const dataArrayRef = useRef<Uint8Array<ArrayBuffer> | null>(null)
 
   // Initialize analyser on mount
   useEffect(() => {
@@ -37,7 +37,7 @@ export function useAudioAnalyser(
       const analyser = audioContext.createAnalyser()
       analyser.fftSize = 256
       analyserRef.current = analyser
-      dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount) as Uint8Array<ArrayBuffer>
+      dataArrayRef.current = new Uint8Array(analyser.frequencyBinCount)
     } catch (error) {
       console.error('Failed to create analyser:', error)
       setAmplitude(0)
