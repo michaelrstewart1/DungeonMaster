@@ -6,11 +6,12 @@ interface CampaignListProps {
   onSelect: (id: string) => void
   onCreate: () => void
   onDelete?: (id: string) => void
+  loading?: boolean
 }
 
 const CAMPAIGN_ICONS = ['🏰', '🐉', '⚔️', '🗺️', '🏔️', '🌋', '🏜️', '🌊']
 
-export function CampaignList({ campaigns, onSelect, onCreate, onDelete }: CampaignListProps) {
+export function CampaignList({ campaigns, onSelect, onCreate, onDelete, loading }: CampaignListProps) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   const handleDelete = (e: React.MouseEvent, id: string) => {
@@ -32,7 +33,17 @@ export function CampaignList({ campaigns, onSelect, onCreate, onDelete }: Campai
         </button>
       </div>
 
-      {campaigns.length === 0 ? (
+      {loading ? (
+        <div className="campaign-cards">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="campaign-card skeleton-card">
+              <div className="skeleton-line skeleton-title" />
+              <div className="skeleton-line skeleton-desc" />
+              <div className="skeleton-line skeleton-meta" />
+            </div>
+          ))}
+        </div>
+      ) : campaigns.length === 0 ? (
         <div className="empty-state">
           <span className="empty-state-icon">🏰</span>
           <span className="empty-state-title">No Campaigns Yet</span>
@@ -73,6 +84,9 @@ export function CampaignList({ campaigns, onSelect, onCreate, onDelete }: Campai
               <div className="campaign-card-footer">
                 <span className="campaign-meta">
                   {campaign.character_ids.length} {campaign.character_ids.length === 1 ? 'player' : 'players'}
+                  <span className="campaign-date" title={new Date(campaign.created_at).toLocaleString()}>
+                    {' · '}{new Date(campaign.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}
+                  </span>
                 </span>
                 {campaign.character_ids.length > 0 && (
                   <div className="campaign-party-dots">

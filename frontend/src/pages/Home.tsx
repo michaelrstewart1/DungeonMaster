@@ -157,6 +157,7 @@ export function Home() {
           onSelect={(id) => navigate(`/campaign/${id}`)}
           onCreate={() => setShowForm(true)}
           onDelete={handleDelete}
+          loading={loading}
         />
       </div>
     </div>
