@@ -37,6 +37,33 @@ class TestGameSessionCreate:
         assert "id" in data
         assert "narrative_history" in data
 
+    async def test_create_game_session_with_only_campaign_id_uses_defaults(
+        self, client: AsyncClient
+    ):
+        """Creating a game session with only campaign_id should use default scene and phase."""
+        campaign_response = await client.post(
+            "/api/campaigns",
+            json={
+                "name": "Defaults Campaign",
+                "description": "For testing defaults",
+                "character_ids": [],
+                "world_state": {},
+                "dm_settings": {},
+            },
+        )
+        campaign_id = campaign_response.json()["id"]
+
+        response = await client.post(
+            "/api/game/sessions",
+            json={"campaign_id": campaign_id},
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["campaign_id"] == campaign_id
+        assert data["current_phase"] == "exploration"
+        assert len(data["current_scene"]) > 0
+        assert "id" in data
+
     async def test_create_game_session_with_missing_campaign_returns_422(
         self, client: AsyncClient
     ):
