@@ -1156,7 +1156,19 @@
   height: 3px;
   background: var(--green);
   border-radius: 2px;
-  transition: width 0.3s;
+  transition: width 0.3s, background 0.3s;
+}
+
+.hp-bar.hp-healthy { background: var(--green); }
+.hp-bar.hp-wounded { background: var(--gold); }
+.hp-bar.hp-critical { background: var(--red); }
+
+.initiative-empty-text {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  font-style: italic;
+  text-align: center;
+  padding: 0.5rem 0;
 }
 
 /* Dice Roller */

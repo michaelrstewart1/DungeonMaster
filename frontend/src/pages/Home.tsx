@@ -14,6 +14,15 @@ export function Home() {
   const [creating, setCreating] = useState(false)
   const navigate = useNavigate()
 
+  // Escape key closes the form
+  useEffect(() => {
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && showForm) setShowForm(false)
+    }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [showForm])
+
   const loadCampaigns = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -111,6 +120,7 @@ export function Home() {
                 placeholder="Enter a name for your adventure..."
                 required
                 maxLength={50}
+                autoFocus
               />
               <span className={`form-hint ${formName.length > 40 ? 'warn' : ''}`}>
                 {formName.length}/50

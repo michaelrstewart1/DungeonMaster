@@ -13,15 +13,21 @@ interface InitiativeTrackerProps {
 
 export function InitiativeTracker({ combatants }: InitiativeTrackerProps) {
   if (combatants.length === 0) {
-    return <div className="initiative-tracker empty">No combat active</div>
+    return (
+      <div className="initiative-tracker empty">
+        <h3>⚔️ Initiative</h3>
+        <p className="initiative-empty-text">No combat active</p>
+      </div>
+    )
   }
 
   return (
     <div className="initiative-tracker">
-      <h3>Initiative Order</h3>
+      <h3>⚔️ Initiative Order</h3>
       <div className="initiative-list">
         {combatants.map((c) => {
           const hpPercent = Math.round((c.hp / c.max_hp) * 100)
+          const hpColor = hpPercent > 50 ? 'hp-healthy' : hpPercent > 25 ? 'hp-wounded' : 'hp-critical'
           return (
             <div
               key={c.id}
@@ -31,7 +37,7 @@ export function InitiativeTracker({ combatants }: InitiativeTrackerProps) {
               <span className="init-name">{c.name}</span>
               <span className="init-hp">
                 <span className="hp-text">{c.hp}/{c.max_hp}</span>
-                <div className="hp-bar" style={{ width: `${hpPercent}%` }} />
+                <div className={`hp-bar ${hpColor}`} style={{ width: `${hpPercent}%` }} />
               </span>
             </div>
           )
