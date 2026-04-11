@@ -212,26 +212,41 @@ test.describe('Real User Flows', () => {
     const chatArea = page.locator('.chat-area')
     await expect(chatArea).toBeVisible()
 
+    // CRITICAL: Verify the opening DM narration is present (proves game state loaded)
+    await expect(page.locator('.chat-message.message-dm').first()).toBeVisible({ timeout: 5000 })
+    const openingText = await page.locator('.chat-message.message-dm').first().textContent()
+    expect(openingText!.length).toBeGreaterThan(20) // Not just "Welcome" — real scene text
+
     // Verify DM avatar is present
     await expect(page.locator('.dm-avatar')).toBeVisible()
 
     // Verify dice roller is present
     await expect(page.locator('.dice-roller')).toBeVisible()
 
-    // Type a message in chat (now a textarea)
+    // CRITICAL: Send a player action and verify the DM actually responds
     const chatInput = page.locator('.chat-input')
-    if (await chatInput.isVisible()) {
-      // Verify it's a textarea (auto-resize feature)
-      const tagName = await chatInput.evaluate(el => el.tagName.toLowerCase())
-      expect(tagName).toBe('textarea')
+    await expect(chatInput).toBeVisible({ timeout: 5000 })
 
-      await chatInput.fill('I look around the room')
-      await chatInput.press('Enter')
-      // Verify the player message appears
-      await expect(page.locator('.chat-message.message-player, .chat-message:has-text("I look around")')).toBeVisible({ timeout: 5000 })
-    }
+    await chatInput.fill('I look around the room')
+    await chatInput.press('Enter')
+
+    // Verify the player message appears
+    await expect(page.locator('.chat-message.message-player')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('.chat-message.message-player')).toContainText('I look around the room')
+
+    // CRITICAL: Verify the DM responds with contextual narrative about "look around"
+    await expect(page.locator('.chat-message.message-dm:has-text("cavern")')).toBeVisible({ timeout: 10000 })
 
     await page.screenshot({ path: 'test-results/real-05-game-session.png', fullPage: true })
+
+    // Send a second action to prove multi-turn conversation works
+    await chatInput.fill('I attack the shadows')
+    await chatInput.press('Enter')
+    await expect(page.locator('.chat-message.message-player')).toHaveCount(2, { timeout: 5000 })
+    // DM should respond with combat narration (contains "strike" or "weapon")
+    await expect(page.locator('.chat-message.message-dm:has-text("weapon"), .chat-message.message-dm:has-text("strike")')).toBeVisible({ timeout: 10000 })
+
+    await page.screenshot({ path: 'test-results/real-05b-multi-turn.png', fullPage: true })
   })
 
   test('Error states are handled gracefully', async ({ page }) => {
