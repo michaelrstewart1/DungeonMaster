@@ -165,8 +165,8 @@ test.describe('Real User Flows', () => {
     // Verify success banner appears
     await expect(page.locator('.success-banner')).toBeVisible({ timeout: 3000 })
 
-    // Verify party roster header shows count
-    await expect(page.locator('.party-roster-header h3')).toContainText('Your Party (1)')
+    // Verify party tray shows count
+    await expect(page.locator('[data-testid="party-tray"]')).toContainText('Your Party (1)')
 
     // Verify empty state is gone
     await expect(page.locator('.empty-state')).not.toBeVisible()
@@ -178,7 +178,7 @@ test.describe('Real User Flows', () => {
     await expect(page.locator('.character-sheet')).toHaveCount(2, { timeout: 5000 })
 
     // Verify party count updated
-    await expect(page.locator('.party-roster-header h3')).toContainText('Your Party (2)')
+    await expect(page.locator('[data-testid="party-tray"]')).toContainText('Your Party (2)')
 
     await page.screenshot({ path: 'test-results/real-04-multiple-characters.png', fullPage: true })
 
@@ -364,7 +364,7 @@ test.describe('Real User Flows', () => {
     await page.locator('.picker-card').first().click()
     await page.click('[data-testid="picker-confirm"]')
     await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 5000 })
-    await expect(page.locator('.party-roster-header h3')).toContainText('Your Party (1)')
+    await expect(page.locator('[data-testid="party-tray"]')).toContainText('Your Party (1)')
 
     // Hover over character sheet to reveal remove button
     await page.locator('.character-sheet').hover()
@@ -471,5 +471,27 @@ test.describe('Real User Flows', () => {
     expect(dateText).toMatch(/[A-Z][a-z]{2}/)
 
     await page.screenshot({ path: 'test-results/real-16-campaign-date.png', fullPage: true })
+  })
+
+  test('Party tray shows selected characters with portraits', async ({ page }) => {
+    const campaignName = `Tray Test ${uniqueId()}`
+    await createAndOpenCampaign(page, campaignName)
+
+    // No party tray when empty
+    await expect(page.locator('[data-testid="party-tray"]')).not.toBeVisible()
+
+    // Add a character
+    await page.click('[data-testid="btn-premade"]')
+    await page.locator('.picker-card').first().click()
+    await page.click('[data-testid="picker-confirm"]')
+    await expect(page.locator('[data-testid="party-tray"]')).toBeVisible({ timeout: 5000 })
+
+    // Tray should show character name and portrait
+    const trayMember = page.locator('.party-tray-member').first()
+    await expect(trayMember).toBeVisible()
+    await expect(trayMember.locator('.party-tray-name')).toHaveText(/.+/)
+    await expect(trayMember.locator('[data-testid="character-portrait"]')).toBeVisible()
+
+    await page.screenshot({ path: 'test-results/real-17-party-tray.png', fullPage: true })
   })
 })

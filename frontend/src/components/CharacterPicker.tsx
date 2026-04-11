@@ -24,8 +24,10 @@ export function CharacterPicker({ onSelect, onCancel }: CharacterPickerProps) {
 
   const handleConfirm = () => {
     if (!selected) return
-    const { id: _id, portrait: _p, backstory: _b, equipment: _e, ...charData } = selected
-    onSelect(charData)
+    const { id: _id, backstory: _b, equipment: _e, ...charData } = selected
+    // Keep portrait as portrait_url for the backend
+    const { portrait, ...rest } = charData
+    onSelect({ ...rest, portrait_url: portrait })
   }
 
   return (

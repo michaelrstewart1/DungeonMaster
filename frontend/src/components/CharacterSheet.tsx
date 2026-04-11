@@ -1,5 +1,7 @@
 import { useState } from 'react'
 import type { Character } from '../types'
+import { CharacterPortrait } from './CharacterPortrait'
+import { generatePortrait } from '../api/client'
 
 const CLASS_ICONS: Record<string, string> = {
   fighter: '⚔️',
@@ -61,14 +63,41 @@ const ABILITY_NAMES = [
 
 export function CharacterSheet({ character, onRemove }: CharacterSheetProps) {
   const [inventoryOpen, setInventoryOpen] = useState(false)
+  const [generating, setGenerating] = useState(false)
+  const [portraitUrl, setPortraitUrl] = useState(character.portrait_url || null)
+
+  const handleGeneratePortrait = async () => {
+    setGenerating(true)
+    try {
+      const updated = await generatePortrait(character.id)
+      setPortraitUrl(updated.portrait_url || null)
+    } catch {
+      // Silently fail — button stays visible for retry
+    } finally {
+      setGenerating(false)
+    }
+  }
+
   return (
     <div className="character-sheet">
       <div className="char-header">
-        <div
-          className="char-portrait"
-          style={{ background: `linear-gradient(135deg, ${CLASS_COLORS[character.class_name] || '#444'}, ${CLASS_COLORS[character.class_name] || '#444'}88)` }}
-        >
-          <span className="char-portrait-icon">{CLASS_ICONS[character.class_name] || '⚔️'}</span>
+        <div className="char-portrait-wrapper">
+          <CharacterPortrait
+            race={character.race}
+            className={character.class_name}
+            portrait={portraitUrl || undefined}
+            size="md"
+          />
+          {!portraitUrl && (
+            <button
+              className="btn-generate-portrait"
+              onClick={handleGeneratePortrait}
+              disabled={generating}
+              title="Generate AI portrait"
+            >
+              {generating ? '⏳' : '🎨'}
+            </button>
+          )}
         </div>
         <div>
           <h2>{character.name}</h2>

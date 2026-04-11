@@ -101,6 +101,12 @@ export async function deleteCharacter(id: string): Promise<void> {
   return request<void>(`/characters/${id}`, { method: 'DELETE' });
 }
 
+export async function generatePortrait(characterId: string): Promise<Character> {
+  return request<Character>(`/characters/${characterId}/generate-portrait`, {
+    method: 'POST',
+  });
+}
+
 export async function importCharacter(format: string, data: Record<string, unknown>): Promise<Character> {
   return request<Character>('/characters/import', {
     method: 'POST',

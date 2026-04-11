@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getCampaign, getCharacters, createCharacter, createGameSession, deleteCharacter } from '../api/client'
 import { CharacterSheet } from '../components/CharacterSheet'
 import { CharacterCreator } from '../components/CharacterCreator'
 import { CharacterImport } from '../components/CharacterImport'
 import { CharacterPicker } from '../components/CharacterPicker'
+import { CharacterPortrait } from '../components/CharacterPortrait'
 import type { Campaign, Character, CharacterCreate } from '../types'
 
 type CharacterMode = 'none' | 'premade' | 'manual' | 'import'
@@ -20,6 +21,7 @@ export function CampaignDetail() {
   const [characterMode, setCharacterMode] = useState<CharacterMode>('none')
   const [startingGame, setStartingGame] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const partyRef = useRef<HTMLDivElement>(null)
 
   const loadData = useCallback(async () => {
     if (!campaignId) return
@@ -52,6 +54,8 @@ export function CampaignDetail() {
       setSuccessMessage(`${data.name} has joined the party!`)
       setTimeout(() => setSuccessMessage(null), 4000)
       await loadData()
+      // Auto-scroll to party section after a short delay
+      setTimeout(() => partyRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create character')
     }
@@ -128,6 +132,34 @@ export function CampaignDetail() {
           <h2>Characters</h2>
         </div>
 
+        {/* Inline party tray — always visible when party has members */}
+        {characters.length > 0 && (
+          <div className="party-tray" ref={partyRef} data-testid="party-tray">
+            <div className="party-tray-label">
+              <span className="party-tray-icon">⚔️</span>
+              <span>Your Party ({characters.length})</span>
+            </div>
+            <div className="party-tray-members">
+              {characters.map((char) => (
+                <div key={char.id} className="party-tray-member" title={`${char.name} — ${char.race} ${char.class_name}`}>
+                  <CharacterPortrait
+                    race={char.race}
+                    className={char.class_name}
+                    portrait={char.portrait_url || undefined}
+                    size="sm"
+                  />
+                  <span className="party-tray-name">{char.name}</span>
+                </div>
+              ))}
+            </div>
+            {characterMode === 'none' && (
+              <button className="btn-add-more party-tray-add" onClick={() => setCharacterMode('premade')}>
+                + Add
+              </button>
+            )}
+          </div>
+        )}
+
         {characterMode === 'none' && (
           <div className="character-mode-chooser" data-testid="mode-chooser">
             <button
@@ -190,21 +222,11 @@ export function CampaignDetail() {
             </span>
           </div>
         ) : (
-          <>
-            <div className="party-roster-header">
-              <h3>Your Party ({characters.length})</h3>
-              {characterMode === 'none' && (
-                <button className="btn-add-more" onClick={() => setCharacterMode('premade')}>
-                  + Add Another
-                </button>
-              )}
-            </div>
-            <div className="character-list">
-              {characters.map((char) => (
-                <CharacterSheet key={char.id} character={char} onRemove={handleRemoveCharacter} />
-              ))}
-            </div>
-          </>
+          <div className="character-list">
+            {characters.map((char) => (
+              <CharacterSheet key={char.id} character={char} onRemove={handleRemoveCharacter} />
+            ))}
+          </div>
         )}
       </section>
 

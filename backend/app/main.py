@@ -1,5 +1,8 @@
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from app.api.routes.health import router as health_router
 from app.api.routes.campaigns import router as campaigns_router
@@ -41,6 +44,10 @@ def create_app() -> FastAPI:
     app.include_router(srd_router, prefix="/api", tags=["srd"])
     app.include_router(game_ws_router, tags=["websocket"])
     app.include_router(audio_ws_router, tags=["websocket"])
+
+    portraits_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "generated_portraits")
+    os.makedirs(portraits_dir, exist_ok=True)
+    app.mount("/api/portraits", StaticFiles(directory=portraits_dir), name="portraits")
 
     return app
 

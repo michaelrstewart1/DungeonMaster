@@ -29,6 +29,7 @@ export interface CharacterCreate {
   wisdom: number;
   charisma: number;
   campaign_id?: string;
+  portrait_url?: string;
 }
 
 export interface Character extends CharacterCreate {
@@ -36,6 +37,7 @@ export interface Character extends CharacterCreate {
   conditions: string[];
   inventory: string[];
   proficiency_bonus: number;
+  portrait_url?: string;
 }
 
 // Campaign

@@ -33,6 +33,9 @@ class CharacterCreate(BaseModel):
     hp: int = Field(default=8, gt=0, description="Hit points (must be positive)")
     ac: int = Field(default=10, ge=1, description="Armor class (minimum 1)")
     
+    # Portrait
+    portrait_url: Optional[str] = Field(None, description="URL to character portrait image")
+
     # Collections
     conditions: List[str] = Field(default_factory=list, description="Active conditions")
     inventory: List[str] = Field(default_factory=list, description="Inventory items")
@@ -108,6 +111,7 @@ class CharacterUpdate(BaseModel):
     charisma: Optional[int] = Field(None, ge=3, le=20)
     hp: Optional[int] = Field(None, gt=0)
     ac: Optional[int] = Field(None, ge=1)
+    portrait_url: Optional[str] = None
     conditions: Optional[List[str]] = None
     inventory: Optional[List[str]] = None
 
