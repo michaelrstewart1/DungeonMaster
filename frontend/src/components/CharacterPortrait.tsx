@@ -9,6 +9,10 @@ interface CharacterPortraitProps {
   selected?: boolean
 }
 
+function isImagePath(str: string): boolean {
+  return str.startsWith('/') || str.startsWith('http') || str.startsWith('data:')
+}
+
 export function CharacterPortrait({
   race,
   className,
@@ -18,6 +22,7 @@ export function CharacterPortrait({
 }: CharacterPortraitProps) {
   const colors = CLASS_COLORS[className]
   const symbol = portrait || RACE_SYMBOLS[race]
+  const hasImage = portrait && isImagePath(portrait)
 
   const sizeMap = { sm: 64, md: 96, lg: 128 }
   const px = sizeMap[size]
@@ -25,21 +30,32 @@ export function CharacterPortrait({
 
   return (
     <div
-      className={`character-portrait ${selected ? 'selected' : ''}`}
+      className={`character-portrait ${selected ? 'selected' : ''} ${hasImage ? 'has-image' : ''}`}
       data-testid="character-portrait"
       style={{
         width: px,
         height: px,
-        background: `radial-gradient(ellipse at 30% 20%, ${colors.secondary}33, ${colors.primary}88, #0a0a0f)`,
+        background: hasImage
+          ? 'transparent'
+          : `radial-gradient(ellipse at 30% 20%, ${colors.secondary}33, ${colors.primary}88, #0a0a0f)`,
         borderColor: selected ? '#d4a846' : colors.primary,
         boxShadow: selected
           ? `0 0 20px ${colors.accent}66, inset 0 0 30px ${colors.primary}22`
           : `inset 0 0 30px ${colors.primary}22`,
       }}
     >
-      <span className="portrait-symbol" style={{ fontSize: fontSize[size] }}>
-        {symbol}
-      </span>
+      {hasImage ? (
+        <img
+          src={portrait}
+          alt={`${race} ${className} portrait`}
+          className="portrait-image"
+          style={{ width: px, height: px }}
+        />
+      ) : (
+        <span className="portrait-symbol" style={{ fontSize: fontSize[size] }}>
+          {symbol}
+        </span>
+      )}
       <div className="portrait-frame" />
     </div>
   )

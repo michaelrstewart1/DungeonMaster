@@ -16,15 +16,25 @@ router = APIRouter(prefix="/characters", tags=["characters"])
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=CharacterResponse)
 async def create_character(character: CharacterCreate) -> CharacterResponse:
-    """Create a new character."""
+    """Create a new character and optionally link to a campaign."""
     character_id = storage.generate_id()
+    
+    char_dict = character.model_dump()
+    campaign_id = char_dict.pop("campaign_id", None)
     
     character_data = {
         "id": character_id,
-        **character.model_dump(),
+        **char_dict,
     }
     
     storage.characters[character_id] = character_data
+    
+    # Link character to campaign if campaign_id provided
+    if campaign_id and campaign_id in storage.campaigns:
+        campaign = storage.campaigns[campaign_id]
+        if character_id not in campaign["character_ids"]:
+            campaign["character_ids"].append(character_id)
+    
     return CharacterResponse(**character_data)
 
 

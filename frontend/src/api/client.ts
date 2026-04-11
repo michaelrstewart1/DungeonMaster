@@ -109,15 +109,23 @@ export async function importCharacter(format: string, data: Record<string, unkno
 }
 
 // Game Sessions
-export async function createGameSession(campaignId: string): Promise<GameSession> {
-  return request<GameSession>('/game/sessions', {
+export async function createGameSession(campaignId: string): Promise<{ id: string }> {
+  return request<{ id: string }>('/game/sessions', {
     method: 'POST',
-    body: JSON.stringify({ campaign_id: campaignId }),
+    body: JSON.stringify({
+      campaign_id: campaignId,
+      current_scene: 'Your adventure begins...',
+    }),
   });
 }
 
 export async function getGameState(sessionId: string): Promise<GameState> {
-  return request<GameState>(`/game/sessions/${sessionId}/state`);
+  const raw = await request<GameState & { current_phase?: string }>(`/game/sessions/${sessionId}/state`);
+  // Backend returns current_phase, frontend expects phase
+  if (raw.current_phase && !raw.phase) {
+    (raw as Record<string, unknown>).phase = raw.current_phase;
+  }
+  return raw;
 }
 
 export async function submitAction(sessionId: string, action: PlayerAction): Promise<TurnResult> {

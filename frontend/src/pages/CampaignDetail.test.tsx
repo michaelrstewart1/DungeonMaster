@@ -177,7 +177,7 @@ describe('CampaignDetail', () => {
     vi.mocked(getCampaign).mockReturnValue(new Promise(() => {}))
     vi.mocked(getCharacters).mockReturnValue(new Promise(() => {}))
     renderWithRoute()
-    expect(screen.getByText('Loading...')).toBeTruthy()
+    expect(screen.getByText('Preparing adventure…')).toBeTruthy()
   })
 
   it('renders campaign name after loading', async () => {

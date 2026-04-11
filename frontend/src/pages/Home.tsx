@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CampaignList } from '../components/CampaignList'
-import { getCampaigns, createCampaign } from '../api/client'
+import { getCampaigns, createCampaign, deleteCampaign } from '../api/client'
 import type { Campaign } from '../types'
 
 export function Home() {
@@ -48,13 +48,51 @@ export function Home() {
     }
   }
 
-  if (loading) return <div className="page-home">Loading...</div>
+  const handleDelete = async (id: string) => {
+    try {
+      await deleteCampaign(id)
+      await loadCampaigns()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete campaign')
+    }
+  }
+
+  if (loading) return (
+    <div className="page-home">
+      <header className="hero">
+        <h1>⚔️ AI Dungeon Master</h1>
+        <p className="subtitle">Your AI-powered D&amp;D 5e experience</p>
+      </header>
+      <div className="home-content">
+        <div className="loading-spinner">
+          <div className="loading-d20"></div>
+          <span className="loading-text">Summoning campaigns…</span>
+        </div>
+        <div className="loading-skeleton-cards">
+          <div className="skeleton skeleton-card"></div>
+          <div className="skeleton skeleton-card"></div>
+          <div className="skeleton skeleton-card"></div>
+        </div>
+      </div>
+    </div>
+  )
 
   return (
     <div className="page-home">
       <header className="hero">
         <h1>⚔️ AI Dungeon Master</h1>
         <p className="subtitle">Your AI-powered D&amp;D 5e experience</p>
+        {campaigns.length > 0 && (
+          <div className="hero-stats">
+            <span className="hero-stat">
+              <strong>{campaigns.length}</strong> {campaigns.length === 1 ? 'Campaign' : 'Campaigns'}
+            </span>
+            <span className="hero-stat-sep">•</span>
+            <span className="hero-stat">
+              <strong>{campaigns.reduce((sum, c) => sum + c.character_ids.length, 0)}</strong> Heroes
+            </span>
+          </div>
+        )}
       </header>
 
       <div className="home-content">
@@ -72,21 +110,29 @@ export function Home() {
                 onChange={(e) => setFormName(e.target.value)}
                 placeholder="Enter a name for your adventure..."
                 required
+                maxLength={50}
               />
+              <span className={`form-hint ${formName.length > 40 ? 'warn' : ''}`}>
+                {formName.length}/50
+              </span>
             </div>
             <div className="form-group">
               <label htmlFor="campaign-description">Description</label>
-              <input
+              <textarea
                 id="campaign-description"
-                type="text"
                 value={formDescription}
                 onChange={(e) => setFormDescription(e.target.value)}
                 placeholder="Describe the world and setting..."
                 required
+                rows={3}
+                maxLength={200}
               />
+              <span className={`form-hint ${formDescription.length > 180 ? 'warn' : ''}`}>
+                {formDescription.length}/200
+              </span>
             </div>
             <div className="form-actions">
-              <button type="submit" className="btn-primary" disabled={creating}>
+              <button type="submit" className="btn-primary" disabled={creating || formName.trim().length < 2}>
                 {creating ? 'Creating...' : 'Create Campaign'}
               </button>
               <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>
@@ -100,6 +146,7 @@ export function Home() {
           campaigns={campaigns}
           onSelect={(id) => navigate(`/campaign/${id}`)}
           onCreate={() => setShowForm(true)}
+          onDelete={handleDelete}
         />
       </div>
     </div>

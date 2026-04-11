@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getCampaign, getCharacters, createCharacter, createGameSession } from '../api/client'
+import { getCampaign, getCharacters, createCharacter, createGameSession, deleteCharacter } from '../api/client'
 import { CharacterSheet } from '../components/CharacterSheet'
 import { CharacterCreator } from '../components/CharacterCreator'
 import { CharacterImport } from '../components/CharacterImport'
@@ -19,6 +19,7 @@ export function CampaignDetail() {
   const [error, setError] = useState<string | null>(null)
   const [characterMode, setCharacterMode] = useState<CharacterMode>('none')
   const [startingGame, setStartingGame] = useState(false)
+  const [successMessage, setSuccessMessage] = useState<string | null>(null)
 
   const loadData = useCallback(async () => {
     if (!campaignId) return
@@ -46,8 +47,10 @@ export function CampaignDetail() {
     if (!campaignId) return
     setError(null)
     try {
-      await createCharacter({ ...data, campaign_id: campaignId } as CharacterCreate & { campaign_id: string })
+      await createCharacter({ ...data, campaign_id: campaignId })
       setCharacterMode('none')
+      setSuccessMessage(`${data.name} has joined the party!`)
+      setTimeout(() => setSuccessMessage(null), 4000)
       await loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create character')
@@ -72,7 +75,23 @@ export function CampaignDetail() {
     }
   }
 
-  if (loading) return <div className="page-campaign-detail">Loading...</div>
+  const handleRemoveCharacter = async (characterId: string) => {
+    try {
+      await deleteCharacter(characterId)
+      await loadData()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to remove character')
+    }
+  }
+
+  if (loading) return (
+    <div className="page-campaign-detail">
+      <div className="loading-spinner">
+        <div className="loading-d20"></div>
+        <span className="loading-text">Preparing adventure…</span>
+      </div>
+    </div>
+  )
 
   if (error && !campaign) {
     return (
@@ -84,12 +103,25 @@ export function CampaignDetail() {
 
   return (
     <div className="page-campaign-detail">
+      <nav className="breadcrumb">
+        <button className="breadcrumb-link" onClick={() => navigate('/')}>
+          ← Campaigns
+        </button>
+        <span className="breadcrumb-sep">/</span>
+        <span className="breadcrumb-current">{campaign?.name}</span>
+      </nav>
       <header>
         <h1>{campaign?.name}</h1>
         <p>{campaign?.description}</p>
       </header>
 
       {error && <p className="error-message">{error}</p>}
+      {successMessage && (
+        <div className="success-banner" data-testid="success-banner">
+          <span className="success-icon">✨</span>
+          <span>{successMessage}</span>
+        </div>
+      )}
 
       <section className="campaign-characters">
         <div className="section-header">
@@ -150,21 +182,42 @@ export function CampaignDetail() {
         )}
 
         {characters.length === 0 ? (
-          <p className="empty-state">No characters yet. Import from Roll20 or create one manually to get started!</p>
-        ) : (
-          <div className="character-list">
-            {characters.map((char) => (
-              <CharacterSheet key={char.id} character={char} />
-            ))}
+          <div className="empty-state">
+            <span className="empty-state-icon">🧙‍♂️</span>
+            <span className="empty-state-title">No Characters Yet</span>
+            <span className="empty-state-message">
+              Choose a hero, create a custom character, or import from Roll20 to begin your quest.
+            </span>
           </div>
+        ) : (
+          <>
+            <div className="party-roster-header">
+              <h3>Your Party ({characters.length})</h3>
+              {characterMode === 'none' && (
+                <button className="btn-add-more" onClick={() => setCharacterMode('premade')}>
+                  + Add Another
+                </button>
+              )}
+            </div>
+            <div className="character-list">
+              {characters.map((char) => (
+                <CharacterSheet key={char.id} character={char} onRemove={handleRemoveCharacter} />
+              ))}
+            </div>
+          </>
         )}
       </section>
 
       <section className="campaign-actions">
+        {characters.length === 0 && (
+          <p className="campaign-warning">
+            ⚠️ You haven't added any characters yet. Add at least one hero before beginning your adventure!
+          </p>
+        )}
         <button
           className="btn-primary btn-start-game"
           onClick={handleStartGame}
-          disabled={startingGame}
+          disabled={startingGame || characters.length === 0}
         >
           {startingGame ? 'Starting...' : 'Begin Adventure'}
         </button>

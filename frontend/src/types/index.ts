@@ -28,6 +28,7 @@ export interface CharacterCreate {
   intelligence: number;
   wisdom: number;
   charisma: number;
+  campaign_id?: string;
 }
 
 export interface Character extends CharacterCreate {
@@ -61,6 +62,7 @@ export interface CombatState {
 
 export interface GameState {
   phase: GamePhase;
+  campaign_id?: string;
   current_scene: string;
   narrative_history: string[];
   combat_state: CombatState | null;

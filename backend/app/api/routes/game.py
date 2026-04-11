@@ -15,7 +15,7 @@ class GameSessionCreate(BaseModel):
     """Schema for creating a game session."""
     campaign_id: str = Field(..., description="Campaign ID for this session")
     current_phase: str = Field(default="exploration", description="Initial game phase")
-    current_scene: str = Field(..., description="Initial scene description")
+    current_scene: str = Field(default="You stand at the entrance of a dark cavern. The air is thick with the smell of damp stone and something... else. Torchlight flickers against ancient runes carved into the walls.", description="Initial scene description")
 
 
 class PlayerActionRequest(BaseModel):

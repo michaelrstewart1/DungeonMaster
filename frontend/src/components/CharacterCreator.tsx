@@ -90,6 +90,9 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
 
       {/* Step indicator */}
       <div className="creator-steps" data-testid="creator-steps">
+        <div className="creator-progress-bar">
+          <div className="creator-progress-fill" style={{ width: `${(step / (steps.length - 1)) * 100}%` }} />
+        </div>
         {steps.map((s, i) => (
           <button
             key={s}
@@ -107,12 +110,12 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
       {step === 0 && (
         <div className="creator-section" data-testid="step-race">
           <h3>Choose Your Race</h3>
-          <div className="race-grid" role="radiogroup" aria-label="Race selection">
+          <div className="race-grid stagger-children" role="radiogroup" aria-label="Race selection">
             {RACES.map((r) => (
               <button
                 key={r.value}
                 type="button"
-                className={`race-card ${race === r.value ? 'selected' : ''}`}
+                className={`race-card animate-in ${race === r.value ? 'selected' : ''}`}
                 onClick={() => setRace(r.value)}
                 aria-pressed={race === r.value}
                 data-testid={`race-${r.value}`}
@@ -147,14 +150,14 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
       {step === 1 && (
         <div className="creator-section" data-testid="step-class">
           <h3>Choose Your Class</h3>
-          <div className="class-grid" role="radiogroup" aria-label="Class selection">
+          <div className="class-grid stagger-children" role="radiogroup" aria-label="Class selection">
             {CLASSES.map((c) => {
               const colors = CLASS_COLORS[c.value]
               return (
                 <button
                   key={c.value}
                   type="button"
-                  className={`class-card ${className === c.value ? 'selected' : ''}`}
+                  className={`class-card animate-in ${className === c.value ? 'selected' : ''}`}
                   onClick={() => setClassName(c.value)}
                   aria-pressed={className === c.value}
                   data-testid={`class-${c.value}`}

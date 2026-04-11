@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams } from 'react-router-dom'
-import { getGameState, submitAction } from '../api/client'
+import { useParams, useNavigate } from 'react-router-dom'
+import { getGameState, submitAction, getCampaign } from '../api/client'
 import { GameWebSocket } from '../api/websocket'
 import { GameChat, type ChatMessage } from '../components/GameChat'
 import { DiceRoller } from '../components/DiceRoller'
@@ -14,8 +14,18 @@ import FogOfWar from '../components/FogOfWar'
 import type { GameState, GameMap, DiceResult } from '../types'
 import './GameSession.css'
 
+function formatTime(seconds: number): string {
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  const s = seconds % 60
+  return h > 0
+    ? `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`
+    : `${m}:${String(s).padStart(2, '0')}`
+}
+
 export function GameSession() {
   const { sessionId } = useParams<{ sessionId: string }>()
+  const navigate = useNavigate()
 
   const [gameState, setGameState] = useState<GameState | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
@@ -29,8 +39,17 @@ export function GameSession() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [wsConnected, setWsConnected] = useState(false)
+  const [campaignName, setCampaignName] = useState<string>('Game Session')
+  const [waitingForDM, setWaitingForDM] = useState(false)
+  const [sessionTime, setSessionTime] = useState(0)
 
   const wsRef = useRef<GameWebSocket | null>(null)
+
+  // Session timer
+  useEffect(() => {
+    const timer = setInterval(() => setSessionTime(t => t + 1), 1000)
+    return () => clearInterval(timer)
+  }, [])
 
   // Derive token info from map tokens for the TokenLayer component
   const tokenInfos: TokenInfo[] = (mapData?.tokens || []).map((t) => ({
@@ -55,7 +74,14 @@ export function GameSession() {
     try {
       const state = await getGameState(sessionId)
       setGameState(state)
-      setMessages([{ role: 'dm', text: state.current_scene || `Welcome to the adventure!` }])
+      setMessages([{ role: 'dm', text: state.current_scene || `Welcome to the adventure!`, timestamp: Date.now() }])
+      // Fetch campaign name for the header
+      if (state.campaign_id) {
+        try {
+          const campaign = await getCampaign(state.campaign_id)
+          setCampaignName(campaign.name)
+        } catch { /* fallback to default */ }
+      }
       if (state.combat_state) {
         setCombatants(
           state.combat_state.initiative_order.map((id, idx) => ({
@@ -91,7 +117,7 @@ export function GameSession() {
         case 'turn_result': {
           const result = msg.payload as { narration?: string; narrative?: string; dice_results?: DiceResult[] }
           const text = result.narration || result.narrative || 'The DM ponders...'
-          setMessages((prev) => [...prev, { role: 'dm', text }])
+          setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
           setAvatarState((prev) => ({ ...prev, expression: 'speaking', isSpeaking: true }))
           setTimeout(() => setAvatarState((prev) => ({ ...prev, isSpeaking: false, expression: 'neutral' })), 2000)
           if (result.dice_results?.length) {
@@ -101,17 +127,19 @@ export function GameSession() {
         }
         case 'player_joined': {
           const data = msg.payload as { player_id: string }
-          setMessages((prev) => [...prev, { role: 'dm', text: `${data.player_id} joined the session` }])
+          const shortId = data.player_id.split('-')[0]
+          setMessages((prev) => [...prev, { role: 'dm', text: `A new adventurer (${shortId}) has joined the party!`, timestamp: Date.now() }])
           break
         }
         case 'player_left': {
           const data = msg.payload as { player_id: string }
-          setMessages((prev) => [...prev, { role: 'dm', text: `${data.player_id} left the session` }])
+          const shortId = data.player_id.split('-')[0]
+          setMessages((prev) => [...prev, { role: 'dm', text: `Adventurer ${shortId} has departed.`, timestamp: Date.now() }])
           break
         }
         case 'error': {
           const data = msg.payload as { message: string }
-          setMessages((prev) => [...prev, { role: 'dm', text: `Error: ${data.message}` }])
+          setMessages((prev) => [...prev, { role: 'dm', text: `Error: ${data.message}`, timestamp: Date.now() }])
           break
         }
       }
@@ -130,12 +158,15 @@ export function GameSession() {
 
   const handleSubmitAction = useCallback(async (action: string) => {
     if (!sessionId) return
-    setMessages((prev) => [...prev, { role: 'player', text: action }])
+    setMessages((prev) => [...prev, { role: 'player', text: action, timestamp: Date.now() }])
+    setWaitingForDM(true)
     try {
       const result = await submitAction(sessionId, { type: 'interact', message: action })
-      setMessages((prev) => [...prev, { role: 'dm', text: result.narration || 'The DM ponders...' }])
+      setMessages((prev) => [...prev, { role: 'dm', text: result.narration || 'The DM ponders...', timestamp: Date.now() }])
     } catch {
-      setMessages((prev) => [...prev, { role: 'dm', text: 'Failed to send action. Try again.' }])
+      setMessages((prev) => [...prev, { role: 'dm', text: 'Failed to send action. Try again.', timestamp: Date.now() }])
+    } finally {
+      setWaitingForDM(false)
     }
   }, [sessionId])
 
@@ -189,17 +220,27 @@ export function GameSession() {
 
   if (loading) {
     return (
-      <div className="game-loading" data-testid="game-loading">
-        <p>Loading game...</p>
+      <div className="game-session">
+        <div className="game-loading" data-testid="game-loading">
+          <div className="loading-orb">
+            <div className="orb-inner" />
+          </div>
+          <p className="loading-text">Preparing your adventure...</p>
+          <p className="loading-subtext">The Dungeon Master is setting the stage</p>
+        </div>
       </div>
     )
   }
 
   if (error) {
     return (
-      <div className="game-error" data-testid="game-error">
-        <p>{error}</p>
-        <button onClick={loadGameState}>Retry</button>
+      <div className="game-session">
+        <div className="game-error" data-testid="game-error">
+          <span className="error-icon">⚠️</span>
+          <h2>Something went wrong</h2>
+          <p className="error-detail">{error}</p>
+          <button className="btn-retry" onClick={loadGameState}>Try Again</button>
+        </div>
       </div>
     )
   }
@@ -208,9 +249,15 @@ export function GameSession() {
     <div className="game-session">
       {/* Header */}
       <header className="game-header">
-        <h1>Game Session</h1>
+        <div className="game-header-left">
+          <button className="btn-back" onClick={() => navigate('/')} title="Back to campaigns">
+            ← 
+          </button>
+          <h1>{campaignName}</h1>
+        </div>
         <div className="session-info">
           {gameState && <span className="phase-badge">{gameState.phase}</span>}
+          <span className="session-timer" title="Session duration">⏱ {formatTime(sessionTime)}</span>
           <div className="ws-status">
             <span className={`ws-dot ${wsConnected ? 'connected' : 'disconnected'}`} />
             <span>{wsConnected ? 'Connected' : 'Connecting...'}</span>
@@ -237,32 +284,28 @@ export function GameSession() {
 
         {/* Main content */}
         <div className="game-main-content">
-          <div className="map-area">
-            {mapData ? (
-              <>
-                <BattleMap
-                  map={mapData}
-                  selectedTokenId={selectedToken ?? undefined}
-                  onCellClick={handleCellClick}
-                />
-                <FogOfWar
-                  grid={fogGrid}
-                  revealed={fogRevealed}
-                  isDM={true}
-                  onReveal={handleFogReveal}
-                />
-              </>
-            ) : (
-              <div className="map-placeholder">No map loaded</div>
-            )}
-            <TokenLayer
-              tokens={tokenInfos}
-              selectedTokenId={selectedToken ?? undefined}
-              onSelect={setSelectedToken}
-            />
-          </div>
-          <div className="chat-area">
-            <GameChat messages={messages} onSubmitAction={handleSubmitAction} />
+          {mapData && (
+            <div className="map-area">
+              <BattleMap
+                map={mapData}
+                selectedTokenId={selectedToken ?? undefined}
+                onCellClick={handleCellClick}
+              />
+              <FogOfWar
+                grid={fogGrid}
+                revealed={fogRevealed}
+                isDM={true}
+                onReveal={handleFogReveal}
+              />
+              <TokenLayer
+                tokens={tokenInfos}
+                selectedTokenId={selectedToken ?? undefined}
+                onSelect={setSelectedToken}
+              />
+            </div>
+          )}
+          <div className={`chat-area ${!mapData ? 'chat-area-full' : ''}`}>
+            <GameChat messages={messages} onSubmitAction={handleSubmitAction} isWaitingForDM={waitingForDM} />
           </div>
         </div>
 

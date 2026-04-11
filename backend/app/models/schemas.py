@@ -19,6 +19,7 @@ class CharacterCreate(BaseModel):
     race: str = Field(..., description="Character race")
     class_name: str = Field(..., description="Character class")
     level: int = Field(..., ge=1, le=20, description="Character level (1-20)")
+    campaign_id: Optional[str] = Field(None, description="Campaign to add this character to")
     
     # Ability scores
     strength: int = Field(default=10, ge=3, le=20, description="Strength ability score")

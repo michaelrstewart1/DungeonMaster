@@ -33,13 +33,13 @@ export function CharacterPicker({ onSelect, onCancel }: CharacterPickerProps) {
       <h2>Choose Your Hero</h2>
       <p className="picker-subtitle">Select a pre-made character to join your adventure</p>
 
-      <div className="picker-grid">
+      <div className="picker-grid stagger-children">
         {PRE_MADE_CHARACTERS.map((char) => {
           const colors = CLASS_COLORS[char.class_name]
           return (
             <button
               key={char.id}
-              className={`picker-card ${selectedId === char.id ? 'selected' : ''}`}
+              className={`picker-card animate-in ${selectedId === char.id ? 'selected' : ''}`}
               onClick={() => setSelectedId(char.id)}
               data-testid={`picker-card-${char.id}`}
               style={{

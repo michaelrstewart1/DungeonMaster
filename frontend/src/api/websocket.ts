@@ -40,7 +40,10 @@ export class GameWebSocket {
 
     this.ws.onmessage = (event) => {
       try {
-        const message: WSMessage = JSON.parse(event.data);
+        const raw = JSON.parse(event.data);
+        // Backend sends flat messages; normalize to { type, payload } format
+        const { type, ...rest } = raw;
+        const message: WSMessage = { type, payload: raw.payload ?? rest };
         this.messageHandlers.forEach((handler) => handler(message));
       } catch {
         console.error('Failed to parse WebSocket message');

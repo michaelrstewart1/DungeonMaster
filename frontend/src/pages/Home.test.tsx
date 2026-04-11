@@ -56,7 +56,7 @@ describe('Home', () => {
         <Home />
       </MemoryRouter>
     )
-    expect(screen.getByText('Loading...')).toBeTruthy()
+    expect(screen.getByText('Summoning campaigns…')).toBeTruthy()
   })
 
   it('renders the app title after loading', async () => {
