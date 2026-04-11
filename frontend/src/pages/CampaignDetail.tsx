@@ -3,7 +3,10 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { getCampaign, getCharacters, createCharacter, createGameSession } from '../api/client'
 import { CharacterSheet } from '../components/CharacterSheet'
 import { CharacterCreator } from '../components/CharacterCreator'
+import { CharacterImport } from '../components/CharacterImport'
 import type { Campaign, Character, CharacterCreate } from '../types'
+
+type CharacterMode = 'none' | 'import' | 'manual'
 
 export function CampaignDetail() {
   const { campaignId } = useParams<{ campaignId: string }>()
@@ -13,7 +16,7 @@ export function CampaignDetail() {
   const [characters, setCharacters] = useState<Character[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [showCreator, setShowCreator] = useState(false)
+  const [characterMode, setCharacterMode] = useState<CharacterMode>('none')
   const [startingGame, setStartingGame] = useState(false)
 
   const loadData = useCallback(async () => {
@@ -43,11 +46,16 @@ export function CampaignDetail() {
     setError(null)
     try {
       await createCharacter({ ...data, campaign_id: campaignId } as CharacterCreate & { campaign_id: string })
-      setShowCreator(false)
+      setCharacterMode('none')
       await loadData()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create character')
     }
+  }
+
+  const handleImportCharacter = async (_character: Character) => {
+    setCharacterMode('none')
+    await loadData()
   }
 
   const handleStartGame = async () => {
@@ -85,20 +93,32 @@ export function CampaignDetail() {
       <section className="campaign-characters">
         <div className="section-header">
           <h2>Characters</h2>
-          <button className="btn-primary" onClick={() => setShowCreator(true)}>
-            Add Character
-          </button>
+          <div className="form-actions" style={{ marginTop: 0 }}>
+            <button className="btn-primary" onClick={() => setCharacterMode('import')}>
+              Import Character
+            </button>
+            <button className="btn-secondary" onClick={() => setCharacterMode('manual')}>
+              Create Manually
+            </button>
+          </div>
         </div>
 
-        {showCreator && (
+        {characterMode === 'import' && (
+          <CharacterImport
+            onImport={handleImportCharacter}
+            onCancel={() => setCharacterMode('none')}
+          />
+        )}
+
+        {characterMode === 'manual' && (
           <CharacterCreator
             onCreate={handleCreateCharacter}
-            onCancel={() => setShowCreator(false)}
+            onCancel={() => setCharacterMode('none')}
           />
         )}
 
         {characters.length === 0 ? (
-          <p className="empty-state">No characters yet. Add one to get started!</p>
+          <p className="empty-state">No characters yet. Import from Roll20 or create one manually to get started!</p>
         ) : (
           <div className="character-list">
             {characters.map((char) => (
@@ -114,7 +134,7 @@ export function CampaignDetail() {
           onClick={handleStartGame}
           disabled={startingGame}
         >
-          {startingGame ? 'Starting...' : 'Start Game'}
+          {startingGame ? 'Starting...' : 'Begin Adventure'}
         </button>
       </section>
     </div>

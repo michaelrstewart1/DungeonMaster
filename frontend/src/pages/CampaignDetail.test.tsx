@@ -50,6 +50,42 @@ vi.mock('../components/CharacterCreator', () => ({
   ),
 }))
 
+vi.mock('../components/CharacterImport', () => ({
+  CharacterImport: ({ onImport, onCancel }: any) => (
+    <div data-testid="character-import">
+      <button
+        data-testid="submit-import"
+        onClick={() =>
+          onImport({
+            id: 'ch-imported',
+            name: 'Imported Hero',
+            race: 'elf',
+            class_name: 'ranger',
+            level: 3,
+            hp: 28,
+            max_hp: 28,
+            ac: 15,
+            strength: 14,
+            dexterity: 16,
+            constitution: 12,
+            intelligence: 10,
+            wisdom: 14,
+            charisma: 10,
+            conditions: [],
+            inventory: [],
+            proficiency_bonus: 2,
+          })
+        }
+      >
+        Import
+      </button>
+      <button data-testid="cancel-import" onClick={onCancel}>
+        Cancel
+      </button>
+    </div>
+  ),
+}))
+
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom')
@@ -136,12 +172,21 @@ describe('CampaignDetail', () => {
     })
   })
 
-  it('shows character creator when add button is clicked', async () => {
+  it('shows character import when import button is clicked', async () => {
     renderWithRoute()
     await waitFor(() => {
-      expect(screen.getByText('Add Character')).toBeTruthy()
+      expect(screen.getByText('Import Character')).toBeTruthy()
     })
-    fireEvent.click(screen.getByText('Add Character'))
+    fireEvent.click(screen.getByText('Import Character'))
+    expect(screen.getByTestId('character-import')).toBeTruthy()
+  })
+
+  it('shows character creator when manual button is clicked', async () => {
+    renderWithRoute()
+    await waitFor(() => {
+      expect(screen.getByText('Create Manually')).toBeTruthy()
+    })
+    fireEvent.click(screen.getByText('Create Manually'))
     expect(screen.getByTestId('character-creator')).toBeTruthy()
   })
 
@@ -153,10 +198,10 @@ describe('CampaignDetail', () => {
     })
     renderWithRoute()
     await waitFor(() => {
-      expect(screen.getByText('Add Character')).toBeTruthy()
+      expect(screen.getByText('Create Manually')).toBeTruthy()
     })
 
-    fireEvent.click(screen.getByText('Add Character'))
+    fireEvent.click(screen.getByText('Create Manually'))
     fireEvent.click(screen.getByTestId('submit-character'))
 
     await waitFor(() => {
@@ -176,10 +221,10 @@ describe('CampaignDetail', () => {
 
     renderWithRoute()
     await waitFor(() => {
-      expect(screen.getByText('Start Game')).toBeTruthy()
+      expect(screen.getByText('Begin Adventure')).toBeTruthy()
     })
 
-    fireEvent.click(screen.getByText('Start Game'))
+    fireEvent.click(screen.getByText('Begin Adventure'))
 
     await waitFor(() => {
       expect(createGameSession).toHaveBeenCalledWith('camp1')

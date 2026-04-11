@@ -173,6 +173,25 @@ class TokenPosition(BaseModel):
     y: int = Field(..., ge=0, description="Y coordinate")
 
 
+class CharacterImportRequest(BaseModel):
+    """Schema for importing a character from external formats."""
+    format: str = Field(..., description="Import format: 'r20' or 'generic'")
+    data: Dict[str, Any] = Field(..., description="Character data in the specified format")
+
+    @field_validator("format", mode="before")
+    @classmethod
+    def validate_format(cls, v):
+        """Validate that format is supported."""
+        valid_formats = {"r20", "generic"}
+        if v not in valid_formats:
+            raise ValueError(f"Invalid format '{v}'. Must be one of: {', '.join(valid_formats)}")
+        return v
+
+
+# ============================================================================
+# Map Models
+# ============================================================================
+
 class MapCreate(BaseModel):
     """Schema for creating a new map."""
     width: int = Field(..., gt=0, description="Map width in tiles")

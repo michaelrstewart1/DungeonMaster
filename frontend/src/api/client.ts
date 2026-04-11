@@ -101,6 +101,13 @@ export async function deleteCharacter(id: string): Promise<void> {
   return request<void>(`/characters/${id}`, { method: 'DELETE' });
 }
 
+export async function importCharacter(format: string, data: Record<string, unknown>): Promise<Character> {
+  return request<Character>('/characters/import', {
+    method: 'POST',
+    body: JSON.stringify({ format, data }),
+  });
+}
+
 // Game Sessions
 export async function createGameSession(campaignId: string): Promise<GameSession> {
   return request<GameSession>('/game/sessions', {

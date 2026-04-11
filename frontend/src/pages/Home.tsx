@@ -53,15 +53,16 @@ export function Home() {
   return (
     <div className="page-home">
       <header className="hero">
-        <h1>🐉 AI Dungeon Master</h1>
-        <p>Your AI-powered D&amp;D 5e experience</p>
+        <h1>⚔️ AI Dungeon Master</h1>
+        <p className="subtitle">Your AI-powered D&amp;D 5e experience</p>
       </header>
 
-      {error && <p className="error-message">{error}</p>}
+      <div className="home-content">
+        {error && <p className="error-message">{error}</p>}
 
-      <main>
         {showForm && (
-          <form onSubmit={handleCreate} className="campaign-form" aria-label="Create campaign">
+          <form onSubmit={handleCreate} className="campaign-form" aria-label="Create campaign" role="form">
+            <h3>New Campaign</h3>
             <div className="form-group">
               <label htmlFor="campaign-name">Name</label>
               <input
@@ -69,6 +70,7 @@ export function Home() {
                 type="text"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
+                placeholder="Enter a name for your adventure..."
                 required
               />
             </div>
@@ -79,12 +81,13 @@ export function Home() {
                 type="text"
                 value={formDescription}
                 onChange={(e) => setFormDescription(e.target.value)}
+                placeholder="Describe the world and setting..."
                 required
               />
             </div>
             <div className="form-actions">
               <button type="submit" className="btn-primary" disabled={creating}>
-                {creating ? 'Creating...' : 'Create'}
+                {creating ? 'Creating...' : 'Create Campaign'}
               </button>
               <button type="button" className="btn-secondary" onClick={() => setShowForm(false)}>
                 Cancel
@@ -98,7 +101,7 @@ export function Home() {
           onSelect={(id) => navigate(`/campaign/${id}`)}
           onCreate={() => setShowForm(true)}
         />
-      </main>
+      </div>
     </div>
   )
 }
