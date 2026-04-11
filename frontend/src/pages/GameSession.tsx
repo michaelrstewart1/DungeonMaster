@@ -42,6 +42,7 @@ export function GameSession() {
   const [campaignName, setCampaignName] = useState<string>('Game Session')
   const [waitingForDM, setWaitingForDM] = useState(false)
   const [sessionTime, setSessionTime] = useState(0)
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
 
   const wsRef = useRef<GameWebSocket | null>(null)
 
@@ -49,6 +50,17 @@ export function GameSession() {
   useEffect(() => {
     const timer = setInterval(() => setSessionTime(t => t + 1), 1000)
     return () => clearInterval(timer)
+  }, [])
+
+  // ? key toggles keyboard help
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
+      if (e.key === '?') setShowKeyboardHelp(v => !v)
+      if (e.key === 'Escape') setShowKeyboardHelp(false)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
   }, [])
 
   // Derive token info from map tokens for the TokenLayer component
@@ -258,6 +270,9 @@ export function GameSession() {
         <div className="session-info">
           {gameState && <span className="phase-badge">{gameState.phase}</span>}
           <span className="session-timer" title="Session duration">⏱ {formatTime(sessionTime)}</span>
+          <button className="btn-keyboard-help" onClick={() => setShowKeyboardHelp(v => !v)} title="Keyboard shortcuts (?)">
+            ⌨
+          </button>
           <div className="ws-status">
             <span className={`ws-dot ${wsConnected ? 'connected' : 'disconnected'}`} />
             <span>{wsConnected ? 'Connected' : 'Connecting...'}</span>
@@ -315,6 +330,23 @@ export function GameSession() {
           <DiceRoller onRoll={handleDiceRoll} lastResult={lastDiceResult ?? undefined} />
         </aside>
       </div>
+
+      {/* Keyboard shortcuts overlay */}
+      {showKeyboardHelp && (
+        <div className="keyboard-help-overlay" onClick={() => setShowKeyboardHelp(false)}>
+          <div className="keyboard-help-panel" onClick={e => e.stopPropagation()}>
+            <h3>⌨ Keyboard Shortcuts</h3>
+            <div className="shortcut-list">
+              <div className="shortcut-item"><kbd>1</kbd>–<kbd>6</kbd> <span>Roll dice (d4–d20)</span></div>
+              <div className="shortcut-item"><kbd>Enter</kbd> <span>Send message</span></div>
+              <div className="shortcut-item"><kbd>Shift+Enter</kbd> <span>New line in chat</span></div>
+              <div className="shortcut-item"><kbd>?</kbd> <span>Toggle this help</span></div>
+              <div className="shortcut-item"><kbd>Esc</kbd> <span>Close overlay</span></div>
+            </div>
+            <button className="btn-close-help" onClick={() => setShowKeyboardHelp(false)}>Close</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

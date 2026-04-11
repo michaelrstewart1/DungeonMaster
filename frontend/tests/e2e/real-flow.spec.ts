@@ -439,4 +439,37 @@ test.describe('Real User Flows', () => {
     
     await page.screenshot({ path: 'test-results/real-14-session-timer.png', fullPage: true })
   })
+
+  test('Escape key closes campaign creation form', async ({ page }) => {
+    await page.goto('/')
+    await page.waitForSelector('.campaign-list')
+
+    // Open the form
+    await page.click('text=New Campaign')
+    await expect(page.locator('.campaign-form')).toBeVisible()
+
+    // Press Escape
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.campaign-form')).not.toBeVisible()
+
+    await page.screenshot({ path: 'test-results/real-15-escape-form.png', fullPage: true })
+  })
+
+  test('Campaign cards show creation date', async ({ page }) => {
+    const name = `Date-Test-${uniqueId()}`
+    await createAndOpenCampaign(page, name)
+
+    // Go back to home
+    await page.goto('/')
+    await page.waitForSelector('.campaign-card')
+
+    // Check that at least one card has a date
+    const dateEl = page.locator('.campaign-date').first()
+    await expect(dateEl).toBeVisible()
+    const dateText = await dateEl.textContent()
+    // Should contain a month abbreviation
+    expect(dateText).toMatch(/[A-Z][a-z]{2}/)
+
+    await page.screenshot({ path: 'test-results/real-16-campaign-date.png', fullPage: true })
+  })
 })

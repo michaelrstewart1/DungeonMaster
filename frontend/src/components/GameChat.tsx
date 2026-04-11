@@ -145,16 +145,24 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
       )}
 
       <form onSubmit={handleSubmit} className="chat-input-form">
-        <textarea
-          ref={textareaRef}
-          value={input}
-          onChange={(e) => { setInput(e.target.value); autoResize() }}
-          onKeyDown={handleKeyDown}
-          placeholder="What do you do? (Enter to send, Shift+Enter for new line)"
-          disabled={disabled}
-          className="chat-input"
-          rows={1}
-        />
+        <div className="chat-input-wrapper">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={(e) => { setInput(e.target.value); autoResize() }}
+            onKeyDown={handleKeyDown}
+            placeholder="What do you do? (Enter to send, Shift+Enter for new line)"
+            disabled={disabled}
+            className="chat-input"
+            rows={1}
+            maxLength={500}
+          />
+          {input.length > 400 && (
+            <span className={`chat-char-count ${input.length > 480 ? 'warn' : ''}`}>
+              {input.length}/500
+            </span>
+          )}
+        </div>
         <button type="submit" disabled={disabled || !input.trim()} className="chat-submit">
           Send
         </button>
