@@ -86,6 +86,38 @@ vi.mock('../components/CharacterImport', () => ({
   ),
 }))
 
+vi.mock('../components/CharacterPicker', () => ({
+  CharacterPicker: ({ onSelect, onCancel }: any) => (
+    <div data-testid="character-picker">
+      <button
+        data-testid="submit-premade"
+        onClick={() =>
+          onSelect({
+            name: 'Thorne Ironfist',
+            race: 'dwarf',
+            class_name: 'fighter',
+            level: 3,
+            hp: 34,
+            max_hp: 34,
+            ac: 18,
+            strength: 16,
+            dexterity: 12,
+            constitution: 16,
+            intelligence: 10,
+            wisdom: 13,
+            charisma: 8,
+          })
+        }
+      >
+        Choose
+      </button>
+      <button data-testid="cancel-premade" onClick={onCancel}>
+        Cancel
+      </button>
+    </div>
+  ),
+}))
+
 const mockNavigate = vi.fn()
 vi.mock('react-router-dom', async () => {
   const actual = await vi.importActual('react-router-dom')
@@ -175,19 +207,28 @@ describe('CampaignDetail', () => {
   it('shows character import when import button is clicked', async () => {
     renderWithRoute()
     await waitFor(() => {
-      expect(screen.getByText('Import Character')).toBeTruthy()
+      expect(screen.getByTestId('mode-chooser')).toBeTruthy()
     })
-    fireEvent.click(screen.getByText('Import Character'))
+    fireEvent.click(screen.getByTestId('btn-import'))
     expect(screen.getByTestId('character-import')).toBeTruthy()
   })
 
   it('shows character creator when manual button is clicked', async () => {
     renderWithRoute()
     await waitFor(() => {
-      expect(screen.getByText('Create Manually')).toBeTruthy()
+      expect(screen.getByTestId('mode-chooser')).toBeTruthy()
     })
-    fireEvent.click(screen.getByText('Create Manually'))
+    fireEvent.click(screen.getByTestId('btn-manual'))
     expect(screen.getByTestId('character-creator')).toBeTruthy()
+  })
+
+  it('shows character picker when premade button is clicked', async () => {
+    renderWithRoute()
+    await waitFor(() => {
+      expect(screen.getByTestId('mode-chooser')).toBeTruthy()
+    })
+    fireEvent.click(screen.getByTestId('btn-premade'))
+    expect(screen.getByTestId('character-picker')).toBeTruthy()
   })
 
   it('character creation calls API and refreshes', async () => {
@@ -198,10 +239,10 @@ describe('CampaignDetail', () => {
     })
     renderWithRoute()
     await waitFor(() => {
-      expect(screen.getByText('Create Manually')).toBeTruthy()
+      expect(screen.getByTestId('mode-chooser')).toBeTruthy()
     })
 
-    fireEvent.click(screen.getByText('Create Manually'))
+    fireEvent.click(screen.getByTestId('btn-manual'))
     fireEvent.click(screen.getByTestId('submit-character'))
 
     await waitFor(() => {

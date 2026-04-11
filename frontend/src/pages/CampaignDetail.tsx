@@ -4,9 +4,10 @@ import { getCampaign, getCharacters, createCharacter, createGameSession } from '
 import { CharacterSheet } from '../components/CharacterSheet'
 import { CharacterCreator } from '../components/CharacterCreator'
 import { CharacterImport } from '../components/CharacterImport'
+import { CharacterPicker } from '../components/CharacterPicker'
 import type { Campaign, Character, CharacterCreate } from '../types'
 
-type CharacterMode = 'none' | 'import' | 'manual'
+type CharacterMode = 'none' | 'premade' | 'manual' | 'import'
 
 export function CampaignDetail() {
   const { campaignId } = useParams<{ campaignId: string }>()
@@ -93,15 +94,46 @@ export function CampaignDetail() {
       <section className="campaign-characters">
         <div className="section-header">
           <h2>Characters</h2>
-          <div className="form-actions" style={{ marginTop: 0 }}>
-            <button className="btn-primary" onClick={() => setCharacterMode('import')}>
-              Import Character
+        </div>
+
+        {characterMode === 'none' && (
+          <div className="character-mode-chooser" data-testid="mode-chooser">
+            <button
+              className="mode-card mode-premade"
+              onClick={() => setCharacterMode('premade')}
+              data-testid="btn-premade"
+            >
+              <span className="mode-icon">⚔️</span>
+              <span className="mode-title">Choose a Hero</span>
+              <span className="mode-desc">Pick from pre-made characters with portraits and backstories</span>
             </button>
-            <button className="btn-secondary" onClick={() => setCharacterMode('manual')}>
-              Create Manually
+            <button
+              className="mode-card mode-custom"
+              onClick={() => setCharacterMode('manual')}
+              data-testid="btn-manual"
+            >
+              <span className="mode-icon">🔨</span>
+              <span className="mode-title">Create Custom</span>
+              <span className="mode-desc">Build your own character from scratch</span>
+            </button>
+            <button
+              className="mode-card mode-import"
+              onClick={() => setCharacterMode('import')}
+              data-testid="btn-import"
+            >
+              <span className="mode-icon">📜</span>
+              <span className="mode-title">Import Character</span>
+              <span className="mode-desc">Import from Roll20 or paste character JSON</span>
             </button>
           </div>
-        </div>
+        )}
+
+        {characterMode === 'premade' && (
+          <CharacterPicker
+            onSelect={handleCreateCharacter}
+            onCancel={() => setCharacterMode('none')}
+          />
+        )}
 
         {characterMode === 'import' && (
           <CharacterImport

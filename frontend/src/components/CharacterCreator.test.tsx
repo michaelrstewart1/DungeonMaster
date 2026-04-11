@@ -13,47 +13,55 @@ describe('CharacterCreator', () => {
 
   it('renders form fields for character creation', () => {
     render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
-    expect(screen.getByLabelText(/name/i)).toBeTruthy()
-    expect(screen.getByLabelText(/race/i)).toBeTruthy()
-    expect(screen.getByLabelText(/class/i)).toBeTruthy()
+    expect(screen.getByTestId('step-race')).toBeTruthy()
+    expect(screen.getByTestId('race-human')).toBeTruthy()
   })
 
-  it('renders race options', () => {
+  it('renders race options as visual cards', () => {
     render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
-    const raceSelect = screen.getByLabelText(/race/i)
-    expect(within(raceSelect).getByText('Human')).toBeTruthy()
-    expect(within(raceSelect).getByText('Elf')).toBeTruthy()
-    expect(within(raceSelect).getByText('Dwarf')).toBeTruthy()
+    expect(screen.getByTestId('race-human')).toBeTruthy()
+    expect(screen.getByTestId('race-elf')).toBeTruthy()
+    expect(screen.getByTestId('race-dwarf')).toBeTruthy()
   })
 
-  it('renders class options', () => {
+  it('renders class options on step 2', () => {
     render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
-    const classSelect = screen.getByLabelText(/class/i)
-    expect(within(classSelect).getByText(/fighter/i)).toBeTruthy()
-    expect(within(classSelect).getByText(/wizard/i)).toBeTruthy()
-    expect(within(classSelect).getByText(/rogue/i)).toBeTruthy()
+    // Navigate to class step
+    fireEvent.click(screen.getByText(/Next: Choose Class/))
+    expect(screen.getByTestId('step-class')).toBeTruthy()
+    expect(screen.getByTestId('class-fighter')).toBeTruthy()
+    expect(screen.getByTestId('class-wizard')).toBeTruthy()
+    expect(screen.getByTestId('class-rogue')).toBeTruthy()
   })
 
-  it('renders ability score inputs', () => {
+  it('renders ability score inputs on step 3', () => {
     render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
-    expect(screen.getByLabelText(/strength/i)).toBeTruthy()
-    expect(screen.getByLabelText(/dexterity/i)).toBeTruthy()
-    expect(screen.getByLabelText(/constitution/i)).toBeTruthy()
-    expect(screen.getByLabelText(/intelligence/i)).toBeTruthy()
-    expect(screen.getByLabelText(/wisdom/i)).toBeTruthy()
-    expect(screen.getByLabelText(/charisma/i)).toBeTruthy()
+    fireEvent.click(screen.getByText(/Next: Choose Class/))
+    fireEvent.click(screen.getByText(/Next: Abilities/))
+    expect(screen.getByTestId('step-abilities')).toBeTruthy()
+    const abilities = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
+    abilities.forEach((a) => {
+      expect(document.getElementById(`ability-${a}`)).toBeTruthy()
+    })
   })
 
   it('calls onCreate with character data on submit', () => {
     render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
+    // Select elf race
+    fireEvent.click(screen.getByTestId('race-elf'))
+    fireEvent.click(screen.getByText(/Next: Choose Class/))
+    // Select wizard class
+    fireEvent.click(screen.getByTestId('class-wizard'))
+    fireEvent.click(screen.getByText(/Next: Abilities/))
+    // Skip to review
+    fireEvent.click(screen.getByText(/Next: Review/))
+    // Enter name and submit
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Gandalf' } })
-    fireEvent.change(screen.getByLabelText(/race/i), { target: { value: 'human' } })
-    fireEvent.change(screen.getByLabelText(/class/i), { target: { value: 'wizard' } })
     fireEvent.submit(screen.getByRole('form'))
     expect(mockOnCreate).toHaveBeenCalledWith(
       expect.objectContaining({
         name: 'Gandalf',
-        race: 'human',
+        race: 'elf',
         class_name: 'wizard',
       })
     )
@@ -65,9 +73,35 @@ describe('CharacterCreator', () => {
     expect(mockOnCancel).toHaveBeenCalled()
   })
 
-  it('validates that name is required', () => {
+  it('validates that name is required on review step', () => {
     render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
+    fireEvent.click(screen.getByText(/Next: Choose Class/))
+    fireEvent.click(screen.getByText(/Next: Abilities/))
+    fireEvent.click(screen.getByText(/Next: Review/))
     const nameInput = screen.getByLabelText(/name/i) as HTMLInputElement
     expect(nameInput.required).toBe(true)
+  })
+
+  it('navigates back through steps', () => {
+    render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
+    fireEvent.click(screen.getByText(/Next: Choose Class/))
+    expect(screen.getByTestId('step-class')).toBeTruthy()
+    fireEvent.click(screen.getByText(/← Back/))
+    expect(screen.getByTestId('step-race')).toBeTruthy()
+  })
+
+  it('shows step indicator', () => {
+    render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
+    expect(screen.getByTestId('creator-steps')).toBeTruthy()
+  })
+
+  it('ability +/- buttons change values', () => {
+    render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
+    fireEvent.click(screen.getByText(/Next: Choose Class/))
+    fireEvent.click(screen.getByText(/Next: Abilities/))
+    const strInput = document.getElementById('ability-strength') as HTMLInputElement
+    expect(strInput.value).toBe('10')
+    fireEvent.click(screen.getByLabelText('Increase Strength'))
+    expect((document.getElementById('ability-strength') as HTMLInputElement).value).toBe('11')
   })
 })

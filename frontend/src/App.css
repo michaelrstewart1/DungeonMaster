@@ -429,33 +429,593 @@
 }
 
 /* ============================================================
-   Character Creator
+   Character Mode Chooser
    ============================================================ */
 
-.character-creator {
+.character-mode-chooser {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.mode-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 1.5rem 1rem;
+  background: var(--bg-medium);
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-align: center;
+}
+
+.mode-card:hover {
+  border-color: var(--gold-dim);
+  background: var(--bg-light);
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), var(--shadow-gold);
+}
+
+.mode-icon {
+  font-size: 2.5rem;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.mode-title {
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.mode-desc {
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+/* ============================================================
+   Character Portrait
+   ============================================================ */
+
+.character-portrait {
+  position: relative;
+  border-radius: 50%;
+  border: 3px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  transition: all 0.3s ease;
+}
+
+.character-portrait.selected {
+  border-width: 3px;
+  animation: portrait-pulse 2s ease-in-out infinite;
+}
+
+@keyframes portrait-pulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.2); }
+}
+
+.portrait-symbol {
+  position: relative;
+  z-index: 1;
+  filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5));
+}
+
+.portrait-frame {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 1px solid rgba(212, 168, 70, 0.15);
+  pointer-events: none;
+}
+
+/* ============================================================
+   Character Picker (Pre-made)
+   ============================================================ */
+
+.character-picker {
   background: var(--bg-medium);
   border: 1px solid var(--gold-border);
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 1.5rem;
   margin-bottom: 1.5rem;
   box-shadow: var(--shadow-gold);
 }
 
-.character-creator h2 {
-  font-size: 1.3rem;
-  margin-bottom: 1.25rem;
+.character-picker h2 {
+  font-size: 1.5rem;
+  text-align: center;
+  margin-bottom: 0.25rem;
+}
+
+.picker-subtitle {
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 0.9rem;
+  margin-bottom: 1.5rem;
+}
+
+.picker-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.picker-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0.5rem;
+  background: var(--bg-dark);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.picker-card:hover {
+  border-color: var(--card-accent, var(--gold-dim));
+  transform: translateY(-3px);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.3);
+}
+
+.picker-card.selected {
+  border-color: var(--gold);
+  background: var(--bg-light);
+  box-shadow: 0 0 20px rgba(212, 168, 70, 0.15);
+}
+
+.picker-card-info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.15rem;
+}
+
+.picker-card-name {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  color: var(--text-bright);
+  font-weight: 600;
   text-align: center;
 }
 
-.character-creator .ability-scores {
+.picker-card-class {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+/* Picker Detail Panel */
+
+.picker-detail {
+  background: var(--bg-dark);
+  border: 1px solid var(--gold-border);
+  border-radius: 10px;
+  padding: 1.25rem;
+  margin-bottom: 1.5rem;
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.picker-detail-header {
+  display: flex;
+  gap: 1.25rem;
+  margin-bottom: 1.25rem;
+}
+
+.picker-detail-title h3 {
+  font-size: 1.3rem;
+  margin-bottom: 0.25rem;
+}
+
+.picker-detail-subtitle {
+  font-size: 0.9rem;
+  color: var(--gold-dim);
+  margin-bottom: 0.5rem;
+  font-family: var(--font-display);
+}
+
+.picker-detail-backstory {
+  font-size: 0.85rem;
+  color: var(--text);
+  line-height: 1.5;
+  font-style: italic;
+}
+
+.picker-detail-stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.75rem;
+  grid-template-columns: auto 1fr auto;
+  gap: 1rem;
+}
+
+.picker-stat-group h4 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--gold-dim);
   margin-bottom: 0.5rem;
 }
 
-.character-creator .ability-scores .form-group {
-  margin-bottom: 0;
+.picker-stats-row {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.picker-stat {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 40px;
+}
+
+.picker-stat-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  letter-spacing: 0.05em;
+}
+
+.picker-stat-value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--text-bright);
+  font-family: var(--font-display);
+}
+
+.picker-stat-mod {
+  font-size: 0.7rem;
+  color: var(--gold-dim);
+}
+
+.picker-equipment {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.equipment-tag {
+  padding: 0.2rem 0.6rem;
+  background: var(--bg-medium);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+/* ============================================================
+   Character Creator (Wizard Style)
+   ============================================================ */
+
+.character-creator {
+  background: var(--bg-medium);
+  border: 1px solid var(--gold-border);
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-bottom: 1.5rem;
+  box-shadow: var(--shadow-gold);
+  position: relative;
+}
+
+.character-creator h2 {
+  font-size: 1.5rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+
+.character-creator h3 {
+  font-size: 1.1rem;
+  margin-bottom: 1rem;
+  text-align: center;
+  color: var(--gold-light);
+}
+
+/* Step indicator */
+
+.creator-steps {
+  display: flex;
+  justify-content: center;
+  gap: 0.25rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.creator-step {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.4rem 0.75rem;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 20px;
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.creator-step.active {
+  background: var(--gold-bg);
+  border-color: var(--gold-dim);
+  color: var(--gold);
+}
+
+.creator-step.complete {
+  color: var(--gold-dim);
+}
+
+.step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 600;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+}
+
+.creator-step.active .step-number {
+  background: var(--gold);
+  color: var(--bg-dark);
+  border-color: var(--gold);
+}
+
+.creator-step.complete .step-number {
+  background: transparent;
+  border-color: var(--gold-dim);
+  color: var(--gold-dim);
+}
+
+.step-label {
+  display: none;
+}
+
+@media (min-width: 600px) {
+  .step-label { display: inline; }
+}
+
+/* Race & Class grids */
+
+.race-grid, .class-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.race-card, .class-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 1rem 0.5rem;
+  background: var(--bg-dark);
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.race-card:hover, .class-card:hover {
+  border-color: var(--gold-dim);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.race-card.selected {
+  border-color: var(--gold);
+  background: var(--bg-light);
+  box-shadow: 0 0 16px rgba(212, 168, 70, 0.15);
+}
+
+.class-card.selected {
+  border-color: var(--class-color, var(--gold));
+  background: var(--bg-light);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--class-glow, var(--gold)) 25%, transparent);
+}
+
+.race-symbol {
+  font-size: 2rem;
+}
+
+.race-name {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: var(--text-bright);
+}
+
+.class-icon {
+  font-size: 2rem;
+}
+
+.class-name {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: var(--text-bright);
+}
+
+/* Ability scores */
+
+.points-budget {
+  text-align: center;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin-bottom: 1rem;
+}
+
+.ability-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.ability-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.75rem;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.ability-card-label {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  cursor: pointer;
+}
+
+.ability-short {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--gold);
+  letter-spacing: 0.1em;
+}
+
+.ability-name {
+  font-size: 0.75rem;
+  color: var(--text);
+}
+
+.ability-desc {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+}
+
+.ability-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.ability-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-medium);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--gold);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.ability-btn:hover:not(:disabled) {
+  background: var(--gold-bg);
+  border-color: var(--gold-dim);
+}
+
+.ability-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+.ability-input {
+  width: 40px;
+  text-align: center;
+  padding: 0.25rem;
+  background: var(--bg-medium);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-bright);
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-family: var(--font-display);
+}
+
+.ability-input:focus {
+  border-color: var(--gold-dim);
+  outline: none;
+}
+
+.ability-modifier {
+  font-size: 0.8rem;
+  color: var(--gold-dim);
+  font-weight: 600;
+}
+
+/* Review step */
+
+.review-layout {
+  display: flex;
+  gap: 1.5rem;
+  align-items: flex-start;
+  margin-bottom: 1.5rem;
+}
+
+.review-portrait {
+  flex-shrink: 0;
+}
+
+.review-info {
+  flex: 1;
+}
+
+.name-input {
+  font-size: 1.2rem !important;
+  font-family: var(--font-display) !important;
+  padding: 0.75rem !important;
+}
+
+.review-summary {
+  font-size: 0.95rem;
+  color: var(--gold-dim);
+  font-family: var(--font-display);
+  margin-bottom: 0.75rem;
+}
+
+.review-abilities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.review-stat {
+  padding: 0.2rem 0.5rem;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font-size: 0.8rem;
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+
+.review-derived {
+  display: flex;
+  gap: 1rem;
+  font-size: 0.9rem;
+  color: var(--gold-light);
+  font-weight: 600;
 }
 
 /* ============================================================
