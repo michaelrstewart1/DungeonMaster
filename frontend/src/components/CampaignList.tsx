@@ -63,7 +63,13 @@ export function CampaignList({ campaigns, onSelect, onCreate, onDelete }: Campai
                 </button>
               )}
               <h3>{campaign.name}</h3>
-              <p className="campaign-description">{campaign.description}</p>
+              {campaign.description && (
+                <p className="campaign-description" title={campaign.description}>
+                  {campaign.description.length > 80 
+                    ? campaign.description.slice(0, 80) + '…' 
+                    : campaign.description}
+                </p>
+              )}
               <div className="campaign-card-footer">
                 <span className="campaign-meta">
                   {campaign.character_ids.length} {campaign.character_ids.length === 1 ? 'player' : 'players'}
