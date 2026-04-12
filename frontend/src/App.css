@@ -605,13 +605,6 @@
   text-align: center;
 }
 
-.btn-start-game:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  animation: none;
-  filter: grayscale(0.5);
-}
-
 .campaign-actions::before {
   content: '';
   position: absolute;
@@ -635,6 +628,19 @@
   letter-spacing: 0.08em;
   border: 1px solid var(--gold);
   text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.btn-start-game:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  animation: none !important;
+  filter: grayscale(1);
+  background: var(--bg-lighter) !important;
+  color: var(--text-dim) !important;
+  border-color: var(--bg-lighter);
+  box-shadow: none !important;
+  text-shadow: none;
+  transform: none !important;
 }
 
 .btn-start-game:hover {

@@ -34,11 +34,36 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');
-    throw new ApiError(response.status, errorText);
+    // Parse FastAPI error responses into human-readable messages
+    const friendlyMessage = parseApiError(response.status, errorText);
+    throw new ApiError(response.status, friendlyMessage);
   }
 
   if (response.status === 204) return undefined as T;
   return response.json();
+}
+
+function parseApiError(status: number, raw: string): string {
+  try {
+    const parsed = JSON.parse(raw);
+    // FastAPI validation error: {"detail": [{"msg": "...", "loc": [...]}]}
+    if (Array.isArray(parsed.detail)) {
+      const fields = parsed.detail.map((e: { loc?: string[]; msg?: string }) => {
+        const field = e.loc?.slice(1).join('.') || 'unknown';
+        return `${field}: ${e.msg || 'invalid'}`;
+      });
+      return `Validation error — ${fields.join(', ')}`;
+    }
+    // FastAPI simple error: {"detail": "Campaign not found"}
+    if (typeof parsed.detail === 'string') {
+      return parsed.detail;
+    }
+  } catch { /* not JSON, use raw */ }
+
+  if (status === 404) return 'Not found. The resource may have been deleted.';
+  if (status === 422) return 'Invalid request data.';
+  if (status >= 500) return 'Server error. Please try again.';
+  return raw.length > 200 ? raw.slice(0, 200) + '…' : raw;
 }
 
 // Health
