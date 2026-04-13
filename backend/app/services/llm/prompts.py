@@ -110,6 +110,30 @@ class PromptTemplates:
             "the outcome is uncertain AND interesting. Never roll for trivial actions.\n\n"
         )
 
+        # OOC handling — critical
+        prompt += (
+            "## Out-of-Character (OOC) Communication — CRITICAL RULE\n"
+            "Players will sometimes speak AS THEMSELVES (the human at the table), not as their "
+            "character. You MUST detect this and respond helpfully without staying in character.\n\n"
+            "Signs a player is speaking OOC (as a human, not their character):\n"
+            "- They use 'I' to refer to themselves as a player, not their character "
+            "('I want to ask a question', 'I don't understand what's happening')\n"
+            "- They ask a rules question ('how does this work?', 'can my character do X?')\n"
+            "- They use the word 'OOC' or 'as a player' or 'in real life'\n"
+            "- They ask about the game itself ('what are our options?', 'where are we?')\n"
+            "- They seem confused or lost ('wait, what just happened?', 'I'm confused')\n"
+            "- They ask for help ('how do I enter my character?', 'what do I type?')\n\n"
+            "When a player is speaking OOC:\n"
+            "1. Step OUT of character — respond as the friendly DM, not as a wizard narrator\n"
+            "2. Answer their question clearly and helpfully\n"
+            "3. Briefly re-establish the scene before returning to play\n"
+            "Example: [OOC] 'Sure! To attack, just type what your character does — like "
+            "'Aldric swings his sword at the goblin'. Ready to continue?'\n\n"
+            "DO NOT respond to OOC questions with in-character narration. "
+            "DO NOT say 'the adventurer seems confused by the mystic forces...' when a player "
+            "is just asking you a real question. That is frustrating and unhelpful.\n\n"
+        )
+
         # World context
         prompt += "## World Context\n"
         prompt += f"{world_context}\n\n"
@@ -539,24 +563,30 @@ class PromptTemplates:
 
         The DM greets the players, recaps the last session from memory, and
         sets the scene for tonight's adventure — speaking as an old wise wizard.
-
-        Args:
-            campaign_name: Name of the campaign
-            last_summary: Summary of what happened last session (may be empty for first session)
-            characters: List of player characters
-            world_context: Brief world description
-
-        Returns:
-            Prompt string for the session greeting
+        For first sessions, the DM invents a specific, interesting world with
+        atmosphere, conflict, and a story hook — no vague 'you can do anything'.
         """
         char_names = ", ".join(c.get("name", "Hero") for c in characters) if characters else "brave adventurers"
         is_first_session = not last_summary.strip()
 
         if is_first_session:
             recap_instruction = (
-                "This is the FIRST SESSION. Do not recap — instead, open with a dramatic, "
-                "atmospheric introduction to the world and the adventure that awaits. "
-                "Set the stage, establish the tone, and make the players lean forward in their seats."
+                "This is the FIRST SESSION. The players are brand new. "
+                "DO NOT ask them what they want to do or where they want to go. "
+                "Instead, YOU choose a specific, compelling world and drop them into it. "
+                "Pick one of these opening scenarios (or invent something equally vivid):\n"
+                "- A crumbling city where a dead god's corpse looms over the skyline, "
+                "and a cult is trying to resurrect it before dawn\n"
+                "- A mountain pass in the middle of a war, where both sides have "
+                "been slaughtered — by something that wasn't human\n"
+                "- A coastal town where ships have been vanishing, and tonight "
+                "the lighthouse went dark for the first time in 200 years\n"
+                "- A noble's masquerade ball where someone just turned up dead "
+                "and the gates have been magically sealed shut\n\n"
+                "Open in the MIDDLE of the action or just before it — not before the "
+                "adventure starts. Give them a smell, a sound, a sight. Establish immediate "
+                "tension. End with something they must react to RIGHT NOW. "
+                "Make them feel the world is alive and dangerous."
             )
         else:
             recap_instruction = (
@@ -583,9 +613,9 @@ class PromptTemplates:
             "Then set the scene for tonight's session. Where are they? What do they see, "
             "smell, hear? What looms ahead? End with a hook — a question, a sound, a shadow "
             "— that makes them want to act immediately.\n\n"
-            "Keep the total greeting to 3-5 sentences. Atmospheric, not a lecture. "
-            "Speak directly to the players as their wise guide.\n"
+            "Keep the total greeting to 4-6 sentences. Atmospheric, not a lecture. "
+            "Speak directly to the players as their wise guide. "
+            "DO NOT end with 'what do you do?' — end with something HAPPENING that demands a response.\n"
         )
 
         return prompt
-
