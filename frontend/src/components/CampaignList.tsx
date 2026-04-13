@@ -6,12 +6,14 @@ interface CampaignListProps {
   onSelect: (id: string) => void
   onCreate: () => void
   onDelete?: (id: string) => void
+  onRandomize?: () => void
+  randomizing?: boolean
   loading?: boolean
 }
 
 const CAMPAIGN_ICONS = ['🏰', '🐉', '⚔️', '🗺️', '🏔️', '🌋', '🏜️', '🌊']
 
-export function CampaignList({ campaigns, onSelect, onCreate, onDelete, loading }: CampaignListProps) {
+export function CampaignList({ campaigns, onSelect, onCreate, onDelete, onRandomize, randomizing, loading }: CampaignListProps) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
 
   const handleDelete = (e: React.MouseEvent, id: string) => {
@@ -28,9 +30,21 @@ export function CampaignList({ campaigns, onSelect, onCreate, onDelete, loading 
     <div className="campaign-list">
       <div className="campaign-list-header">
         <h2>Campaigns</h2>
-        <button onClick={onCreate} className="btn-primary">
-          New Campaign
-        </button>
+        <div className="campaign-list-actions">
+          {onRandomize && (
+            <button
+              onClick={onRandomize}
+              className="btn-randomize"
+              disabled={randomizing}
+              title="Let the DM decide everything — random world, tone, and story"
+            >
+              {randomizing ? '✨ Generating...' : '🎲 Surprise Me'}
+            </button>
+          )}
+          <button onClick={onCreate} className="btn-primary">
+            New Campaign
+          </button>
+        </div>
       </div>
 
       {loading ? (

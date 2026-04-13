@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CampaignList } from '../components/CampaignList'
-import { getCampaigns, createCampaign, deleteCampaign } from '../api/client'
+import { getCampaigns, createCampaign, deleteCampaign, randomizeCampaign } from '../api/client'
 import type { Campaign } from '../types'
 
 export function Home() {
@@ -12,6 +12,7 @@ export function Home() {
   const [formName, setFormName] = useState('')
   const [formDescription, setFormDescription] = useState('')
   const [creating, setCreating] = useState(false)
+  const [randomizing, setRandomizing] = useState(false)
   const navigate = useNavigate()
 
   // Escape key closes the form
@@ -63,6 +64,18 @@ export function Home() {
       await loadCampaigns()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to delete campaign')
+    }
+  }
+
+  const handleRandomize = async () => {
+    setRandomizing(true)
+    setError(null)
+    try {
+      const campaign = await randomizeCampaign()
+      navigate(`/campaign/${campaign.id}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to randomize campaign')
+      setRandomizing(false)
     }
   }
 
@@ -157,6 +170,8 @@ export function Home() {
           onSelect={(id) => navigate(`/campaign/${id}`)}
           onCreate={() => setShowForm(true)}
           onDelete={handleDelete}
+          onRandomize={handleRandomize}
+          randomizing={randomizing}
           loading={loading}
         />
       </div>

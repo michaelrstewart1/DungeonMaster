@@ -97,6 +97,10 @@ export async function deleteCampaign(id: string): Promise<void> {
   return request<void>(`/campaigns/${id}`, { method: 'DELETE' });
 }
 
+export async function randomizeCampaign(): Promise<Campaign> {
+  return request<Campaign>('/campaigns/randomize', { method: 'POST' });
+}
+
 // Characters
 export async function getCharacters(campaignId?: string): Promise<Character[]> {
   const query = campaignId ? `?campaign_id=${campaignId}` : '';
