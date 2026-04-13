@@ -4,7 +4,6 @@ import type {
   CampaignCreate,
   Character,
   CharacterCreate,
-  GameSession,
   GameState,
   HealthResponse,
   PlayerAction,
@@ -154,7 +153,7 @@ export async function getGameState(sessionId: string): Promise<GameState> {
   const raw = await request<GameState & { current_phase?: string }>(`/game/sessions/${sessionId}/state`);
   // Backend returns current_phase, frontend expects phase
   if (raw.current_phase && !raw.phase) {
-    (raw as Record<string, unknown>).phase = raw.current_phase;
+    (raw as unknown as Record<string, unknown>).phase = raw.current_phase;
   }
   return raw;
 }

@@ -29,7 +29,7 @@ const TOAST_ICONS: Record<ToastType, string> = {
 
 function ToastItem({ toast, onRemove }: { toast: Toast; onRemove: (id: string) => void }) {
   const [exiting, setExiting] = useState(false)
-  const timerRef = useRef<ReturnType<typeof setTimeout>>()
+  const timerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
     const duration = toast.duration ?? 4000

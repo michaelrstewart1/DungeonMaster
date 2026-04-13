@@ -3,36 +3,6 @@ import type { Character } from '../types'
 import { CharacterPortrait } from './CharacterPortrait'
 import { generatePortrait } from '../api/client'
 
-const CLASS_ICONS: Record<string, string> = {
-  fighter: '⚔️',
-  wizard: '🔮',
-  rogue: '🗡️',
-  cleric: '✝️',
-  ranger: '🏹',
-  paladin: '🛡️',
-  barbarian: '🪓',
-  bard: '🎵',
-  druid: '🌿',
-  monk: '👊',
-  sorcerer: '✨',
-  warlock: '🔥',
-}
-
-const CLASS_COLORS: Record<string, string> = {
-  fighter: '#8b4513',
-  wizard: '#4a0080',
-  rogue: '#2d2d2d',
-  cleric: '#daa520',
-  ranger: '#228b22',
-  paladin: '#c0c0c0',
-  barbarian: '#8b0000',
-  bard: '#6a0dad',
-  druid: '#006400',
-  monk: '#d2691e',
-  sorcerer: '#ff4500',
-  warlock: '#800080',
-}
-
 const ABILITY_FULL_NAMES: Record<string, string> = {
   strength: 'Strength — Physical power, melee attacks',
   dexterity: 'Dexterity — Agility, reflexes, ranged attacks',
