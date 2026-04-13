@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGameState, submitAction, getCampaign } from '../api/client'
+import { getGameState, submitAction, getCampaign, getSessionGreeting } from '../api/client'
 import { GameWebSocket } from '../api/websocket'
 import { GameChat, type ChatMessage } from '../components/GameChat'
 import { DiceRoller } from '../components/DiceRoller'
@@ -45,6 +45,19 @@ export function GameSession() {
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
 
   const wsRef = useRef<GameWebSocket | null>(null)
+  const audioWsRef = useRef<WebSocket | null>(null)
+  const audioChunksRef = useRef<Uint8Array[]>([])
+  const isMutedRef = useRef(false)
+
+  // Play DM text via TTS audio websocket
+  const speakText = useCallback((text: string) => {
+    if (isMutedRef.current) return
+    const ws = audioWsRef.current
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      audioChunksRef.current = []
+      ws.send(JSON.stringify({ type: 'synthesize', text }))
+    }
+  }, [])
 
   // Session timer
   useEffect(() => {
@@ -86,7 +99,6 @@ export function GameSession() {
     try {
       const state = await getGameState(sessionId)
       setGameState(state)
-      setMessages([{ role: 'dm', text: state.current_scene || `Welcome to the adventure!`, timestamp: Date.now() }])
       // Fetch campaign name for the header
       if (state.campaign_id) {
         try {
@@ -94,6 +106,14 @@ export function GameSession() {
           setCampaignName(campaign.name)
         } catch { /* fallback to default */ }
       }
+      // Fetch the real AI greeting + scene set
+      let openingText = state.current_scene || 'Welcome, adventurers. Your legend begins tonight.'
+      try {
+        openingText = await getSessionGreeting(sessionId)
+      } catch { /* fallback to current_scene */ }
+      setMessages([{ role: 'dm', text: openingText, timestamp: Date.now() }])
+      // Speak the opening after a short delay (let audio WS connect first)
+      setTimeout(() => speakText(openingText), 1500)
       if (state.combat_state) {
         setCombatants(
           state.combat_state.initiative_order.map((id, idx) => ({
@@ -111,12 +131,41 @@ export function GameSession() {
     } finally {
       setLoading(false)
     }
-  }, [sessionId])
+  }, [sessionId, speakText])
 
   useEffect(() => {
     loadGameState()
 
     if (!sessionId) return
+
+    // Audio WebSocket for TTS voice
+    const wsBase = import.meta.env.VITE_WS_URL || `ws://${window.location.host}`
+    const audioWs = new WebSocket(`${wsBase}/ws/audio/${sessionId}`)
+    audioWsRef.current = audioWs
+    audioWs.binaryType = 'arraybuffer'
+    audioWs.onmessage = (event) => {
+      if (event.data instanceof ArrayBuffer) {
+        // Accumulate audio chunks
+        audioChunksRef.current.push(new Uint8Array(event.data))
+      } else {
+        // JSON message — check for audio_done signal
+        try {
+          const msg = JSON.parse(event.data as string)
+          if (msg.type === 'audio_done' && audioChunksRef.current.length > 0) {
+            const total = audioChunksRef.current.reduce((acc, c) => acc + c.length, 0)
+            const merged = new Uint8Array(total)
+            let offset = 0
+            for (const chunk of audioChunksRef.current) { merged.set(chunk, offset); offset += chunk.length }
+            audioChunksRef.current = []
+            const blob = new Blob([merged], { type: 'audio/mpeg' })
+            const url = URL.createObjectURL(blob)
+            const audio = new Audio(url)
+            audio.onended = () => URL.revokeObjectURL(url)
+            audio.play().catch(() => {})
+          }
+        } catch { /* ignore non-JSON */ }
+      }
+    }
 
     const ws = new GameWebSocket(sessionId)
     wsRef.current = ws
@@ -132,6 +181,7 @@ export function GameSession() {
           setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
           setAvatarState((prev) => ({ ...prev, expression: 'speaking', isSpeaking: true }))
           setTimeout(() => setAvatarState((prev) => ({ ...prev, isSpeaking: false, expression: 'neutral' })), 2000)
+          speakText(text)
           if (result.dice_results?.length) {
             setLastDiceResult(result.dice_results[0])
           }
@@ -165,8 +215,10 @@ export function GameSession() {
       unsubStatus()
       ws.disconnect()
       wsRef.current = null
+      audioWs.close()
+      audioWsRef.current = null
     }
-  }, [sessionId, loadGameState])
+  }, [sessionId, loadGameState, speakText])
 
   const handleSubmitAction = useCallback(async (action: string) => {
     if (!sessionId) return
@@ -174,13 +226,17 @@ export function GameSession() {
     setWaitingForDM(true)
     try {
       const result = await submitAction(sessionId, { type: 'interact', message: action })
-      setMessages((prev) => [...prev, { role: 'dm', text: result.narration || 'The DM ponders...', timestamp: Date.now() }])
+      const text = result.narration || 'The DM ponders...'
+      setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
+      setAvatarState((prev) => ({ ...prev, expression: 'speaking', isSpeaking: true }))
+      setTimeout(() => setAvatarState((prev) => ({ ...prev, isSpeaking: false, expression: 'neutral' })), 2000)
+      speakText(text)
     } catch {
       setMessages((prev) => [...prev, { role: 'dm', text: 'Failed to send action. Try again.', timestamp: Date.now() }])
     } finally {
       setWaitingForDM(false)
     }
-  }, [sessionId])
+  }, [sessionId, speakText])
 
   const handleDiceRoll = useCallback((notation: string) => {
     if (wsRef.current) {
@@ -215,7 +271,10 @@ export function GameSession() {
   }, [])
 
   const handleMuteToggle = useCallback(() => {
-    setAudioState((prev) => ({ ...prev, muted: !prev.muted }))
+    setAudioState((prev) => {
+      isMutedRef.current = !prev.muted
+      return { ...prev, muted: !prev.muted }
+    })
   }, [])
 
   const handleFogReveal = useCallback((x: number, y: number) => {

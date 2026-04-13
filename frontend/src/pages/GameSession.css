@@ -52,7 +52,7 @@
 .game-header h1 {
   margin: 0;
   font-family: var(--font-display);
-  font-size: 1.15rem;
+  font-size: 1.5rem;
   color: var(--gold);
   letter-spacing: 0.04em;
   text-shadow: 0 0 15px rgba(212, 168, 70, 0.15);
@@ -787,7 +787,7 @@
 
 .message-role {
   font-family: var(--font-display);
-  font-size: 0.72rem;
+  font-size: 1rem;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -819,8 +819,8 @@
 
 .message-text {
   font-family: var(--font-body);
-  font-size: 0.95rem;
-  line-height: 1.6;
+  font-size: 1.25rem;
+  line-height: 1.8;
   color: var(--text-bright);
   margin: 0;
 }
@@ -909,13 +909,13 @@
 
 .chat-input {
   flex: 1;
-  padding: 0.7rem 1rem;
+  padding: 0.9rem 1.2rem;
   background: var(--bg-medium);
   color: var(--text-bright);
   border: 1px solid var(--border);
   border-radius: 8px;
   font-family: var(--font-ui);
-  font-size: 0.9rem;
+  font-size: 1.15rem;
   outline: none;
   transition: all 0.2s;
 }
@@ -932,11 +932,11 @@
 }
 
 .chat-submit {
-  padding: 0.65rem 1.5rem;
+  padding: 0.9rem 2rem;
   background: linear-gradient(135deg, var(--gold-dim), var(--gold));
   color: var(--bg-darkest);
   font-family: var(--font-display);
-  font-size: 0.8rem;
+  font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;

@@ -178,4 +178,9 @@ export async function endCombat(sessionId: string): Promise<GameState> {
   });
 }
 
+export async function getSessionGreeting(sessionId: string): Promise<string> {
+  const result = await request<{ greeting: string }>(`/game/sessions/${sessionId}/greeting`);
+  return result.greeting;
+}
+
 export { ApiError };

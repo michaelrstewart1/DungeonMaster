@@ -83,6 +83,8 @@ async def websocket_audio_endpoint(websocket: WebSocket, session_id: str):
                             # Stream audio chunks
                             async for chunk in tts_provider.synthesize_stream(text):
                                 await websocket.send_bytes(chunk.data)
+                            # Signal end of audio stream so client can play it
+                            await websocket.send_json({"type": "audio_done"})
 
                 except (json.JSONDecodeError, ValueError):
                     # Ignore malformed messages
