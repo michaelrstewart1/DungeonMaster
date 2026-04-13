@@ -2,7 +2,7 @@
    AI Dungeon Master — Dark Fantasy Theme
    ============================================================ */
 
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Crimson+Text:ital,wght@0,400;0,600;1,400&family=Inter:wght@400;500;600&display=swap');
+/* Fonts loaded via <link> in index.html to avoid render blocking */
 
 :root {
   /* Core palette */

@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Link, useLocation } from 'react-router-dom'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, Component, type ReactNode } from 'react'
 import { Home } from './pages/Home'
 import { CampaignDetail } from './pages/CampaignDetail'
 import { GameSession } from './pages/GameSession'
@@ -7,6 +7,31 @@ import { NotFound } from './pages/NotFound'
 import { Footer } from './components/Footer'
 import { ToastProvider } from './components/Toast'
 import './App.css'
+
+class ErrorBoundary extends Component<{ children: ReactNode }, { error: string | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error: Error) {
+    return { error: error.message || 'Something went wrong' }
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ background: '#0d0d14', color: '#e8c36a', minHeight: '100vh', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '2rem', fontFamily: 'sans-serif', fontSize: '1.2rem' }}>
+          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>⚠️</div>
+          <h2 style={{ color: '#e8c36a', marginBottom: '1rem' }}>The dungeon collapsed!</h2>
+          <p style={{ color: '#b0b0c8', marginBottom: '2rem', maxWidth: '600px', textAlign: 'center' }}>{this.state.error}</p>
+          <button onClick={() => window.location.reload()} style={{ background: '#d4a846', color: '#0d0d14', border: 'none', padding: '0.75rem 2rem', borderRadius: '8px', fontSize: '1rem', cursor: 'pointer', fontWeight: 700 }}>
+            Try Again
+          </button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 function AppLayout() {
   const [scrolled, setScrolled] = useState(false)
@@ -45,11 +70,13 @@ function AppLayout() {
 
 function App() {
   return (
-    <BrowserRouter>
-      <ToastProvider>
-        <AppLayout />
-      </ToastProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <ToastProvider>
+          <AppLayout />
+        </ToastProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   )
 }
 
