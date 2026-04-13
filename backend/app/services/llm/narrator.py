@@ -64,6 +64,7 @@ class DMNarrator:
         player_action: str,
         characters: list[dict],
         world_context: str,
+        story_bible: str = "",
     ) -> str:
         """Narrate an exploration action.
         
@@ -72,16 +73,19 @@ class DMNarrator:
             player_action: What the player character is doing
             characters: List of player characters
             world_context: Description of the world
+            story_bible: Secret narrative plan for the campaign (optional)
             
         Returns:
             Narration string describing what happens
         """
         try:
             # Build context information
-            game_state = {
+            game_state: dict = {
                 "current_scene": scene.get("name", "Unknown"),
                 "action": player_action,
             }
+            if story_bible:
+                game_state["story_bible"] = story_bible
 
             # Create system prompt
             system_prompt = PromptTemplates.dm_system_prompt(
@@ -333,6 +337,56 @@ class DMNarrator:
     def clear_history(self) -> None:
         """Clear the conversation history."""
         self._history = []
+
+    async def generate_story_bible(
+        self,
+        campaign_name: str,
+        world_context: str = "",
+        tone: str = "dark_fantasy",
+    ) -> str:
+        """Generate a secret story bible for the DM to drive the campaign narrative.
+
+        Called once per campaign and cached in storage. The bible is injected
+        into every dm_system_prompt so the DM has a destination and actively
+        steers toward it — planting clues, advancing villains, escalating stakes.
+
+        Args:
+            campaign_name: Name of the campaign
+            world_context: Existing world description (may be empty)
+            tone: Narrative tone (dark_fantasy, gritty, comedic, storybook)
+
+        Returns:
+            Story bible string (kept secret from players)
+        """
+        try:
+            system_prompt = PromptTemplates.story_bible_generation_prompt(
+                campaign_name=campaign_name,
+                world_context=world_context,
+                tone=tone,
+            )
+            response = await self._llm.generate(
+                messages=[LLMMessage(role="user", content="Generate the story bible now.")],
+                system_prompt=system_prompt,
+                temperature=0.9,
+                max_tokens=800,
+            )
+            return response.content
+        except Exception as e:
+            logger.error("Error in generate_story_bible: %s", e)
+            return (
+                "THE WORLD: Valdris — a realm where the sun sets permanently every winter "
+                "solstice, plunging it into a weeks-long dark. The dead grow restless in the dark.\n"
+                "THE VILLAIN: Malachar the Undying, a former paladin who discovered the gods "
+                "are silent because they are dead. He seeks to replace them with himself — "
+                "by completing a ritual that requires 1,000 willing sacrifices.\n"
+                "TICKING CLOCK: Malachar's cult has 940 willing followers. They need 60 more. "
+                "They are recruiting from desperate towns RIGHT NOW.\n"
+                "ACT 1 HOOK: A village healer named Sister Voss has vanished. The players are "
+                "asked to find her. She joined the cult willingly — and left a coded message.\n"
+                "FORESHADOWING: (1) A silver sun-disk symbol on every cult recruit's wrist. "
+                "(2) Villagers whisper 'the quiet god provides'. "
+                "(3) Temple records show 12 clerics lost their spells on the same night — 6 months ago.\n"
+            )
 
     async def generate_session_greeting(
         self,

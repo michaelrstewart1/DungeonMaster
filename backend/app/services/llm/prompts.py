@@ -162,7 +162,34 @@ class PromptTemplates:
                 prompt += f"- {formatted_key}: {value}\n"
             prompt += "\n"
 
+        # Story bible injection
+        if game_state.get("story_bible"):
+            prompt += (
+                "## Your Story — SECRET NARRATIVE BIBLE\n"
+                "The following is your private story plan. The players do NOT know this. "
+                "You are the AUTHOR driving toward this destination, not just a referee reacting.\n\n"
+                f"{game_state['story_bible']}\n\n"
+            )
+
         prompt += (
+            "## Story Director Rules — CRITICAL\n"
+            "You are the AUTHOR of this story, not just a passive referee. You have a narrative "
+            "destination and you are steering toward it:\n"
+            "- **Plant seeds proactively**: drop clues, rumors, and foreshadowing every few "
+            "exchanges without waiting for players to ask. A strange symbol carved in stone. "
+            "A merchant who knows more than he lets on. A distant horn in the night.\n"
+            "- **The villain is active**: your antagonist is doing things RIGHT NOW, off-screen. "
+            "Every few turns, mention evidence of their plans progressing — the players should "
+            "feel a ticking clock even when they're not fighting.\n"
+            "- **Named recurring NPCs**: build a cast. When a guard or innkeeper appears, give "
+            "them a name, a quirk, an agenda. Bring them back. Make the world feel populated.\n"
+            "- **Escalate toward Act 2**: each session should feel like it's building toward "
+            "something bigger. End every session with a new revelation, a complication, or a "
+            "hook that makes them desperate to come back.\n"
+            "- **Give players meaningful choices**: don't just say yes/no — present dilemmas. "
+            "'You can stop the cultists NOW but the hostages will die' > 'the cultists retreat'.\n"
+            "- **Consequences persist**: if players burn a bridge (literally or figuratively), "
+            "the world remembers. NPCs talk. Factions react. Nothing resets.\n\n"
             "## Your Role\n"
             "Narrate engaging, immersive experiences. Respond to player actions with vivid "
             "descriptions, manage encounters, and keep the story moving. Stay consistent with "
@@ -619,3 +646,56 @@ class PromptTemplates:
         )
 
         return prompt
+
+    @staticmethod
+    def story_bible_generation_prompt(
+        campaign_name: str,
+        world_context: str = "",
+        tone: str = "dark_fantasy",
+    ) -> str:
+        """Generate a prompt that asks the DM to invent its own story bible.
+
+        The story bible is generated once per campaign and secretly injected into
+        every DM system prompt so the DM has a destination to drive toward.
+        Players never see it — it powers the DM's proactive storytelling.
+        """
+        tone_hint = {
+            "dark_fantasy": "dark, Gothic, high-stakes",
+            "gritty": "brutal, grounded, morally grey",
+            "comedic": "absurd, witty, self-aware",
+            "storybook": "wondrous, warm, fairy-tale",
+        }.get(tone, "dramatic and atmospheric")
+
+        context_section = f"\nExisting World Context:\n{world_context}\n" if world_context else ""
+
+        return (
+            "You are a master storyteller designing a complete D&D 5e campaign in the "
+            f"{tone_hint} style.{context_section}\n"
+            f"Campaign Name: {campaign_name}\n\n"
+            "Create a STORY BIBLE — a private narrative plan the DM will secretly use to "
+            "drive the story forward session by session. Players will never see this.\n\n"
+            "Your story bible MUST include all of the following:\n\n"
+            "1. **THE WORLD** (2-3 sentences): Name it. Give it one defining feature that "
+            "makes it unlike generic fantasy (e.g., 'the sun hasn't risen in 40 days', "
+            "'all magic comes from a dying god's heartbeat', 'the dead outnumber the living').\n\n"
+            "2. **THE MAIN VILLAIN** (name + goal + method + secret weakness): "
+            "Specific and sympathetic — they believe they are right. "
+            "Their plan is already in motion BEFORE the players arrive.\n\n"
+            "3. **THE TICKING CLOCK**: What terrible thing happens if the players do NOTHING? "
+            "Give it a sense of urgency (e.g., 'in three sessions, the ritual completes', "
+            "'the city falls within a week of in-game time'). Mention it often — indirectly.\n\n"
+            "4. **ACT 1 — THE HOOK** (sessions 1-2): The players stumble into a local problem "
+            "that secretly connects to the main villain. Name a specific location they start in "
+            "and one immediate crisis they face.\n\n"
+            "5. **ACT 2 — RISING STAKES** (sessions 3-5): The players learn the villain is real. "
+            "Two complications: one betrayal/twist, one impossible choice they must face.\n\n"
+            "6. **ACT 3 — THE CLIMAX**: The final confrontation location, the villain's last "
+            "gambit, and what victory looks like — but also what it costs.\n\n"
+            "7. **3 NAMED NPCs** with: name, role, personality in one word, secret agenda, "
+            "and how they connect to the main plot.\n\n"
+            "8. **3 FORESHADOWING SEEDS** to plant early: specific details the DM should drop "
+            "in sessions 1-2 that will pay off later (a symbol, a name, a prophecy fragment).\n\n"
+            "Be SPECIFIC. No generic 'dark evil threatens the land'. "
+            "Give names, places, and concrete details. "
+            "Keep total length under 500 words. Write as a reference document, not prose.\n"
+        )

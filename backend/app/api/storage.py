@@ -12,6 +12,7 @@ users: dict[str, dict[str, Any]] = {}
 tokens: dict[str, str] = {}  # token -> user_id
 vision_analyses: dict[str, dict[str, Any]] = {}
 session_summaries: dict[str, str] = {}  # campaign_id -> last session summary text
+story_bibles: dict[str, str] = {}  # campaign_id -> secret story bible
 
 
 def reset() -> None:
@@ -24,6 +25,7 @@ def reset() -> None:
     tokens.clear()
     vision_analyses.clear()
     session_summaries.clear()
+    story_bibles.clear()
 
 
 def generate_id() -> str:

@@ -142,11 +142,13 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                 "name": "Current Scene",
                 "description": session.get("current_scene", ""),
             }
+            story_bible = storage.story_bibles.get(campaign_id, "")
             return await narrator.narrate_exploration(
                 scene=scene,
                 player_action=player_action,
                 characters=characters,
                 world_context=world_context,
+                story_bible=story_bible,
             )
         except Exception:
             pass  # fall through to keyword mock
@@ -212,12 +214,32 @@ async def get_session_greeting(request: Request, session_id: str) -> dict:
     last_summary = storage.session_summaries.get(campaign_id, "")
 
     narrator = getattr(request.app.state, "narrator", None)
+
+    # Generate a story bible for this campaign if one doesn't exist yet
+    if narrator is not None and campaign_id not in storage.story_bibles:
+        tone = campaign.get("world_state", {}).get("theme", "dark_fantasy")
+        try:
+            bible = await narrator.generate_story_bible(
+                campaign_name=campaign.get("name", "Adventure"),
+                world_context=world_context,
+                tone=tone,
+            )
+            storage.story_bibles[campaign_id] = bible
+        except Exception:
+            pass  # non-fatal; DM still works without it
+
     if narrator is not None:
+        # Enrich world_context with the story bible's world section for the greeting
+        bible = storage.story_bibles.get(campaign_id, "")
+        greeting_world_context = world_context
+        if bible and not world_context:
+            # Use first paragraph of bible as world context hint for the greeting
+            greeting_world_context = bible.split("\n\n")[0] if "\n\n" in bible else bible[:300]
         greeting = await narrator.generate_session_greeting(
             campaign_name=campaign.get("name", "Adventure"),
             characters=characters,
             last_summary=last_summary,
-            world_context=world_context,
+            world_context=greeting_world_context,
         )
     elif last_summary:
         greeting = (

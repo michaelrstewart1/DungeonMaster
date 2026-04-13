@@ -125,12 +125,14 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                             "name": "Current Scene",
                             "description": session_data.get("current_scene", ""),
                         }
+                        story_bible = _storage.story_bibles.get(campaign_id, "")
                         player_text = f"{character_id}: {action}" if character_id else (action or "")
                         narration = await narrator.narrate_exploration(
                             scene=scene,
                             player_action=player_text,
                             characters=characters,
                             world_context=world_context,
+                            story_bible=story_bible,
                         )
                     except Exception:
                         narration = f"Character {character_id} {action}. The DM responds..."
