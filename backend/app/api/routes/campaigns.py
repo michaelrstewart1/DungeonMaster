@@ -60,49 +60,6 @@ async def create_campaign(campaign: CampaignCreate) -> CampaignResponse:
     return CampaignResponse(**campaign_data)
 
 
-@router.get("", response_model=List[CampaignResponse])
-async def list_campaigns() -> List[CampaignResponse]:
-    """List all campaigns."""
-    return [CampaignResponse(**campaign) for campaign in storage.campaigns.values()]
-
-
-@router.get("/{campaign_id}", response_model=CampaignResponse)
-async def get_campaign(campaign_id: str) -> CampaignResponse:
-    """Get a specific campaign by ID."""
-    if campaign_id not in storage.campaigns:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-    
-    return CampaignResponse(**storage.campaigns[campaign_id])
-
-
-@router.put("/{campaign_id}", response_model=CampaignResponse)
-async def update_campaign(campaign_id: str, campaign_update: CampaignCreate) -> CampaignResponse:
-    """Update a campaign."""
-    if campaign_id not in storage.campaigns:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-    
-    campaign = storage.campaigns[campaign_id]
-    campaign.update({
-        "name": campaign_update.name,
-        "description": campaign_update.description,
-        "character_ids": campaign_update.character_ids,
-        "world_state": campaign_update.world_state,
-        "dm_settings": campaign_update.dm_settings,
-        "updated_at": datetime.now(timezone.utc),
-    })
-    
-    return CampaignResponse(**campaign)
-
-
-@router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_campaign(campaign_id: str) -> None:
-    """Delete a campaign."""
-    if campaign_id not in storage.campaigns:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-    
-    del storage.campaigns[campaign_id]
-
-
 @router.post("/randomize", status_code=status.HTTP_201_CREATED, response_model=CampaignResponse)
 async def randomize_campaign(request: Request) -> CampaignResponse:
     """Create a fully randomized campaign with AI-generated world and story.
@@ -117,7 +74,6 @@ async def randomize_campaign(request: Request) -> CampaignResponse:
     tone = random.choice(_TONES)
     tone_label = _TONE_LABELS[tone]
 
-    # Generate world context via narrator if available
     narrator = getattr(request.app.state, "narrator", None)
     world_context = ""
     if narrator is not None:
@@ -129,10 +85,9 @@ async def randomize_campaign(request: Request) -> CampaignResponse:
                 hooks=[],
             )
         except Exception:
-            pass  # non-fatal
+            pass
 
     if not world_context:
-        # Fallback world snippets per tone
         fallbacks = {
             "dark_fantasy": (
                 f"The realm of {name.split()[0]} is shrouded in perpetual twilight. "
@@ -175,3 +130,45 @@ async def randomize_campaign(request: Request) -> CampaignResponse:
     storage.campaigns[campaign_id] = campaign_data
     return CampaignResponse(**campaign_data)
 
+
+@router.get("", response_model=List[CampaignResponse])
+async def list_campaigns() -> List[CampaignResponse]:
+    """List all campaigns."""
+    return [CampaignResponse(**campaign) for campaign in storage.campaigns.values()]
+
+
+@router.get("/{campaign_id}", response_model=CampaignResponse)
+async def get_campaign(campaign_id: str) -> CampaignResponse:
+    """Get a specific campaign by ID."""
+    if campaign_id not in storage.campaigns:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+    
+    return CampaignResponse(**storage.campaigns[campaign_id])
+
+
+@router.put("/{campaign_id}", response_model=CampaignResponse)
+async def update_campaign(campaign_id: str, campaign_update: CampaignCreate) -> CampaignResponse:
+    """Update a campaign."""
+    if campaign_id not in storage.campaigns:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+    
+    campaign = storage.campaigns[campaign_id]
+    campaign.update({
+        "name": campaign_update.name,
+        "description": campaign_update.description,
+        "character_ids": campaign_update.character_ids,
+        "world_state": campaign_update.world_state,
+        "dm_settings": campaign_update.dm_settings,
+        "updated_at": datetime.now(timezone.utc),
+    })
+    
+    return CampaignResponse(**campaign)
+
+
+@router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_campaign(campaign_id: str) -> None:
+    """Delete a campaign."""
+    if campaign_id not in storage.campaigns:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+    
+    del storage.campaigns[campaign_id]
