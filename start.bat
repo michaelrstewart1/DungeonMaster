@@ -58,8 +58,8 @@ echo [3/4] Starting backend on http://localhost:8000 ...
 cd /d "%BACKEND%"
 start "AI DM Backend" cmd /k "call .venv\Scripts\activate.bat && python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000 --reload"
 
-REM Give backend 3 seconds to boot
-timeout /t 3 /nobreak >nul
+REM Give backend 5 seconds to boot
+timeout /t 5 /nobreak >nul
 
 REM ─────────────────────────────────────────
 REM  4. Start frontend
@@ -68,8 +68,9 @@ echo [4/4] Starting frontend on http://localhost:5173 ...
 cd /d "%FRONTEND%"
 start "AI DM Frontend" cmd /k "npm run dev"
 
-REM Give frontend 4 seconds to compile
-timeout /t 4 /nobreak >nul
+REM Give frontend 10 seconds to compile before opening browser
+echo       Waiting for servers to be ready...
+timeout /t 10 /nobreak >nul
 
 REM ─────────────────────────────────────────
 REM  5. Open browser
