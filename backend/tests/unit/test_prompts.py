@@ -353,3 +353,273 @@ class TestPromptTemplateFormatting:
             recent_actions=[],
         )
         assert "Ëldrick" in template
+
+
+class TestDMSystemPromptTone:
+    """Tests for tone and narration mode parameters in dm_system_prompt."""
+
+    def test_dm_prompt_defaults_to_dark_fantasy_tone(self):
+        """DM prompt uses dark_fantasy tone by default."""
+        template = PromptTemplates.dm_system_prompt("World", [], {})
+        assert "dark" in template.lower() or "mystery" in template.lower() or "atmospheric" in template.lower()
+
+    def test_dm_prompt_accepts_comedic_tone(self):
+        """DM prompt reflects comedic tone when selected."""
+        template = PromptTemplates.dm_system_prompt("World", [], {}, tone="comedic")
+        assert isinstance(template, str)
+        assert len(template) > 0
+        assert "witty" in template.lower() or "humor" in template.lower() or "fun" in template.lower()
+
+    def test_dm_prompt_accepts_gritty_tone(self):
+        """DM prompt reflects gritty tone when selected."""
+        template = PromptTemplates.dm_system_prompt("World", [], {}, tone="gritty")
+        assert isinstance(template, str)
+        assert "harsh" in template.lower() or "unforgiving" in template.lower() or "survival" in template.lower()
+
+    def test_dm_prompt_accepts_storybook_tone(self):
+        """DM prompt reflects storybook tone when selected."""
+        template = PromptTemplates.dm_system_prompt("World", [], {}, tone="storybook")
+        assert isinstance(template, str)
+        assert "wonder" in template.lower() or "enchant" in template.lower() or "magical" in template.lower()
+
+    def test_dm_prompt_unknown_tone_falls_back_gracefully(self):
+        """DM prompt with unknown tone still returns a valid string."""
+        template = PromptTemplates.dm_system_prompt("World", [], {}, tone="unknown_tone")
+        assert isinstance(template, str)
+        assert len(template) > 0
+
+    def test_dm_prompt_cinematic_narration_mode(self):
+        """DM prompt reflects cinematic narration mode."""
+        template = PromptTemplates.dm_system_prompt("World", [], {}, narration_mode="cinematic")
+        assert isinstance(template, str)
+        assert "detail" in template.lower() or "rich" in template.lower() or "vivid" in template.lower()
+
+    def test_dm_prompt_fast_narration_mode(self):
+        """DM prompt reflects fast narration mode."""
+        template = PromptTemplates.dm_system_prompt("World", [], {}, narration_mode="fast")
+        assert isinstance(template, str)
+        assert "action" in template.lower() or "punchy" in template.lower() or "brief" in template.lower()
+
+
+class TestPlayerJoinPrompt:
+    """Tests for the player_join prompt template."""
+
+    def test_player_join_includes_character_name(self):
+        """Player join prompt includes the new character's name."""
+        template = PromptTemplates.player_join(
+            character_name="Gorin",
+            character_class="Paladin",
+            character_race="Dwarf",
+        )
+        assert "Gorin" in template
+
+    def test_player_join_includes_class_and_race(self):
+        """Player join prompt includes character class and race."""
+        template = PromptTemplates.player_join(
+            character_name="Seraph",
+            character_class="Cleric",
+            character_race="Aasimar",
+        )
+        assert "Cleric" in template
+        assert "Aasimar" in template
+
+    def test_player_join_includes_scene_context_when_provided(self):
+        """Player join prompt includes current scene when provided."""
+        scene = "The party is in the middle of a tense negotiation with bandits"
+        template = PromptTemplates.player_join(
+            character_name="Lira",
+            character_class="Ranger",
+            character_race="Half-Elf",
+            current_scene=scene,
+        )
+        assert scene in template
+
+    def test_player_join_without_scene_is_valid(self):
+        """Player join prompt works without scene context."""
+        template = PromptTemplates.player_join(
+            character_name="Karg",
+            character_class="Barbarian",
+            character_race="Half-Orc",
+        )
+        assert isinstance(template, str)
+        assert len(template) > 0
+
+    def test_player_join_is_string(self):
+        """Player join template returns a string."""
+        result = PromptTemplates.player_join("Hero", "Fighter", "Human")
+        assert isinstance(result, str)
+
+
+class TestPlayerLeavePrompt:
+    """Tests for the player_leave prompt template."""
+
+    def test_player_leave_includes_character_name(self):
+        """Player leave prompt includes the departing character's name."""
+        template = PromptTemplates.player_leave(
+            character_name="Mira",
+            character_class="Wizard",
+        )
+        assert "Mira" in template
+
+    def test_player_leave_includes_class(self):
+        """Player leave prompt includes character class."""
+        template = PromptTemplates.player_leave(
+            character_name="Thorn",
+            character_class="Rogue",
+        )
+        assert "Rogue" in template
+
+    def test_player_leave_includes_scene_context_when_provided(self):
+        """Player leave prompt includes current scene when provided."""
+        scene = "Exploring an underground crypt"
+        template = PromptTemplates.player_leave(
+            character_name="Val",
+            character_class="Druid",
+            current_scene=scene,
+        )
+        assert scene in template
+
+    def test_player_leave_does_not_suggest_killing_character(self):
+        """Player leave prompt explicitly avoids killing the character."""
+        template = PromptTemplates.player_leave(
+            character_name="Zara",
+            character_class="Sorcerer",
+        )
+        # The prompt should explicitly say NOT to kill — not just omit the word
+        template_lower = template.lower()
+        assert "not kill" in template_lower or "does not kill" in template_lower or "no kill" in template_lower
+
+    def test_player_leave_is_string(self):
+        """Player leave template returns a string."""
+        result = PromptTemplates.player_leave("Hero", "Fighter")
+        assert isinstance(result, str)
+
+
+class TestSkillCheckResultPrompt:
+    """Tests for skill check result narration prompts."""
+
+    def test_skill_check_includes_character_name(self):
+        """Skill check prompt includes character name."""
+        template = PromptTemplates.skill_check_result(
+            character_name="Aldric",
+            skill="Stealth",
+            dc=15,
+            roll_total=18,
+            action_attempted="Sneaking past the guards",
+        )
+        assert "Aldric" in template
+
+    def test_skill_check_includes_skill_name(self):
+        """Skill check prompt includes the skill used."""
+        template = PromptTemplates.skill_check_result(
+            character_name="Aldric",
+            skill="Perception",
+            dc=12,
+            roll_total=14,
+            action_attempted="Searching for traps",
+        )
+        assert "Perception" in template
+
+    def test_skill_check_includes_action_attempted(self):
+        """Skill check prompt includes the action attempted."""
+        action = "Attempting to pick the lock on the vault door"
+        template = PromptTemplates.skill_check_result(
+            character_name="Finn",
+            skill="Thieves' Tools",
+            dc=20,
+            roll_total=19,
+            action_attempted=action,
+        )
+        assert action in template
+
+    def test_skill_check_critical_failure_on_nat_1(self):
+        """Skill check prompt identifies critical failure on natural 1."""
+        template = PromptTemplates.skill_check_result(
+            character_name="Brom",
+            skill="Athletics",
+            dc=10,
+            roll_total=1,
+            action_attempted="Climbing the cliff",
+        )
+        assert "CRITICAL FAILURE" in template or "critical failure" in template.lower()
+
+    def test_skill_check_exceptional_success_large_margin(self):
+        """Skill check prompt identifies exceptional success on large margin."""
+        template = PromptTemplates.skill_check_result(
+            character_name="Asha",
+            skill="Arcana",
+            dc=10,
+            roll_total=22,
+            action_attempted="Identifying the magic item",
+        )
+        assert "EXCEPTIONAL" in template or "exceptional" in template.lower()
+
+    def test_skill_check_failure_below_dc(self):
+        """Skill check prompt identifies failure when roll is below DC."""
+        template = PromptTemplates.skill_check_result(
+            character_name="Rex",
+            skill="Persuasion",
+            dc=18,
+            roll_total=10,
+            action_attempted="Convincing the guard to let them through",
+        )
+        assert "FAILURE" in template
+
+    def test_skill_check_is_string(self):
+        """Skill check template returns a string."""
+        result = PromptTemplates.skill_check_result("Hero", "Athletics", 15, 17, "Climbing")
+        assert isinstance(result, str)
+
+
+class TestCreativeActionPrompt:
+    """Tests for creative/unconventional action resolution prompts."""
+
+    def test_creative_action_includes_character_name(self):
+        """Creative action prompt includes the character name."""
+        template = PromptTemplates.creative_action(
+            character_name="Lukas",
+            action_description="I try to flip the banquet table at the guards",
+        )
+        assert "Lukas" in template
+
+    def test_creative_action_includes_action_description(self):
+        """Creative action prompt includes what the player wants to do."""
+        action = "I throw my torch at the oil barrel to create an explosion"
+        template = PromptTemplates.creative_action(
+            character_name="Pyra",
+            action_description=action,
+        )
+        assert action in template
+
+    def test_creative_action_includes_environment_when_provided(self):
+        """Creative action prompt includes environment context when given."""
+        env = "A crowded tavern with low wooden beams and a roaring fireplace"
+        template = PromptTemplates.creative_action(
+            character_name="Bard",
+            action_description="I swing from the chandelier to kick the enemy",
+            environment=env,
+        )
+        assert env in template
+
+    def test_creative_action_without_environment_is_valid(self):
+        """Creative action prompt works without environment context."""
+        template = PromptTemplates.creative_action(
+            character_name="Jax",
+            action_description="I try to lasso the fleeing thief with my whip",
+        )
+        assert isinstance(template, str)
+        assert len(template) > 0
+
+    def test_creative_action_encourages_creativity(self):
+        """Creative action prompt rewards creative attempts."""
+        template = PromptTemplates.creative_action(
+            character_name="Hero",
+            action_description="Unusual action",
+        )
+        text_lower = template.lower()
+        assert "creative" in text_lower or "clever" in text_lower or "reward" in text_lower
+
+    def test_creative_action_is_string(self):
+        """Creative action template returns a string."""
+        result = PromptTemplates.creative_action("Hero", "Does something unusual")
+        assert isinstance(result, str)
