@@ -1,0 +1,24 @@
+{
+  "id": "ai-dm-bridge",
+  "title": "AI Dungeon Master Bridge",
+  "description": "Connects the AI Dungeon Master backend to Foundry VTT, giving the AI real-time read/write access to the entire game: HP, positions, conditions, initiative, chat, scenes, and more.",
+  "version": "1.0.0",
+  "compatibility": {
+    "minimum": "11",
+    "verified": "12"
+  },
+  "authors": [
+    {
+      "name": "AI Dungeon Master",
+      "url": "https://github.com/michaelrstewart1/DungeonMaster"
+    }
+  ],
+  "esmodules": ["dm-bridge.js"],
+  "styles": [],
+  "languages": [],
+  "flags": {},
+  "socket": false,
+  "url": "https://github.com/michaelrstewart1/DungeonMaster",
+  "manifest": "",
+  "download": ""
+}

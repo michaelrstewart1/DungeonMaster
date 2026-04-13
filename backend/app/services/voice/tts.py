@@ -183,6 +183,79 @@ class PiperTTS(TTSProvider):
         return [s for s in sentences if s.strip()]
 
 
+class OpenAITTS(TTSProvider):
+    """OpenAI TTS API — uses the 'onyx' voice for a deep, wise wizard sound."""
+
+    OPENAI_TTS_URL = "https://api.openai.com/v1/audio/speech"
+
+    def __init__(
+        self,
+        api_key: str,
+        voice: str = "onyx",
+        model: str = "tts-1-hd",
+    ) -> None:
+        """Initialize OpenAITTS.
+
+        Args:
+            api_key: OpenAI API key.
+            voice: TTS voice name.  "onyx" = deep/gravelly (wizard).
+            model: TTS model.  "tts-1-hd" gives the best quality.
+        """
+        self.voice = voice
+        self.model = model
+        self._api_key = api_key
+        self._client: object | None = None  # httpx.AsyncClient, lazy-created
+
+    def _get_client(self):  # type: ignore[return]
+        """Lazy-create (and reuse) an httpx.AsyncClient."""
+        if self._client is None:
+            try:
+                import httpx
+
+                self._client = httpx.AsyncClient(
+                    headers={
+                        "Authorization": f"Bearer {self._api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    timeout=60,
+                )
+            except ImportError as exc:
+                raise ImportError("httpx is required for OpenAITTS.  pip install httpx") from exc
+        return self._client
+
+    async def synthesize(self, text: str) -> bytes:
+        """Call OpenAI TTS API and return raw MP3 bytes."""
+        if not text or not text.strip():
+            raise ValueError("text cannot be empty")
+
+        client = self._get_client()
+        response = await client.post(
+            self.OPENAI_TTS_URL,
+            json={"model": self.model, "input": text, "voice": self.voice},
+        )
+        response.raise_for_status()
+        return response.content
+
+    async def synthesize_stream(self, text: str) -> AsyncGenerator[AudioChunk, None]:
+        """Synthesize sentence-by-sentence and stream AudioChunks back."""
+        if not text or not text.strip():
+            raise ValueError("text cannot be empty")
+
+        sentences = self._split_sentences(text)
+        for i, sentence in enumerate(sentences):
+            if not sentence.strip():
+                continue
+            is_final = i == len(sentences) - 1
+            audio_data = await self.synthesize(sentence)
+            yield AudioChunk(data=audio_data, sample_rate=24000, is_final=is_final)
+
+    @staticmethod
+    def _split_sentences(text: str) -> list[str]:
+        """Split text into sentences on common punctuation."""
+        sentences = re.split(r"(?<=[.!?])\s+", text)
+        return [s for s in sentences if s.strip()]
+
+
 class CoquiTTS(TTSProvider):
     """GPU-based TTS via Coqui XTTS."""
 

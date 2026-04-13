@@ -334,6 +334,203 @@ class DMNarrator:
         """Clear the conversation history."""
         self._history = []
 
+    async def generate_session_greeting(
+        self,
+        campaign_name: str,
+        characters: list[dict],
+        last_summary: str = "",
+        world_context: str = "",
+    ) -> str:
+        """Generate the session-opening greeting and recap.
+
+        Speaks as an old wise wizard DM, recaps the last session, and sets
+        the scene for tonight.  On the first session, opens dramatically
+        without a recap.
+
+        Args:
+            campaign_name: Name of the campaign
+            characters: List of player character dicts
+            last_summary: Summary from last session (empty = first session)
+            world_context: Brief world description
+
+        Returns:
+            Greeting narration string
+        """
+        try:
+            system_prompt = PromptTemplates.session_greeting_prompt(
+                campaign_name=campaign_name,
+                last_summary=last_summary,
+                characters=characters,
+                world_context=world_context,
+            )
+            user_message = "Open tonight's session."
+            response = await self._llm.generate(
+                messages=[LLMMessage(role="user", content=user_message)],
+                system_prompt=system_prompt,
+                temperature=0.85,
+                max_tokens=400,
+            )
+            # Don't add greeting to persistent history — it's a one-shot preamble
+            return response.content
+        except Exception as e:
+            logger.error("Error in generate_session_greeting: %s", e)
+            if last_summary:
+                return (
+                    f"Welcome back, brave souls. Last we spoke, you faced great trials — "
+                    f"{last_summary[:120]}... Tonight, the journey continues. "
+                    "Steel yourselves. Destiny waits for no one."
+                )
+            return (
+                "Welcome, adventurers. The world stretches before you, ancient and full of danger. "
+                "Your legend begins tonight. What will history remember of you?"
+            )
+
+    async def generate_world(
+        self,
+        theme: str = "dark_fantasy",
+        setting: str = "",
+        campaign_name: str = "",
+        hooks: list[str] | None = None,
+    ) -> str:
+        """Generate a rich world context for a new campaign.
+
+        Args:
+            theme: Tone/theme (dark_fantasy, comedic, gritty, storybook)
+            setting: Brief setting description (e.g., 'sunken coastal empire')
+            campaign_name: Name of the campaign
+            hooks: List of story hooks / major threats
+
+        Returns:
+            World context string (stored in campaign's world_state)
+        """
+        try:
+            hook_text = ""
+            if hooks:
+                hook_text = "\nKey story hooks:\n" + "\n".join(f"- {h}" for h in hooks)
+
+            system_prompt = (
+                "You are a world-builder for D&D 5e. Create a vivid, internally consistent "
+                f"game world in the {theme} style. Your output will be used as the DM's "
+                "world reference — it should cover: the name of the region, its history in "
+                "2-3 sentences, the current political / magical situation, 2-3 important "
+                "factions with contrasting goals, and 2-3 looming threats. "
+                "Be specific and evocative. Avoid generic fantasy clichés. "
+                "Keep it under 300 words."
+            )
+            user_message = (
+                f"Campaign: {campaign_name or 'Untitled Campaign'}\n"
+                f"Setting: {setting or 'a perilous realm'}{hook_text}"
+            )
+            response = await self._llm.generate(
+                messages=[LLMMessage(role="user", content=user_message)],
+                system_prompt=system_prompt,
+                temperature=0.9,
+                max_tokens=600,
+            )
+            return response.content
+        except Exception as e:
+            logger.error("Error in generate_world: %s", e)
+            return (
+                f"The realm of {setting or 'Valdris'} is a land scarred by ancient wars. "
+                "Three factions — the Iron Compact, the Verdant Circle, and the Hollow Court — "
+                "vie for dominance while a deeper darkness stirs beneath the earth. "
+                "The players have arrived at a crossroads moment in history."
+            )
+
+    async def narrate_boss_encounter(
+        self,
+        boss_name: str,
+        boss_description: str,
+        arena_features: list[str],
+        secondary_objective: str,
+        combat_state: dict,
+        characters: list[dict],
+        player_action: str,
+        boss_at_half_hp: bool = False,
+    ) -> str:
+        """Narrate a boss encounter turn with all 5 dynamic encounter principles.
+
+        Args:
+            boss_name: Name of the boss
+            boss_description: Personality and abilities summary
+            arena_features: Environmental features (pillars, lava, etc.)
+            secondary_objective: Mid-fight side objective
+            combat_state: Current combat state dict
+            characters: Player character list
+            player_action: What the player just did
+            boss_at_half_hp: True when boss is below 50% HP
+
+        Returns:
+            Cinematic boss encounter narration
+        """
+        try:
+            system_prompt = PromptTemplates.boss_encounter(
+                boss_name=boss_name,
+                boss_description=boss_description,
+                arena_features=arena_features,
+                secondary_objective=secondary_objective,
+                characters=characters,
+                round_number=combat_state.get("round_number", 1),
+                boss_at_half_hp=boss_at_half_hp,
+            )
+            round_num = combat_state.get("round_number", 1)
+            user_message = f"Round {round_num}: {player_action}"
+
+            messages = self._history.copy()
+            messages.append(LLMMessage(role="user", content=user_message))
+
+            response = await self._llm.generate(
+                messages=messages,
+                system_prompt=system_prompt,
+                temperature=0.85,
+                max_tokens=400,
+            )
+            self._add_to_history(
+                LLMMessage(role="user", content=user_message),
+                LLMMessage(role="assistant", content=response.content),
+            )
+            return response.content
+        except Exception as e:
+            logger.error("Error in narrate_boss_encounter: %s", e)
+            return FALLBACK_NARRATIONS["combat"]
+
+    async def generate_session_summary(
+        self,
+        narrative_history: list[str],
+        campaign_name: str = "",
+    ) -> str:
+        """Summarise a completed session for use as next session's recap.
+
+        Args:
+            narrative_history: List of narrative events from the session
+            campaign_name: Campaign name for context
+
+        Returns:
+            2-4 sentence summary of the session
+        """
+        try:
+            history_text = "\n".join(narrative_history[-40:])  # last 40 entries
+            system_prompt = (
+                "You are summarising a D&D session for the DM's records. "
+                "Write a 2-4 sentence summary in past tense covering: where the party went, "
+                "the most important event, and how the session ended. "
+                "Be specific about names, places, and outcomes. "
+                "This will be read aloud at the start of the next session as a recap."
+            )
+            user_message = (
+                f"Campaign: {campaign_name or 'Untitled'}\n\nSession events:\n{history_text}"
+            )
+            response = await self._llm.generate(
+                messages=[LLMMessage(role="user", content=user_message)],
+                system_prompt=system_prompt,
+                temperature=0.5,
+                max_tokens=200,
+            )
+            return response.content
+        except Exception as e:
+            logger.error("Error in generate_session_summary: %s", e)
+            return "The party ventured forth and faced great challenges. Their deeds shall be remembered."
+
     def _add_to_history(
         self, user_message: LLMMessage, assistant_message: LLMMessage
     ) -> None:

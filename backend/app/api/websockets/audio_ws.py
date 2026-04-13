@@ -78,8 +78,10 @@ async def websocket_audio_endpoint(websocket: WebSocket, session_id: str):
                     elif msg_type == "synthesize":
                         text = data.get("text", "")
                         if text:
+                            # Use real TTS from app state when available
+                            tts_provider = getattr(websocket.app.state, "tts", _tts)
                             # Stream audio chunks
-                            async for chunk in _pipeline.generate_audio_response(text):
+                            async for chunk in tts_provider.synthesize_stream(text):
                                 await websocket.send_bytes(chunk.data)
 
                 except (json.JSONDecodeError, ValueError):

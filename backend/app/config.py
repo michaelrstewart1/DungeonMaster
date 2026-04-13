@@ -26,7 +26,11 @@ class Settings(BaseSettings):
     # Voice Settings
     voice_enabled: bool = False
     stt_model: str = "base.en"
-    tts_engine: str = "piper"  # piper, xtts
+    tts_engine: str = "piper"  # piper, xtts, openai
+
+    # OpenAI TTS (wizard voice)
+    openai_tts_voice: str = "onyx"   # onyx = deep, gravelly, perfect for wizard DM
+    openai_tts_model: str = "tts-1-hd"  # HD model for best quality
 
     model_config = {"env_prefix": "DM_", "env_file": ".env"}
 

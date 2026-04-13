@@ -159,6 +159,8 @@ class PromptTemplates:
 
         The combat prompt guides the LLM to narrate combat action clearly,
         with proper tracking of initiative, turns, and action descriptions.
+        The 5 dynamic encounter design principles are always applied so every
+        fight feels alive, dangerous, and memorable.
 
         Args:
             initiative_order: List of combatants in initiative order
@@ -186,13 +188,30 @@ class PromptTemplates:
             prompt += "\n"
 
         prompt += (
-            "## Instructions\n"
+            "## Dynamic Encounter Principles (apply ALL of these every round)\n"
+            "1. **Battlefield Actions** — the boss / main enemy should telegraph or charge a big "
+            "ability that resolves on its *next* turn. Hint at it in your narration so players can "
+            "react: move away, stun the enemy, or brace for impact.\n"
+            "2. **Problems not just HP** — keep a mid-fight objective active: crystals empowering "
+            "the enemy, minions performing a ritual, a civilian to protect, a door to hold shut. "
+            "Remind players it's ticking.\n"
+            "3. **Use the environment** — invoke 1–2 arena features every round: pillars to hide "
+            "behind, high ground, spilled oil, a crumbling floor, lava vents, rain or darkness.\n"
+            "4. **Boss always moves** — the boss repositions every turn. Make positioning matter. "
+            "Describe *where* it moves and *why*.\n"
+            "5. **Boss personality** — trash-talk, react to hits with pain or rage, change "
+            "behavior at half HP. Make it feel like a real, dangerous creature with pride.\n\n"
+        )
+
+        prompt += (
+            "## Narration Instructions\n"
             f"It is {current_turn}'s turn. Narrate the action vividly and dramatically. "
             "Describe how attacks land or miss, how spells manifest, how the battlefield "
             "evolves. Make it tense and cinematic — paint the chaos of combat. "
             "Reward creative or unusual actions with spectacular results. "
             "If the action fails, make the failure entertaining rather than frustrating. "
-            "After narrating, indicate any follow-up rolls or reactions needed.\n"
+            "After narrating, hint at what the enemy will do next turn and remind players "
+            "of any active secondary objectives.\n"
         )
 
         return prompt
@@ -441,3 +460,132 @@ class PromptTemplates:
         )
 
         return prompt
+
+    @staticmethod
+    def boss_encounter(
+        boss_name: str,
+        boss_description: str,
+        arena_features: list[str],
+        secondary_objective: str,
+        characters: list[dict],
+        round_number: int = 1,
+        boss_at_half_hp: bool = False,
+    ) -> str:
+        """Create a system prompt for an epic boss encounter.
+
+        All 5 dynamic encounter design principles are explicitly instructed:
+        battlefield actions, secondary objectives, environment, boss movement,
+        and boss personality.
+
+        Args:
+            boss_name: Name of the boss enemy
+            boss_description: Personality, appearance, and abilities summary
+            arena_features: 1-3 environmental features (pillars, lava, etc.)
+            secondary_objective: Mid-fight objective players should address
+            characters: List of player character dicts
+            round_number: Current round
+            boss_at_half_hp: True when boss HP drops below 50% (phase change)
+
+        Returns:
+            System prompt string for the boss encounter
+        """
+        phase_note = ""
+        if boss_at_half_hp:
+            phase_note = (
+                f"\n**PHASE CHANGE**: {boss_name} has dropped below half HP! "
+                "It enters a new, more dangerous phase. Describe the transformation vividly — "
+                "new abilities unlock, its behavior changes, it becomes more desperate and brutal."
+            )
+
+        char_list = ", ".join(c.get("name", "Hero") for c in characters) if characters else "the adventurers"
+
+        arena_text = "\n".join(f"- {f}" for f in arena_features) if arena_features else "- A dangerous, open battlefield"
+
+        prompt = (
+            f"You are running a boss encounter in D&D 5e.\n\n"
+            f"## The Boss: {boss_name}\n"
+            f"{boss_description}{phase_note}\n\n"
+            f"## The Arena (Round {round_number})\n"
+            f"{arena_text}\n\n"
+            f"## Secondary Objective\n"
+            f"{secondary_objective}\n\n"
+            f"## The Party\n"
+            f"{char_list} are fighting for their lives.\n\n"
+            "## Non-Negotiable Encounter Rules\n"
+            f"1. **Battlefield Action** — {boss_name} must telegraph its *next-turn* big ability "
+            "in every narration. Name it, hint at the wind-up, let players react.\n"
+            "2. **Secondary Objective is TICKING** — every round, remind players the secondary "
+            "objective is getting worse if ignored. Make it feel urgent.\n"
+            "3. **Use the Arena** — invoke at least one environmental feature per round. "
+            "Terrain should change the fight meaningfully.\n"
+            f"4. **{boss_name} always moves** — it repositions every turn. "
+            "Describe where it goes and why (flanking, high ground, dragging a player away).\n"
+            f"5. **{boss_name} has personality** — it trash-talks, reacts to pain, taunts "
+            "specific players. At half HP it changes behavior. Make it feel like a character, "
+            "not a health bar.\n\n"
+            "Narrate with cinematic intensity. Every round should feel like a movie scene.\n"
+        )
+
+        return prompt
+
+    @staticmethod
+    def session_greeting_prompt(
+        campaign_name: str,
+        last_summary: str,
+        characters: list[dict],
+        world_context: str = "",
+    ) -> str:
+        """Create a prompt for the session opening greeting.
+
+        The DM greets the players, recaps the last session from memory, and
+        sets the scene for tonight's adventure — speaking as an old wise wizard.
+
+        Args:
+            campaign_name: Name of the campaign
+            last_summary: Summary of what happened last session (may be empty for first session)
+            characters: List of player characters
+            world_context: Brief world description
+
+        Returns:
+            Prompt string for the session greeting
+        """
+        char_names = ", ".join(c.get("name", "Hero") for c in characters) if characters else "brave adventurers"
+        is_first_session = not last_summary.strip()
+
+        if is_first_session:
+            recap_instruction = (
+                "This is the FIRST SESSION. Do not recap — instead, open with a dramatic, "
+                "atmospheric introduction to the world and the adventure that awaits. "
+                "Set the stage, establish the tone, and make the players lean forward in their seats."
+            )
+        else:
+            recap_instruction = (
+                f"Remind the players what happened last session:\n{last_summary}\n\n"
+                "Recap it as a wise elder retelling a legend — make it vivid and remind them "
+                "of key details: where they are, what danger they face, any unresolved threads."
+            )
+
+        prompt = (
+            "You are an ancient, wise wizard Dungeon Master — your voice is deep, gravelly, "
+            "and carries the weight of centuries. You speak in measured, poetic cadences. "
+            "You use archaic-but-not-silly phrasing: 'I have seen much in my years', "
+            "'heed my words', 'the shadows grow long'. Think Gandalf meets Merlin.\n\n"
+            f"## Campaign: {campaign_name}\n"
+        )
+
+        if world_context:
+            prompt += f"## World: {world_context}\n\n"
+
+        prompt += (
+            f"## Players Present: {char_names}\n\n"
+            f"## Your Task\n"
+            f"{recap_instruction}\n\n"
+            "Then set the scene for tonight's session. Where are they? What do they see, "
+            "smell, hear? What looms ahead? End with a hook — a question, a sound, a shadow "
+            "— that makes them want to act immediately.\n\n"
+            "Keep the total greeting to 3-5 sentences. Atmospheric, not a lecture. "
+            "Speak directly to the players as their wise guide.\n"
+        )
+
+        return prompt
+

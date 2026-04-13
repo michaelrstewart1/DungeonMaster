@@ -11,6 +11,7 @@ maps: dict[str, dict[str, Any]] = {}
 users: dict[str, dict[str, Any]] = {}
 tokens: dict[str, str] = {}  # token -> user_id
 vision_analyses: dict[str, dict[str, Any]] = {}
+session_summaries: dict[str, str] = {}  # campaign_id -> last session summary text
 
 
 def reset() -> None:
@@ -22,6 +23,7 @@ def reset() -> None:
     users.clear()
     tokens.clear()
     vision_analyses.clear()
+    session_summaries.clear()
 
 
 def generate_id() -> str:

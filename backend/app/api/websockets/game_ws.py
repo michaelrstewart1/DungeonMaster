@@ -105,10 +105,38 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 # Process player action and broadcast result
                 character_id = message.get("character_id")
                 action = message.get("action")
-                
-                # Generate narration (mock for now)
-                narration = f"Character {character_id} {action}. The DM responds..."
-                
+
+                # Try real narrator, fall back to mock when no API key is configured
+                narrator = getattr(websocket.app.state, "narrator", None)
+                if narrator is not None:
+                    try:
+                        from app.api import storage as _storage
+                        # Build minimal scene / character context from storage
+                        session_data = _storage.game_sessions.get(session_id, {})
+                        campaign_id = session_data.get("campaign_id", "")
+                        campaign = _storage.campaigns.get(campaign_id, {})
+                        world_context = campaign.get("world_state", {}).get("context", "A perilous realm.")
+                        characters = [
+                            _storage.characters[cid]
+                            for cid in campaign.get("character_ids", [])
+                            if cid in _storage.characters
+                        ]
+                        scene = {
+                            "name": "Current Scene",
+                            "description": session_data.get("current_scene", ""),
+                        }
+                        player_text = f"{character_id}: {action}" if character_id else (action or "")
+                        narration = await narrator.narrate_exploration(
+                            scene=scene,
+                            player_action=player_text,
+                            characters=characters,
+                            world_context=world_context,
+                        )
+                    except Exception:
+                        narration = f"Character {character_id} {action}. The DM responds..."
+                else:
+                    narration = f"Character {character_id} {action}. The DM responds..."
+
                 turn_result = {
                     "type": "turn_result",
                     "character_id": character_id,

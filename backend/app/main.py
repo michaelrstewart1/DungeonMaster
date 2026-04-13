@@ -1,4 +1,6 @@
+import logging
 import os
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -16,6 +18,65 @@ from app.api.routes.srd import router as srd_router
 from app.api.websockets.game_ws import router as game_ws_router
 from app.api.websockets.audio_ws import router as audio_ws_router
 
+logger = logging.getLogger(__name__)
+
+
+def _init_app_state(app: FastAPI) -> None:
+    """Initialize narrator and TTS on app startup.
+
+    When an OpenAI API key is configured the app uses real GPT-4o narration
+    and the onyx TTS voice (deep, wizard-like).  When no key is present we fall
+    back to None / FakeTTS so all unit-tests still pass without network calls.
+    """
+    from app.config import settings
+    from app.services.llm.narrator import DMNarrator
+    from app.services.llm.openai import OpenAIProvider
+    from app.services.voice.tts import FakeTTS, OpenAITTS
+
+    narrator = None
+    tts = FakeTTS()
+
+    if settings.openai_api_key:
+        try:
+            llm = OpenAIProvider(api_key=settings.openai_api_key)
+            narrator = DMNarrator(llm=llm, max_history=30)
+            tts = OpenAITTS(
+                api_key=settings.openai_api_key,
+                voice=settings.openai_tts_voice,
+                model=settings.openai_tts_model,
+            )
+            logger.info("AI DM: GPT-4o narrator + OpenAI TTS (voice=%s) ready", settings.openai_tts_voice)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("AI DM: could not init OpenAI services (%s) — using fallbacks", exc)
+
+    app.state.narrator = narrator
+    app.state.tts = tts
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """ASGI lifespan: boot narrator/TTS on startup, clean up on shutdown."""
+    _init_app_state(app)
+    yield
+    # Shutdown — close any open HTTP clients
+    narrator = getattr(app.state, "narrator", None)
+    if narrator is not None:
+        llm = getattr(narrator, "_llm", None)
+        client = getattr(llm, "_client", None)
+        if client is not None:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+    tts = getattr(app.state, "tts", None)
+    if tts is not None:
+        client = getattr(tts, "_client", None)
+        if client is not None:
+            try:
+                await client.aclose()
+            except Exception:
+                pass
+
 
 def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
@@ -23,6 +84,7 @@ def create_app() -> FastAPI:
         title="AI Dungeon Master",
         description="AI-powered D&D 5e Dungeon Master",
         version="0.1.0",
+        lifespan=lifespan,
     )
 
     app.add_middleware(
