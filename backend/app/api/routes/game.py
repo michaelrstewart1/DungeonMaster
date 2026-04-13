@@ -15,7 +15,7 @@ class GameSessionCreate(BaseModel):
     """Schema for creating a game session."""
     campaign_id: str = Field(..., description="Campaign ID for this session")
     current_phase: str = Field(default="exploration", description="Initial game phase")
-    current_scene: str = Field(default="You stand at the entrance of a dark cavern. The air is thick with the smell of damp stone and something... else. Torchlight flickers against ancient runes carved into the walls.", description="Initial scene description")
+    current_scene: str = Field(default="", description="Initial scene — left blank so the DM sets it from the story bible")
 
 
 class PlayerActionRequest(BaseModel):
@@ -368,7 +368,7 @@ class GameSessionCreate(BaseModel):
     """Schema for creating a game session."""
     campaign_id: str = Field(..., description="Campaign ID for this session")
     current_phase: str = Field(default="exploration", description="Initial game phase")
-    current_scene: str = Field(default="You stand at the entrance of a dark cavern. The air is thick with the smell of damp stone and something... else. Torchlight flickers against ancient runes carved into the walls.", description="Initial scene description")
+    current_scene: str = Field(default="", description="Initial scene description — left blank so the DM sets it from the story bible")
 
 
 class PlayerActionRequest(BaseModel):
@@ -390,76 +390,6 @@ class PlayerActionResponse(BaseModel):
     narration: str = Field(..., description="DM narration in response to the action")
     turn_number: int = Field(default=1, description="Current turn number")
     phase: str = Field(default="exploration", description="Current game phase")
-
-
-@router.post("/sessions", status_code=status.HTTP_201_CREATED, response_model=GameStateResponse)
-async def create_game_session(session_create: GameSessionCreate) -> GameStateResponse:
-    """Create a new game session for a campaign."""
-    # Verify campaign exists
-    if session_create.campaign_id not in storage.campaigns:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Campaign not found"
-        )
-    
-    session_id = storage.generate_id()
-    
-    session_data = {
-        "id": session_id,
-        "campaign_id": session_create.campaign_id,
-        "current_phase": session_create.current_phase,
-        "current_scene": session_create.current_scene,
-        "narrative_history": [session_create.current_scene],
-        "combat_state": None,
-        "active_effects": [],
-    }
-    
-    storage.game_sessions[session_id] = session_data
-    return GameStateResponse(**session_data)
-
-
-@router.get("/sessions/{session_id}/state", response_model=GameStateResponse)
-async def get_game_state(session_id: str) -> GameStateResponse:
-    """Get the current game state for a session."""
-    if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found"
-        )
-    
-    return GameStateResponse(**storage.game_sessions[session_id])
-
-
-@router.post("/sessions/{session_id}/action", response_model=PlayerActionResponse)
-async def submit_player_action(
-    session_id: str,
-    action: PlayerActionRequest
-) -> PlayerActionResponse:
-    """Submit a player action to the game."""
-    if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found"
-        )
-    
-    session = storage.game_sessions[session_id]
-    player_text = action.resolved_action
-    turn_number = len(session["narrative_history"])
-    
-    # Generate a contextual DM response based on the action
-    narration = _generate_dm_response(player_text, session)
-    
-    # Add to narrative history
-    session["narrative_history"].append(f"Player: {player_text}")
-    session["narrative_history"].append(f"DM: {narration}")
-    
-    return PlayerActionResponse(
-        narration=narration,
-        turn_number=turn_number,
-        phase=session["current_phase"],
-    )
-
-
 
 
 @router.post("/sessions/{session_id}/start-combat", response_model=GameStateResponse)

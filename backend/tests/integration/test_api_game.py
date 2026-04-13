@@ -61,8 +61,7 @@ class TestGameSessionCreate:
         data = response.json()
         assert data["campaign_id"] == campaign_id
         assert data["current_phase"] == "exploration"
-        assert len(data["current_scene"]) > 0
-        assert "id" in data
+        assert "id" in data  # scene is set by DM greeting, not at creation
 
     async def test_create_game_session_with_missing_campaign_returns_422(
         self, client: AsyncClient
