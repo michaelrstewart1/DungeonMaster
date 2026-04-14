@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { CharacterSheet } from './CharacterSheet'
 import type { Character } from '../types'
 
@@ -61,6 +61,8 @@ describe('CharacterSheet', () => {
 
   it('renders inventory', () => {
     render(<CharacterSheet character={character} />)
+    // Inventory starts collapsed — click to expand
+    fireEvent.click(screen.getByText(/Inventory/))
     expect(screen.getByText('Battleaxe')).toBeTruthy()
     expect(screen.getByText('Chain Mail')).toBeTruthy()
     expect(screen.getByText('Shield')).toBeTruthy()

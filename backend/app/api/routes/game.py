@@ -37,6 +37,9 @@ class PlayerActionResponse(BaseModel):
     narration: str = Field(..., description="DM narration in response to the action")
     turn_number: int = Field(default=1, description="Current turn number")
     phase: str = Field(default="exploration", description="Current game phase")
+    # Metadata for frontend effects
+    mood: Optional[str] = Field(default=None, description="Scene mood after this action")
+    effects: List[str] = Field(default_factory=list, description="Suggested screen effects: nat20, damage, spell, levelup, boss")
 
 
 class WorldGenerateRequest(BaseModel):
@@ -114,12 +117,41 @@ async def submit_player_action(
     # Add to narrative history
     session["narrative_history"].append(f"Player: {player_text}")
     session["narrative_history"].append(f"DM: {narration}")
-    
+
+    # Detect effects from narration for frontend
+    effects = _detect_effects(narration, player_text)
+    mood_obj = _detect_mood(f"{session.get('current_scene', '')} {narration}")
+
     return PlayerActionResponse(
         narration=narration,
         turn_number=turn_number,
         phase=session["current_phase"],
+        mood=mood_obj.atmosphere,
+        effects=effects,
     )
+
+
+def _detect_effects(narration: str, player_action: str) -> List[str]:
+    """Detect screen effects to trigger based on narration content."""
+    import re
+    text = f"{narration} {player_action}".lower()
+    words = set(re.findall(r'\b\w+\b', text))
+    effects: List[str] = []
+
+    if words & {"critical", "nat 20", "natural 20", "critical hit"}:
+        effects.append("nat20")
+    if "natural 20" in text or "critical hit" in text:
+        effects.append("nat20")
+    if words & {"damage", "hit", "struck", "wounds", "bleeding", "slash", "pierced"}:
+        effects.append("damage")
+    if words & {"spell", "magic", "arcane", "incantation", "enchant", "conjure"}:
+        effects.append("spell")
+    if words & {"level"} and words & {"up", "gained", "advance"}:
+        effects.append("levelup")
+    if words & {"boss", "dragon", "demon", "lich", "ancient", "titan", "colossus"}:
+        effects.append("boss")
+
+    return list(set(effects))
 
 
 async def _generate_dm_response(player_action: str, session: dict, narrator=None) -> str:
@@ -364,65 +396,101 @@ async def end_combat(session_id: str) -> GameStateResponse:
 
 
 
-class GameSessionCreate(BaseModel):
-    """Schema for creating a game session."""
-    campaign_id: str = Field(..., description="Campaign ID for this session")
-    current_phase: str = Field(default="exploration", description="Initial game phase")
-    current_scene: str = Field(default="", description="Initial scene description — left blank so the DM sets it from the story bible")
+
+# --- Additional endpoints below (no duplicate schemas) ---
 
 
-class PlayerActionRequest(BaseModel):
-    """Schema for submitting a player action. Accepts both frontend and legacy formats."""
-    type: str = Field(default="interact", description="Action type")
-    message: Optional[str] = Field(default=None, description="Action message from chat")
-    # Legacy fields (kept for backward compat with tests)
-    character_id: Optional[str] = Field(default=None, description="Character ID")
-    action: Optional[str] = Field(default=None, description="Action description")
-
-    @property
-    def resolved_action(self) -> str:
-        """Get the action text regardless of which field was used."""
-        return self.message or self.action or "looks around"
+class SceneMood(BaseModel):
+    """Atmospheric mood metadata for the current scene."""
+    atmosphere: str = Field(default="neutral", description="Overall mood: dark, warm, tense, mystical, peaceful, combat")
+    lighting: str = Field(default="dim", description="Lighting: bright, dim, dark, magical, fire")
+    weather: str = Field(default="clear", description="Weather: clear, rain, storm, fog, snow, wind")
+    danger_level: str = Field(default="low", description="Danger level: safe, low, moderate, high, deadly")
+    ambient_sounds: List[str] = Field(default_factory=list, description="Suggested ambient sounds")
 
 
-class PlayerActionResponse(BaseModel):
-    """Response to a player action."""
-    narration: str = Field(..., description="DM narration in response to the action")
-    turn_number: int = Field(default=1, description="Current turn number")
-    phase: str = Field(default="exploration", description="Current game phase")
+MOOD_KEYWORDS = {
+    "dark": {"dark", "shadow", "dungeon", "cave", "crypt", "tomb", "undead", "death", "horror"},
+    "warm": {"tavern", "inn", "fire", "hearth", "home", "feast", "celebration", "warm"},
+    "tense": {"trap", "ambush", "stealth", "sneak", "hidden", "lurk", "danger", "threat"},
+    "mystical": {"magic", "arcane", "spell", "enchant", "rune", "ancient", "portal", "fey", "ethereal"},
+    "peaceful": {"village", "meadow", "forest", "stream", "dawn", "sunrise", "garden", "temple"},
+    "combat": {"battle", "fight", "attack", "charge", "sword", "arrow", "blood", "war"},
+}
+
+LIGHTING_KEYWORDS = {
+    "bright": {"sun", "daylight", "noon", "bright", "open", "desert"},
+    "dark": {"dark", "pitch", "blind", "deep", "underground", "cave"},
+    "magical": {"glow", "rune", "crystal", "enchant", "aurora", "shimmer"},
+    "fire": {"torch", "fire", "flame", "candle", "lantern", "hearth"},
+}
 
 
-@router.post("/sessions/{session_id}/start-combat", response_model=GameStateResponse)
-async def start_combat(session_id: str) -> GameStateResponse:
-    """Start combat encounter in the session."""
-    if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found"
-        )
-    
-    session = storage.game_sessions[session_id]
-    session["current_phase"] = GamePhase.COMBAT.value
-    session["combat_state"] = {
-        "initiative_order": [],
-        "current_turn_index": 0,
-        "round_number": 1,
+def _detect_mood(scene_text: str) -> SceneMood:
+    """Analyze scene text to determine atmospheric mood."""
+    import re
+    words = set(re.findall(r'\b\w+\b', scene_text.lower()))
+
+    atmosphere = "neutral"
+    best_score = 0
+    for mood, keywords in MOOD_KEYWORDS.items():
+        score = len(words & keywords)
+        if score > best_score:
+            best_score = score
+            atmosphere = mood
+
+    lighting = "dim"
+    best_score = 0
+    for light, keywords in LIGHTING_KEYWORDS.items():
+        score = len(words & keywords)
+        if score > best_score:
+            best_score = score
+            lighting = light
+
+    danger = "low"
+    if atmosphere == "combat":
+        danger = "high"
+    elif atmosphere == "tense":
+        danger = "moderate"
+    elif atmosphere == "dark":
+        danger = "moderate"
+    elif atmosphere == "peaceful":
+        danger = "safe"
+
+    # Suggest ambient sounds based on mood
+    sound_map = {
+        "dark": ["dripping_water", "distant_rumble", "wind_howl"],
+        "warm": ["crackling_fire", "crowd_murmur", "lute_music"],
+        "tense": ["heartbeat", "creaking_wood", "distant_footsteps"],
+        "mystical": ["ethereal_hum", "wind_chimes", "distant_bells"],
+        "peaceful": ["birdsong", "flowing_water", "gentle_breeze"],
+        "combat": ["battle_drums", "steel_clash", "war_horns"],
+        "neutral": ["ambient_wind", "crickets"],
     }
-    
-    return GameStateResponse(**session)
+
+    return SceneMood(
+        atmosphere=atmosphere,
+        lighting=lighting,
+        danger_level=danger,
+        ambient_sounds=sound_map.get(atmosphere, ["ambient_wind"]),
+    )
 
 
-@router.post("/sessions/{session_id}/end-combat", response_model=GameStateResponse)
-async def end_combat(session_id: str) -> GameStateResponse:
-    """End combat encounter in the session."""
+@router.get("/sessions/{session_id}/mood")
+async def get_scene_mood(session_id: str) -> SceneMood:
+    """Get the atmospheric mood of the current scene.
+
+    Analyzes the current scene description and recent narrative to determine
+    lighting, atmosphere, danger level, and suggested ambient sounds.
+    """
     if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found"
-        )
-    
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+
     session = storage.game_sessions[session_id]
-    session["current_phase"] = GamePhase.EXPLORATION.value
-    session["combat_state"] = None
-    
-    return GameStateResponse(**session)
+    scene = session.get("current_scene", "")
+    # Include recent narrative for more context
+    history = session.get("narrative_history", [])
+    recent = " ".join(history[-4:]) if history else ""
+    combined = f"{scene} {recent}"
+
+    return _detect_mood(combined)

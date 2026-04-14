@@ -19,6 +19,9 @@ const mockSubmitAction = vi.fn()
 vi.mock('../api/client', () => ({
   getGameState: (...args: unknown[]) => mockGetGameState(...args),
   submitAction: (...args: unknown[]) => mockSubmitAction(...args),
+  getCampaign: () => Promise.resolve({ id: 'camp1', name: 'Test Campaign', character_ids: [], created_at: '', updated_at: '' }),
+  getSessionGreeting: () => Promise.resolve('Welcome, adventurers!'),
+  getCharacters: () => Promise.resolve([]),
 }))
 
 const mockConnect = vi.fn()
@@ -115,6 +118,18 @@ vi.mock('../components/FogOfWar', () => ({
   ),
 }))
 
+vi.mock('../components/PartyStatus', () => ({
+  PartyStatus: () => <div data-testid="party-status" />,
+}))
+
+vi.mock('../components/ScreenEffects', () => ({
+  ScreenEffects: () => <div data-testid="screen-effects" />,
+}))
+
+vi.mock('../components/AdventureLog', () => ({
+  AdventureLog: () => <div data-testid="adventure-log" />,
+}))
+
 describe('GameSession', () => {
   const renderWithRoute = (sessionId = 'sess1') => {
     return render(
@@ -136,7 +151,7 @@ describe('GameSession', () => {
     mockGetGameState.mockReturnValue(new Promise(() => {})) // never resolves
     renderWithRoute()
     expect(screen.getByTestId('game-loading')).toBeTruthy()
-    expect(screen.getByText(/loading game/i)).toBeTruthy()
+    expect(screen.getByText(/preparing your adventure/i)).toBeTruthy()
   })
 
   it('shows error state when API fails', async () => {
@@ -184,11 +199,12 @@ describe('GameSession', () => {
     })
   })
 
-  it('renders TokenLayer', async () => {
+  it('does not render TokenLayer without map data', async () => {
     renderWithRoute()
     await waitFor(() => {
-      expect(screen.getByTestId('token-layer')).toBeTruthy()
+      expect(screen.getByTestId('game-chat')).toBeTruthy()
     })
+    expect(screen.queryByTestId('token-layer')).toBeNull()
   })
 
   it('calls getGameState on mount with sessionId', async () => {

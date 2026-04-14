@@ -183,7 +183,7 @@ describe('CampaignDetail', () => {
   it('renders campaign name after loading', async () => {
     renderWithRoute()
     await waitFor(() => {
-      expect(screen.getByText('Dragon Quest')).toBeTruthy()
+      expect(screen.getAllByText('Dragon Quest').length).toBeGreaterThanOrEqual(1)
     })
   })
 
@@ -191,7 +191,7 @@ describe('CampaignDetail', () => {
     renderWithRoute()
     await waitFor(() => {
       expect(screen.getByTestId('character-sheet-ch1')).toBeTruthy()
-      expect(screen.getByText('Aragorn')).toBeTruthy()
+      expect(screen.getAllByText('Aragorn').length).toBeGreaterThanOrEqual(1)
     })
   })
 
