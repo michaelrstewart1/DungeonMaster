@@ -208,6 +208,8 @@ export function GameSession() {
       setNpcDialogue(npc)
     }
   }, [])
+
+  // Parse DM narration text into combat log entries during combat
   const extractCombatLogEntries = useCallback((text: string) => {
     if (gameState?.phase !== 'combat') return
     const lower = text.toLowerCase()
@@ -707,6 +709,17 @@ export function GameSession() {
         entries={adventureEntries}
         loot={lootItems}
       />
+
+      {/* NPC Dialogue overlay */}
+      {npcDialogue && (
+        <NPCDialogue
+          npcName={npcDialogue.npcName}
+          npcType={npcDialogue.npcType}
+          dialogue={npcDialogue.dialogue}
+          isActive={true}
+          onClose={() => setNpcDialogue(null)}
+        />
+      )}
     </div>
   )
 }
