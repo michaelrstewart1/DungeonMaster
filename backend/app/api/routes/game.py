@@ -494,3 +494,32 @@ async def get_scene_mood(session_id: str) -> SceneMood:
     combined = f"{scene} {recent}"
 
     return _detect_mood(combined)
+
+
+@router.get("/sessions/{session_id}/recap")
+async def get_session_recap(session_id: str) -> dict:
+    """Get the recap of the previous session for cinematic display.
+
+    Returns the last session summary for the campaign so the frontend
+    can show a dramatic "Previously on..." overlay.
+    """
+    if session_id not in storage.game_sessions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Game session not found",
+        )
+
+    session = storage.game_sessions[session_id]
+    campaign_id = session.get("campaign_id", "")
+    campaign = storage.campaigns.get(campaign_id, {})
+    campaign_name = campaign.get("name", "Your Adventure")
+    last_summary = storage.session_summaries.get(campaign_id, "")
+
+    if not last_summary:
+        return {"has_recap": False, "campaign_name": campaign_name, "recap_text": ""}
+
+    return {
+        "has_recap": True,
+        "campaign_name": campaign_name,
+        "recap_text": last_summary,
+    }

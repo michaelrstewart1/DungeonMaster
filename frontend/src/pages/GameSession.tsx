@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGameState, submitAction, getCampaign, getSessionGreeting, getCharacters } from '../api/client'
+import { getGameState, submitAction, getCampaign, getSessionGreeting, getSessionRecap, getCharacters } from '../api/client'
 import { GameWebSocket } from '../api/websocket'
 import { GameChat, type ChatMessage } from '../components/GameChat'
 import { DiceRoller } from '../components/DiceRoller'
@@ -17,6 +17,9 @@ import FogOfWar from '../components/FogOfWar'
 import { AdventureLog } from '../components/AdventureLog'
 import type { Quest, AdventureEntry, LootItem } from '../components/AdventureLog'
 import { CombatLog, type CombatLogEntry } from '../components/CombatLog'
+import { NPCDialogue, parseNPCDialogue } from '../components/NPCDialogue'
+import type { NPCType } from '../components/NPCDialogue'
+import { SessionRecap } from '../components/SessionRecap'
 import type { GameState, GameMap, DiceResult, Character } from '../types'
 import './GameSession.css'
 
@@ -58,6 +61,9 @@ export function GameSession() {
   const [lootItems, setLootItems] = useState<LootItem[]>([])
   const [combatLogEntries, setCombatLogEntries] = useState<CombatLogEntry[]>([])
   const [combatRound, setCombatRound] = useState(0)
+  const [npcDialogue, setNpcDialogue] = useState<{ npcName: string; npcType: NPCType; dialogue: string } | null>(null)
+  const [showRecap, setShowRecap] = useState(false)
+  const [recapText, setRecapText] = useState('')
   const turnCounterRef = useRef(0)
 
   const wsRef = useRef<GameWebSocket | null>(null)
@@ -195,9 +201,13 @@ export function GameSession() {
         }
       }
     }
-  }, [])
 
-  // Parse DM narration text into combat log entries during combat
+    // Detect NPC dialogue from quoted speech
+    const npc = parseNPCDialogue(text)
+    if (npc) {
+      setNpcDialogue(npc)
+    }
+  }, [])
   const extractCombatLogEntries = useCallback((text: string) => {
     if (gameState?.phase !== 'combat') return
     const lower = text.toLowerCase()
@@ -331,7 +341,7 @@ export function GameSession() {
     ? mapData.terrain.map((row) => row.map((cell) => cell))
     : []
 
-  const loadGameState = useCallback(async () => {
+   const loadGameState = useCallback(async () => {
     if (!sessionId) return
     setLoading(true)
     setError(null)
@@ -349,6 +359,14 @@ export function GameSession() {
           setPartyCharacters(chars)
         } catch { /* party status will just be empty */ }
       }
+      // Check for session recap (cinematic "Previously on..." overlay)
+      try {
+        const recap = await getSessionRecap(sessionId)
+        if (recap.has_recap && recap.recap_text) {
+          setRecapText(recap.recap_text)
+          setShowRecap(true)
+        }
+      } catch { /* no recap available — skip */ }
       // Fetch the real AI greeting + scene set
       let openingText = state.current_scene || 'Welcome, adventurers. Your legend begins tonight.'
       try {
@@ -570,6 +588,13 @@ export function GameSession() {
 
   return (
     <div className="game-session">
+      {showRecap && (
+        <SessionRecap
+          campaignName={campaignName}
+          recapText={recapText}
+          onContinue={() => setShowRecap(false)}
+        />
+      )}
       <AtmosphericBackground atmosphere={atmosphere} />
       <ScreenEffects
         activeEffect={activeEffect}

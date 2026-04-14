@@ -200,4 +200,14 @@ export async function getSessionGreeting(sessionId: string): Promise<string> {
   return result.greeting;
 }
 
+export interface SessionRecapData {
+  has_recap: boolean;
+  campaign_name: string;
+  recap_text: string;
+}
+
+export async function getSessionRecap(sessionId: string): Promise<SessionRecapData> {
+  return request<SessionRecapData>(`/game/sessions/${sessionId}/recap`);
+}
+
 export { ApiError };
