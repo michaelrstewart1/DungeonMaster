@@ -24,6 +24,13 @@ import PartyInventory from '../components/PartyInventory'
 import { SceneArt, detectScene } from '../components/SceneArt'
 import type { SceneType } from '../components/SceneArt'
 import { EncounterPanel } from '../components/EncounterPanel'
+import { DeathSaveTracker } from '../components/DeathSaveTracker'
+import { SpellSlotTracker } from '../components/SpellSlotTracker'
+import { MiniMap } from '../components/MiniMap'
+import { AchievementToast, checkAchievements } from '../components/AchievementToast'
+import type { Achievement } from '../components/AchievementToast'
+import { NPCJournal, detectNPCMention } from '../components/NPCJournal'
+import { EnvironmentPanel } from '../components/EnvironmentPanel'
 import type { GameState, GameMap, DiceResult, Character } from '../types'
 import './GameSession.css'
 
@@ -70,6 +77,11 @@ export function GameSession() {
   const [recapText, setRecapText] = useState('')
   const [showInventory, setShowInventory] = useState(false)
   const [currentScene, setCurrentScene] = useState<SceneType>('tavern')
+  const [showDeathSaves, setShowDeathSaves] = useState(false)
+  const [showSpellSlots, setShowSpellSlots] = useState(false)
+  const [showNPCJournal, setShowNPCJournal] = useState(false)
+  const [achievements, setAchievements] = useState<Achievement[]>([])
+  const [unlockedAchievements, setUnlockedAchievements] = useState<Set<string>>(new Set())
   const turnCounterRef = useRef(0)
 
   const wsRef = useRef<GameWebSocket | null>(null)
@@ -327,9 +339,13 @@ export function GameSession() {
         setShowKeyboardHelp(false)
         setAdventureLogOpen(false)
         setShowInventory(false)
+        setShowDeathSaves(false)
+        setShowSpellSlots(false)
+        setShowNPCJournal(false)
       }
       if (e.key === 'j' || e.key === 'J') setAdventureLogOpen(v => !v)
       if (e.key === 'i' || e.key === 'I') setShowInventory(v => !v)
+      if (e.key === 'n' || e.key === 'N') setShowNPCJournal(v => !v)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -459,6 +475,22 @@ export function GameSession() {
           detectEffect(text)
           detectAtmosphere(result.mood, text)
           setCurrentScene(detectScene(text))
+          // Check for NPC mentions
+          const npcMention = detectNPCMention(text)
+          if (npcMention) {
+            // NPC detected — journal will pick it up
+          }
+          // Check achievements
+          turnCounterRef.current++
+          const newAchievements = checkAchievements(messages, turnCounterRef.current, undefined, {
+            natural20: text.toLowerCase().includes('natural 20') || text.toLowerCase().includes('critical hit'),
+            naturalOne: text.toLowerCase().includes('natural 1') || text.toLowerCase().includes('critical fail'),
+          })
+          const fresh = newAchievements.filter(a => !unlockedAchievements.has(a.id))
+          if (fresh.length > 0) {
+            setAchievements(prev => [...prev, ...fresh])
+            setUnlockedAchievements(prev => new Set([...prev, ...fresh.map(a => a.id)]))
+          }
           if (result.dice_results?.length) {
             setLastDiceResult(result.dice_results[0])
           }
@@ -638,6 +670,27 @@ export function GameSession() {
           >
             🎒
           </button>
+          <button
+            className="btn-npc-journal"
+            onClick={() => setShowNPCJournal(v => !v)}
+            title="NPC Journal (N)"
+          >
+            📖
+          </button>
+          <button
+            className="btn-death-saves"
+            onClick={() => setShowDeathSaves(v => !v)}
+            title="Death Saves"
+          >
+            💀
+          </button>
+          <button
+            className="btn-spell-slots"
+            onClick={() => setShowSpellSlots(v => !v)}
+            title="Spell Slots"
+          >
+            ✨
+          </button>
           <button className="btn-keyboard-help" onClick={() => setShowKeyboardHelp(v => !v)} title="Keyboard shortcuts (?)">
             ⌨
           </button>
@@ -664,6 +717,8 @@ export function GameSession() {
             onMuteToggle={handleMuteToggle}
           />
           <PartyStatus characters={partyCharacters} />
+          <MiniMap sceneType={currentScene} />
+          <EnvironmentPanel sessionId={sessionId || ''} />
         </aside>
 
         {/* Main content */}
@@ -713,6 +768,7 @@ export function GameSession() {
               <div className="shortcut-item"><kbd>Shift+Enter</kbd> <span>New line in chat</span></div>
               <div className="shortcut-item"><kbd>J</kbd> <span>Toggle adventure log</span></div>
               <div className="shortcut-item"><kbd>I</kbd> <span>Toggle inventory</span></div>
+              <div className="shortcut-item"><kbd>N</kbd> <span>Toggle NPC journal</span></div>
               <div className="shortcut-item"><kbd>?</kbd> <span>Toggle this help</span></div>
               <div className="shortcut-item"><kbd>Esc</kbd> <span>Close overlay</span></div>
             </div>
@@ -747,6 +803,38 @@ export function GameSession() {
         isOpen={showInventory}
         onClose={() => setShowInventory(false)}
       />
+
+      {/* NPC Journal */}
+      <NPCJournal
+        sessionId={sessionId || ''}
+        isOpen={showNPCJournal}
+        onClose={() => setShowNPCJournal(false)}
+      />
+
+      {/* Death Save Tracker */}
+      {showDeathSaves && (
+        <DeathSaveTracker
+          characterName={partyCharacters[0]?.name || 'Hero'}
+          onClose={() => setShowDeathSaves(false)}
+        />
+      )}
+
+      {/* Spell Slot Tracker */}
+      {showSpellSlots && partyCharacters[0] && (
+        <SpellSlotTracker
+          character={partyCharacters[0]}
+          onClose={() => setShowSpellSlots(false)}
+        />
+      )}
+
+      {/* Achievement Toasts */}
+      {achievements.map((a) => (
+        <AchievementToast
+          key={a.id}
+          achievement={a}
+          onDismiss={() => setAchievements(prev => prev.filter(x => x.id !== a.id))}
+        />
+      ))}
     </div>
   )
 }

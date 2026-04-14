@@ -10,6 +10,7 @@ import type {
   ProgressionData,
   AwardXPResponse,
   TurnResult,
+  EnvironmentData,
 } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -283,6 +284,42 @@ export interface SessionSummary {
 
 export async function listGameSessions(campaignId: string): Promise<SessionSummary[]> {
   return request<SessionSummary[]>(`/game/sessions?campaign_id=${campaignId}`);
+}
+
+// Environment (Weather & Time of Day)
+export async function getEnvironment(sessionId: string): Promise<EnvironmentData> {
+  return request<EnvironmentData>(`/game/sessions/${sessionId}/environment`);
+}
+
+export async function updateEnvironment(sessionId: string, env: EnvironmentData): Promise<EnvironmentData> {
+  return request<EnvironmentData>(`/game/sessions/${sessionId}/environment`, {
+    method: 'POST',
+    body: JSON.stringify(env),
+  });
+}
+
+// NPC Journal
+export interface NPCData {
+  name: string;
+  npc_type: string;
+  disposition: 'friendly' | 'neutral' | 'hostile' | 'unknown';
+  location: string;
+  notes: string;
+}
+
+export interface SessionNPCsResponse {
+  npcs: NPCData[];
+}
+
+export async function getSessionNPCs(sessionId: string): Promise<SessionNPCsResponse> {
+  return request<SessionNPCsResponse>(`/game/sessions/${sessionId}/npcs`);
+}
+
+export async function addSessionNPC(sessionId: string, npc: NPCData): Promise<SessionNPCsResponse> {
+  return request<SessionNPCsResponse>(`/game/sessions/${sessionId}/npcs`, {
+    method: 'POST',
+    body: JSON.stringify(npc),
+  });
 }
 
 export { ApiError };

@@ -192,6 +192,32 @@
   opacity: 0.3;
 }
 
+.hero-emblem {
+  font-size: 3rem;
+  animation: emblemFloat 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 15px rgba(212, 175, 55, 0.3));
+}
+
+@keyframes emblemFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-6px); }
+}
+
+.hero-tagline {
+  font-family: 'Crimson Text', serif;
+  font-style: italic;
+  color: rgba(212, 175, 55, 0.5);
+  font-size: 1rem;
+  margin-top: 0.25rem;
+  letter-spacing: 0.05em;
+  animation: taglineFade 2s ease-in forwards;
+}
+
+@keyframes taglineFade {
+  0% { opacity: 0; transform: translateY(8px); }
+  100% { opacity: 1; transform: translateY(0); }
+}
+
 .home-content {
   flex: 1;
   padding: 2rem;

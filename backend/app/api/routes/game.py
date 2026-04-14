@@ -57,6 +57,14 @@ class SessionSummaryRequest(BaseModel):
     summary: Optional[str] = Field(default=None, description="Pre-written summary (optional)")
 
 
+class EnvironmentData(BaseModel):
+    """Schema for environment tracking (weather, time of day, etc.)."""
+    time_of_day: str = Field(default="dawn", description="dawn, morning, noon, afternoon, dusk, evening, night, midnight")
+    weather: str = Field(default="clear", description="clear, cloudy, rain, storm, snow, fog, wind")
+    temperature: str = Field(default="mild", description="freezing, cold, cool, mild, warm, hot")
+    season: str = Field(default="spring", description="spring, summer, autumn, winter")
+
+
 @router.post("/sessions", status_code=status.HTTP_201_CREATED, response_model=GameStateResponse)
 async def create_game_session(session_create: GameSessionCreate) -> GameStateResponse:
     """Create a new game session for a campaign."""
@@ -79,6 +87,12 @@ async def create_game_session(session_create: GameSessionCreate) -> GameStateRes
         "active_effects": [],
         "created_at": datetime.now(timezone.utc).isoformat(),
         "turn_count": 0,
+        "environment": {
+            "time_of_day": "dawn",
+            "weather": "clear",
+            "temperature": "cool",
+            "season": "spring",
+        },
     }
     
     storage.game_sessions[session_id] = session_data
@@ -145,6 +159,9 @@ async def submit_player_action(
     # Detect effects from narration for frontend
     effects = _detect_effects(narration, player_text)
     mood_obj = _detect_mood(f"{session.get('current_scene', '')} {narration}")
+
+    # Auto-advance time and potentially change weather
+    _advance_time(session)
 
     return PlayerActionResponse(
         narration=narration,
@@ -347,6 +364,82 @@ async def save_session_summary(
     return {"summary": summary}
 
 
+# NPC Journal endpoints
+class NPCData(BaseModel):
+    """NPC data model."""
+    name: str = Field(..., description="NPC name")
+    npc_type: str = Field(..., description="NPC type (merchant, guard, wizard, etc.)")
+    disposition: str = Field(default="unknown", description="Disposition (friendly, neutral, hostile, unknown)")
+    location: str = Field(default="", description="Last known location")
+    notes: str = Field(default="", description="Notes about the NPC")
+
+
+class SessionNPCsResponse(BaseModel):
+    """Response with session NPCs."""
+    npcs: List[NPCData] = Field(default_factory=list, description="List of NPCs")
+
+
+@router.get("/sessions/{session_id}/npcs", response_model=SessionNPCsResponse)
+async def get_session_npcs(session_id: str) -> SessionNPCsResponse:
+    """Get all NPCs for a session."""
+    if session_id not in storage.game_sessions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Game session not found"
+        )
+    
+    session = storage.game_sessions[session_id]
+    npcs_data = session.get("npcs", [])
+    
+    # Convert dict NPCs back to NPCData objects
+    npcs = [NPCData(**npc) if isinstance(npc, dict) else npc for npc in npcs_data]
+    
+    return SessionNPCsResponse(npcs=npcs)
+
+
+@router.post("/sessions/{session_id}/npcs", response_model=SessionNPCsResponse)
+async def add_session_npc(session_id: str, npc: NPCData) -> SessionNPCsResponse:
+    """Add or update an NPC in a session.
+    
+    If an NPC with the same name exists, it will be updated.
+    Otherwise, a new NPC is added.
+    """
+    if session_id not in storage.game_sessions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Game session not found"
+        )
+    
+    session = storage.game_sessions[session_id]
+    
+    # Initialize npcs list if it doesn't exist
+    if "npcs" not in session:
+        session["npcs"] = []
+    
+    # Find existing NPC with same name (case-insensitive)
+    existing_idx = None
+    for idx, existing_npc in enumerate(session["npcs"]):
+        existing_name = existing_npc.get("name", "") if isinstance(existing_npc, dict) else existing_npc.name
+        if existing_name.lower() == npc.name.lower():
+            existing_idx = idx
+            break
+    
+    # Convert NPC to dict for storage
+    npc_dict = npc.dict()
+    
+    if existing_idx is not None:
+        # Update existing NPC
+        session["npcs"][existing_idx] = npc_dict
+    else:
+        # Add new NPC
+        session["npcs"].append(npc_dict)
+    
+    # Convert back to NPCData for response
+    npcs = [NPCData(**npc) if isinstance(npc, dict) else npc for npc in session["npcs"]]
+    
+    return SessionNPCsResponse(npcs=npcs)
+
+
 @router.post("/world/generate")
 async def generate_world(request: Request, body: WorldGenerateRequest) -> dict:
     """Generate a rich world context and store it in the campaign.
@@ -498,6 +591,87 @@ def _detect_mood(scene_text: str) -> SceneMood:
         danger_level=danger,
         ambient_sounds=sound_map.get(atmosphere, ["ambient_wind"]),
     )
+
+
+def _advance_time(session: dict) -> None:
+    """Advance time of day in the session with chance of weather change.
+    
+    Cycles through: dawn -> morning -> noon -> afternoon -> dusk -> evening -> night -> midnight -> dawn
+    Has 20% chance to change weather each turn.
+    """
+    if "environment" not in session:
+        session["environment"] = {
+            "time_of_day": "dawn",
+            "weather": "clear",
+            "temperature": "cool",
+            "season": "spring",
+        }
+    
+    env = session["environment"]
+    
+    # Time cycle progression
+    time_cycle = ["dawn", "morning", "noon", "afternoon", "dusk", "evening", "night", "midnight"]
+    current_time = env.get("time_of_day", "dawn")
+    current_idx = time_cycle.index(current_time) if current_time in time_cycle else 0
+    next_idx = (current_idx + 1) % len(time_cycle)
+    env["time_of_day"] = time_cycle[next_idx]
+    
+    # 20% chance to change weather
+    if random.random() < 0.2:
+        weather_options = ["clear", "cloudy", "rain", "storm", "snow", "fog", "wind"]
+        current_weather = env.get("weather", "clear")
+        # Pick a different weather
+        available = [w for w in weather_options if w != current_weather]
+        if available:
+            env["weather"] = random.choice(available)
+    
+    # Adjust temperature based on time of day
+    temp_by_time = {
+        "midnight": "freezing",
+        "dawn": "cold",
+        "morning": "cool",
+        "noon": "warm",
+        "afternoon": "hot",
+        "dusk": "cool",
+        "evening": "cold",
+        "night": "freezing",
+    }
+    env["temperature"] = temp_by_time.get(env["time_of_day"], "mild")
+
+
+@router.get("/sessions/{session_id}/environment", response_model=EnvironmentData)
+async def get_environment(session_id: str) -> EnvironmentData:
+    """Get the current environment (weather, time of day, etc.)."""
+    if session_id not in storage.game_sessions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Game session not found"
+        )
+    
+    session = storage.game_sessions[session_id]
+    env = session.get("environment", {
+        "time_of_day": "dawn",
+        "weather": "clear",
+        "temperature": "cool",
+        "season": "spring",
+    })
+    
+    return EnvironmentData(**env)
+
+
+@router.post("/sessions/{session_id}/environment", response_model=EnvironmentData)
+async def update_environment(session_id: str, env: EnvironmentData) -> EnvironmentData:
+    """Update the environment (weather, time of day, etc.)."""
+    if session_id not in storage.game_sessions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Game session not found"
+        )
+    
+    session = storage.game_sessions[session_id]
+    session["environment"] = env.dict()
+    
+    return EnvironmentData(**session["environment"])
 
 
 @router.get("/sessions/{session_id}/mood")

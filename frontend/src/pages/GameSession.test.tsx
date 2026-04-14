@@ -27,6 +27,10 @@ vi.mock('../api/client', () => ({
   addPartyLoot: () => Promise.resolve({ items: [], gold: 0 }),
   updatePartyGold: () => Promise.resolve({ gold: 0, transaction: '' }),
   generateEncounter: () => Promise.resolve({ enemies: [], total_xp: 0, difficulty_rating: 'easy', description: '' }),
+  getSessionNPCs: () => Promise.resolve({ npcs: [] }),
+  addSessionNPC: () => Promise.resolve({}),
+  getEnvironment: () => Promise.resolve({ time_of_day: 'morning', weather: 'clear', temperature: 'mild', season: 'summer' }),
+  updateEnvironment: () => Promise.resolve({}),
 }))
 
 const mockConnect = vi.fn()
@@ -159,6 +163,32 @@ vi.mock('../components/SceneArt', () => ({
 
 vi.mock('../components/EncounterPanel', () => ({
   EncounterPanel: () => <div data-testid="encounter-panel" />,
+}))
+
+vi.mock('../components/DeathSaveTracker', () => ({
+  DeathSaveTracker: () => <div data-testid="death-save-tracker" />,
+}))
+
+vi.mock('../components/SpellSlotTracker', () => ({
+  SpellSlotTracker: () => <div data-testid="spell-slot-tracker" />,
+}))
+
+vi.mock('../components/MiniMap', () => ({
+  MiniMap: () => <div data-testid="mini-map" />,
+}))
+
+vi.mock('../components/AchievementToast', () => ({
+  AchievementToast: () => <div data-testid="achievement-toast" />,
+  checkAchievements: () => [],
+}))
+
+vi.mock('../components/NPCJournal', () => ({
+  NPCJournal: () => <div data-testid="npc-journal" />,
+  detectNPCMention: () => null,
+}))
+
+vi.mock('../components/EnvironmentPanel', () => ({
+  EnvironmentPanel: () => <div data-testid="environment-panel" />,
 }))
 
 describe('GameSession', () => {

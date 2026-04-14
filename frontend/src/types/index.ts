@@ -158,3 +158,10 @@ export interface AwardXPResponse {
   leveled_up: boolean;
   new_level: number | null;
 }
+
+export interface EnvironmentData {
+  time_of_day: 'dawn' | 'morning' | 'noon' | 'afternoon' | 'dusk' | 'evening' | 'night' | 'midnight';
+  weather: 'clear' | 'cloudy' | 'rain' | 'storm' | 'snow' | 'fog' | 'wind';
+  temperature: 'freezing' | 'cold' | 'cool' | 'mild' | 'warm' | 'hot';
+  season: 'spring' | 'summer' | 'autumn' | 'winter';
+}

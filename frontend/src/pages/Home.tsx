@@ -102,8 +102,10 @@ export function Home() {
   return (
     <div className="page-home">
       <header className="hero">
-        <h1>⚔️ AI Dungeon Master</h1>
+        <div className="hero-emblem">⚔️</div>
+        <h1>AI Dungeon Master</h1>
         <p className="subtitle">Your AI-powered D&amp;D 5e experience</p>
+        <p className="hero-tagline">Roll for initiative. The DM is ready.</p>
         {campaigns.length > 0 && (
           <div className="hero-stats">
             <span className="hero-stat">

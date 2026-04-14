@@ -7019,3 +7019,1065 @@
 .encounter-result::-webkit-scrollbar-thumb:hover {
   background: var(--gold);
 }
+
+/* ============================================================
+   Mini-Map Tracker — CSS-Art Dungeon/Area Visualization
+   ============================================================ */
+
+.mini-map {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  background: var(--gold-bg);
+  border: 2px solid var(--gold-dim);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: inset 0 0 15px rgba(0, 0, 0, 0.4), 0 0 12px rgba(212, 168, 70, 0.15);
+}
+
+/* Grid background */
+.mini-map-grid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(0deg, transparent calc(100% - 1px), var(--gold-dim) calc(100% - 1px)),
+    linear-gradient(90deg, transparent calc(100% - 1px), var(--gold-dim) calc(100% - 1px));
+  background-size: 15px 15px;
+  opacity: 0.1;
+  pointer-events: none;
+}
+
+/* Dungeon layout: Corridors and rooms */
+.mini-map-dungeon .mini-map-layout {
+  position: absolute;
+  inset: 0;
+}
+
+.mini-map-dungeon .mini-map-layout::before {
+  content: '';
+  position: absolute;
+  background:
+    /* Main corridor - horizontal */
+    linear-gradient(90deg, transparent 45%, var(--gold-dim) 45%, var(--gold-dim) 55%, transparent 55%),
+    /* Side corridor */
+    linear-gradient(180deg, transparent 40%, var(--gold-dim) 40%, var(--gold-dim) 45%, transparent 45%),
+    /* Room 1 - top left */
+    linear-gradient(90deg, var(--gold-dim) 10px, transparent 10px, transparent calc(100% - 10px), var(--gold-dim) calc(100% - 10px)),
+    linear-gradient(180deg, var(--gold-dim) 35px, transparent 35px, transparent calc(100% - 35px), var(--gold-dim) calc(100% - 35px));
+  background-position:
+    0 0,
+    25px 0,
+    0 0,
+    0 0;
+  background-size:
+    100% 100%,
+    40px 60px,
+    50px 60px,
+    50px 60px;
+  background-repeat: no-repeat;
+  inset: 0;
+}
+
+/* Forest layout: Open area with scattered elements */
+.mini-map-forest .mini-map-layout {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 30% 30%, rgba(212, 168, 70, 0.25) 0%, transparent 15%),
+    radial-gradient(circle at 70% 60%, rgba(212, 168, 70, 0.2) 0%, transparent 12%),
+    radial-gradient(circle at 50% 80%, rgba(212, 168, 70, 0.2) 0%, transparent 10%),
+    radial-gradient(circle at 20% 70%, rgba(212, 168, 70, 0.15) 0%, transparent 8%);
+}
+
+/* Cave layout: Branching tunnels */
+.mini-map-cave .mini-map-layout {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(45deg, transparent 48%, var(--gold-dim) 48%, var(--gold-dim) 52%, transparent 52%),
+    linear-gradient(135deg, transparent 48%, var(--gold-dim) 48%, var(--gold-dim) 52%, transparent 52%),
+    linear-gradient(90deg, var(--gold-dim) 45%, transparent 45%, transparent 55%, var(--gold-dim) 55%);
+  background-position:
+    50% 30%,
+    50% 50%,
+    0 50%;
+  background-size:
+    60px 60px,
+    60px 60px,
+    100% 40px;
+  background-repeat: no-repeat;
+}
+
+/* Tavern layout: Single room with fixtures */
+.mini-map-tavern .mini-map-layout {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(90deg, var(--gold-dim) 2px, transparent 2px, transparent calc(100% - 2px), var(--gold-dim) calc(100% - 2px)),
+    linear-gradient(180deg, var(--gold-dim) 2px, transparent 2px, transparent calc(100% - 2px), var(--gold-dim) calc(100% - 2px)),
+    /* Small bar counter */
+    linear-gradient(90deg, rgba(212, 168, 70, 0.3) 0%, rgba(212, 168, 70, 0.3) 40%, transparent 40%),
+    /* Tables - dots */
+    radial-gradient(circle at 65% 35%, rgba(212, 168, 70, 0.2) 0%, transparent 8%),
+    radial-gradient(circle at 70% 70%, rgba(212, 168, 70, 0.2) 0%, transparent 8%);
+  background-position:
+    0 0,
+    0 0,
+    0 60%,
+    0 0,
+    0 0;
+  background-size:
+    100% 100%,
+    100% 100%,
+    100% 30%,
+    100% 100%,
+    100% 100%;
+  background-repeat: no-repeat;
+}
+
+/* Castle layout: Grand halls and corridors */
+.mini-map-castle .mini-map-layout {
+  position: absolute;
+  inset: 0;
+  background:
+    /* Main hall */
+    linear-gradient(90deg, transparent 35%, var(--gold-dim) 35%, var(--gold-dim) 65%, transparent 65%),
+    /* Side wing - left */
+    linear-gradient(0deg, transparent 20%, var(--gold-dim) 20%, var(--gold-dim) 40%, transparent 40%),
+    /* Side wing - right */
+    linear-gradient(0deg, transparent 60%, var(--gold-dim) 60%, var(--gold-dim) 80%, transparent 80%);
+  background-position:
+    0 0,
+    0 30%,
+    0 30%;
+  background-size:
+    100% 100%,
+    25% 60%,
+    25% 60%;
+  background-repeat: no-repeat;
+}
+
+/* Battlefield layout: Terrain features */
+.mini-map-battlefield .mini-map-layout {
+  position: absolute;
+  inset: 0;
+  background:
+    /* Ridge */
+    linear-gradient(120deg, transparent 48%, var(--gold-dim) 48%, var(--gold-dim) 52%, transparent 52%),
+    /* Low ground */
+    linear-gradient(45deg, rgba(212, 168, 70, 0.15) 0%, rgba(212, 168, 70, 0.15) 100%);
+  background-position:
+    0 30%,
+    0 0;
+  background-size:
+    100% 50%,
+    100% 100%;
+  background-repeat: no-repeat;
+}
+
+/* Position indicator - pulsing dot */
+.mini-map-position {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin: -4px 0 0 -4px;
+  background: var(--gold);
+  border-radius: 50%;
+  box-shadow: 0 0 6px var(--gold), 0 0 12px rgba(212, 168, 70, 0.4);
+  animation: miniMapPulse 1.5s ease-in-out infinite;
+  z-index: 10;
+}
+
+@keyframes miniMapPulse {
+  0%, 100% {
+    box-shadow: 0 0 6px var(--gold), 0 0 12px rgba(212, 168, 70, 0.4);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 10px var(--gold-light), 0 0 20px rgba(212, 168, 70, 0.6);
+    transform: scale(1.1);
+  }
+}
+
+/* Scene label */
+.mini-map-label {
+  position: absolute;
+  bottom: 4px;
+  right: 6px;
+  font-family: 'Cinzel', serif;
+  font-size: 0.6rem;
+  color: var(--gold-dim);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+/* ============================================================
+   Achievement Toast — Gold-bordered notification
+   ============================================================ */
+
+.achievement-toast {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: linear-gradient(135deg, rgba(26, 22, 10, 0.95) 0%, rgba(18, 15, 8, 0.98) 100%);
+  border: 2px solid var(--gold);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  z-index: 1500;
+  min-width: 300px;
+  max-width: 400px;
+  box-shadow: 
+    0 0 20px rgba(212, 168, 70, 0.3),
+    inset 0 0 20px rgba(212, 168, 70, 0.05);
+  animation: achievementSlideIn 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes achievementSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(400px) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) translateY(0);
+  }
+}
+
+.achievement-toast-exit {
+  animation: achievementSlideOut 0.3s ease forwards;
+}
+
+@keyframes achievementSlideOut {
+  to {
+    opacity: 0;
+    transform: translateX(400px) translateY(-20px);
+  }
+}
+
+.achievement-toast-icon {
+  font-size: 2rem;
+  flex-shrink: 0;
+  animation: achievementBounce 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+@keyframes achievementBounce {
+  0% {
+    transform: scale(0) rotate(-45deg);
+  }
+  50% {
+    transform: scale(1.15);
+  }
+  100% {
+    transform: scale(1) rotate(0deg);
+  }
+}
+
+.achievement-toast-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.achievement-toast-title {
+  font-family: 'Cinzel', serif;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: var(--gold-light);
+  letter-spacing: 0.02em;
+  text-shadow: 0 0 10px rgba(212, 168, 70, 0.3);
+}
+
+.achievement-toast-description {
+  font-family: 'Crimson Text', serif;
+  font-size: 0.9rem;
+  color: var(--gold-dim);
+  line-height: 1.3;
+}
+
+.achievement-toast-close {
+  background: transparent;
+  border: none;
+  color: var(--gold-dim);
+  font-size: 1.5rem;
+  font-weight: 300;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.achievement-toast-close:hover {
+  color: var(--gold-light);
+}
+
+/* Achievement toast container for managing multiple toasts */
+.achievement-toast-container {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  z-index: 1500;
+  pointer-events: none;
+}
+
+.achievement-toast-container > * {
+  pointer-events: all;
+  margin-bottom: 12px;
+}
+
+/* ============================================================
+   NPC Journal — Character Relations & NPC Tracking
+   ============================================================ */
+
+.npc-journal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.npc-journal-modal {
+  width: 90%;
+  max-width: 700px;
+  max-height: 85vh;
+  background: linear-gradient(135deg, rgba(20, 18, 28, 0.95) 0%, rgba(12, 10, 18, 0.95) 100%);
+  border: 2px solid var(--gold);
+  border-radius: 12px;
+  box-shadow:
+    0 0 40px rgba(212, 168, 70, 0.3),
+    0 0 80px rgba(0, 0, 0, 0.8),
+    inset 0 1px 0 rgba(212, 168, 70, 0.1);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalSlideIn 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@keyframes modalSlideIn {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.npc-journal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1.5rem;
+  border-bottom: 2px solid var(--gold-dim);
+  position: relative;
+}
+
+.npc-journal-header::before {
+  content: '⚜';
+  position: absolute;
+  left: 50%;
+  top: -12px;
+  transform: translateX(-50%);
+  font-size: 1rem;
+  color: var(--gold-dim);
+  text-shadow: 0 0 8px rgba(212, 168, 70, 0.3);
+}
+
+.npc-journal-title {
+  font-family: 'Cinzel', serif;
+  font-size: 1.4rem;
+  color: var(--gold-light);
+  margin: 0;
+  letter-spacing: 0.06em;
+  text-shadow: 0 0 10px rgba(212, 168, 70, 0.2);
+}
+
+.npc-journal-close {
+  background: transparent;
+  border: 1px solid var(--gold-dim);
+  color: var(--gold-dim);
+  font-size: 1.5rem;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.npc-journal-close:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: rgba(212, 168, 70, 0.1);
+}
+
+.npc-journal-toolbar {
+  display: flex;
+  gap: 0.75rem;
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid rgba(212, 168, 70, 0.1);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.npc-search-input,
+.npc-filter-select {
+  flex: 1;
+  padding: 0.6rem 1rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--gold-dim);
+  border-radius: 6px;
+  color: var(--text-bright);
+  font-family: 'Crimson Text', serif;
+  font-size: 1rem;
+  transition: all 0.2s;
+}
+
+.npc-search-input:focus,
+.npc-filter-select:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 12px rgba(212, 168, 70, 0.2);
+  background: rgba(212, 168, 70, 0.05);
+}
+
+.npc-filter-select {
+  flex: 0.5;
+}
+
+.npc-search-input::placeholder {
+  color: var(--text-dim);
+}
+
+.npc-journal-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.npc-journal-body::-webkit-scrollbar {
+  width: 8px;
+}
+
+.npc-journal-body::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+  border-radius: 4px;
+}
+
+.npc-journal-body::-webkit-scrollbar-thumb {
+  background: var(--gold-dim);
+  border-radius: 4px;
+}
+
+.npc-journal-body::-webkit-scrollbar-thumb:hover {
+  background: var(--gold);
+}
+
+.npc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.npc-empty,
+.npc-empty-filtered {
+  text-align: center;
+  color: var(--text-dim);
+  font-family: 'Crimson Text', serif;
+  font-size: 1rem;
+  padding: 2rem 1rem;
+  font-style: italic;
+}
+
+.npc-card {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--gold-dim);
+  border-left: 4px solid var(--gold);
+  border-radius: 8px;
+  padding: 1rem;
+  transition: all 0.2s;
+}
+
+.npc-card:hover {
+  background: rgba(212, 168, 70, 0.05);
+  box-shadow: 0 0 15px rgba(212, 168, 70, 0.15);
+}
+
+.npc-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.npc-emoji {
+  font-size: 2rem;
+  flex-shrink: 0;
+  animation: emojiFloat 3s ease-in-out infinite;
+}
+
+@keyframes emojiFloat {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+
+.npc-card-title-area {
+  flex: 1;
+}
+
+.npc-card-name {
+  font-family: 'Cinzel', serif;
+  font-size: 1.1rem;
+  color: var(--gold-light);
+  margin: 0 0 0.2rem;
+  letter-spacing: 0.03em;
+}
+
+.npc-card-type {
+  font-family: 'Crimson Text', serif;
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  margin: 0;
+  font-style: italic;
+  text-transform: capitalize;
+}
+
+.npc-disposition-badge {
+  padding: 0.4rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-family: 'Cinzel', serif;
+  color: white;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  flex-shrink: 0;
+}
+
+.npc-location {
+  font-family: 'Crimson Text', serif;
+  font-size: 0.9rem;
+  color: var(--gold-dim);
+  margin: 0.5rem 0 0.75rem;
+  padding-left: 2.5rem;
+}
+
+.npc-location strong {
+  color: var(--gold-light);
+}
+
+.npc-notes-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(212, 168, 70, 0.1);
+}
+
+.npc-notes-display {
+  font-family: 'Crimson Text', serif;
+  font-size: 0.95rem;
+  color: var(--text-bright);
+  margin: 0;
+  line-height: 1.5;
+  font-style: italic;
+}
+
+.npc-notes-display:empty::after {
+  content: attr(data-empty);
+}
+
+.npc-notes-edit {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--gold-dim);
+  border-radius: 4px;
+  padding: 0.6rem;
+  color: var(--text-bright);
+  font-family: 'Crimson Text', serif;
+  font-size: 0.95rem;
+  resize: vertical;
+}
+
+.npc-notes-edit:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 8px rgba(212, 168, 70, 0.15);
+  background: rgba(212, 168, 70, 0.05);
+}
+
+.npc-notes-controls {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+.npc-btn {
+  padding: 0.5rem 0.85rem;
+  border: 1px solid var(--gold-dim);
+  border-radius: 4px;
+  background: rgba(212, 168, 70, 0.1);
+  color: var(--gold-light);
+  font-family: 'Cinzel', serif;
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+
+.npc-btn:hover {
+  border-color: var(--gold);
+  background: rgba(212, 168, 70, 0.2);
+  box-shadow: 0 0 10px rgba(212, 168, 70, 0.2);
+}
+
+.npc-btn:active {
+  transform: scale(0.97);
+}
+
+.npc-btn-edit,
+.npc-btn-save {
+  flex: 1;
+}
+
+.npc-btn-cancel {
+  background: rgba(201, 68, 68, 0.1);
+  border-color: rgba(201, 68, 68, 0.3);
+  color: var(--red-light);
+}
+
+.npc-btn-cancel:hover {
+  background: rgba(201, 68, 68, 0.2);
+  border-color: var(--red);
+}
+
+.npc-journal-footer {
+  padding: 1.5rem;
+  border-top: 2px solid var(--gold-dim);
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.npc-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.npc-add-title {
+  font-family: 'Cinzel', serif;
+  font-size: 1rem;
+  color: var(--gold-light);
+  margin: 0 0 0.5rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.npc-add-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+}
+
+.npc-input {
+  padding: 0.6rem 0.85rem;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--gold-dim);
+  border-radius: 4px;
+  color: var(--text-bright);
+  font-family: 'Crimson Text', serif;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+
+.npc-input:focus {
+  outline: none;
+  border-color: var(--gold);
+  box-shadow: 0 0 8px rgba(212, 168, 70, 0.15);
+  background: rgba(212, 168, 70, 0.05);
+}
+
+.npc-input-name {
+  grid-column: 1 / 2;
+}
+
+.npc-input-type {
+  grid-column: 2 / 3;
+}
+
+.npc-input-location {
+  grid-column: 1 / 2;
+}
+
+.npc-input-disposition {
+  grid-column: 2 / 3;
+}
+
+.npc-btn-add {
+  grid-column: 1 / -1;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .npc-journal-modal {
+    max-width: 95%;
+    max-height: 90vh;
+  }
+
+  .npc-journal-toolbar {
+    flex-direction: column;
+  }
+
+  .npc-add-inputs {
+    grid-template-columns: 1fr;
+  }
+
+  .npc-input-name,
+  .npc-input-type,
+  .npc-input-location,
+  .npc-input-disposition,
+  .npc-btn-add {
+    grid-column: 1 / -1;
+  }
+
+  .npc-card-header {
+    flex-wrap: wrap;
+  }
+}
+
+/* ============================================================
+   Environment Panel — Weather & Time of Day Display
+   ============================================================ */
+
+.environment-panel {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  background: linear-gradient(135deg, rgba(212, 168, 70, 0.08) 0%, rgba(212, 168, 70, 0.04) 100%);
+  border: 1px solid var(--gold-dim);
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-family: var(--font-ui);
+  color: var(--gold-light);
+  position: relative;
+  overflow: hidden;
+  transition: all 0.3s ease;
+}
+
+.environment-panel::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(212, 168, 70, 0.1) 0%, transparent 70%);
+  pointer-events: none;
+}
+
+/* Loading and error states */
+.environment-loading,
+.environment-error {
+  opacity: 0.6;
+  gap: 0.4rem;
+}
+
+.environment-error {
+  background: rgba(200, 50, 50, 0.1);
+  border-color: rgba(200, 50, 50, 0.3);
+  color: #ff8080;
+}
+
+/* Individual environment items */
+.env-item {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  position: relative;
+  z-index: 1;
+}
+
+.env-icon {
+  font-size: 1rem;
+  display: inline-block;
+  transition: transform 0.3s ease;
+}
+
+.env-label {
+  font-size: 0.8rem;
+  text-transform: capitalize;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+}
+
+/* Time of Day */
+.time-of-day {
+  background: rgba(212, 168, 70, 0.1);
+  border: 1px solid rgba(212, 168, 70, 0.2);
+}
+
+.time-of-day .env-icon {
+  animation: float-gentle 3s ease-in-out infinite;
+}
+
+@keyframes float-gentle {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
+}
+
+/* Weather */
+.weather {
+  background: rgba(212, 168, 70, 0.08);
+  border: 1px solid rgba(212, 168, 70, 0.15);
+}
+
+/* Weather-specific styling */
+.weather-type-clear {
+  color: #ffeb3b;
+}
+
+.weather-type-cloudy {
+  color: #bdbdbd;
+}
+
+.weather-type-rain {
+  color: #64b5f6;
+}
+
+.weather-type-storm {
+  color: #424242;
+}
+
+.weather-type-snow {
+  color: #e0e0e0;
+}
+
+.weather-type-fog {
+  color: #9e9e9e;
+}
+
+.weather-type-wind {
+  color: #81c784;
+}
+
+/* Weather effects for rain */
+.rain-effect {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 2px,
+      rgba(100, 181, 246, 0.3) 2px,
+      rgba(100, 181, 246, 0.3) 4px
+    ),
+    repeating-linear-gradient(
+      45deg,
+      transparent,
+      transparent 10px,
+      rgba(100, 181, 246, 0.15) 10px,
+      rgba(100, 181, 246, 0.15) 12px
+    );
+  animation: rain-fall 1.5s linear infinite;
+  pointer-events: none;
+  opacity: 0.4;
+  border-radius: 4px;
+}
+
+@keyframes rain-fall {
+  0% {
+    transform: translateY(-100%);
+  }
+  100% {
+    transform: translateY(100%);
+  }
+}
+
+/* Weather effects for snow */
+.snow-effect {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: 
+    radial-gradient(circle, rgba(224, 224, 224, 0.8) 1px, transparent 1px),
+    radial-gradient(circle, rgba(224, 224, 224, 0.6) 1px, transparent 1px),
+    radial-gradient(circle, rgba(224, 224, 224, 0.4) 1px, transparent 1px);
+  background-size: 20px 20px, 35px 35px, 50px 50px;
+  background-position: 0 0, 10px 10px, 20px 20px;
+  animation: snow-fall 3s linear infinite;
+  pointer-events: none;
+  opacity: 0.3;
+  border-radius: 4px;
+}
+
+@keyframes snow-fall {
+  0% {
+    background-position: 0 0, 10px 10px, 20px 20px;
+  }
+  100% {
+    background-position: 0 30px, 10px 40px, 20px 50px;
+  }
+}
+
+/* Weather effects for storm */
+.storm-effect {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: radial-gradient(circle at 50% 50%, rgba(66, 66, 66, 0.4) 0%, transparent 70%);
+  animation: storm-flash 4s ease-in-out infinite;
+  pointer-events: none;
+  border-radius: 4px;
+}
+
+@keyframes storm-flash {
+  0%, 10%, 15%, 100% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 0.6;
+  }
+  13% {
+    opacity: 0;
+  }
+  14% {
+    opacity: 0.6;
+  }
+}
+
+/* Temperature */
+.temperature {
+  background: rgba(212, 168, 70, 0.08);
+  border: 1px solid rgba(212, 168, 70, 0.15);
+  font-size: 0.75rem;
+}
+
+/* Season indicator */
+.season {
+  background: linear-gradient(135deg, var(--gold-dim), var(--gold));
+  border: 1px solid var(--gold);
+  padding: 0.3rem 0.5rem;
+  border-radius: 3px;
+  font-weight: 700;
+  font-size: 0.7rem;
+  color: #1a1a26;
+  letter-spacing: 0.05em;
+  text-shadow: none;
+}
+
+.season-abbr {
+  display: block;
+}
+
+/* Season-specific colors */
+.season-spring {
+  --season-color: #81c784;
+}
+
+.season-summer {
+  --season-color: #ffeb3b;
+}
+
+.season-autumn {
+  --season-color: #ff9800;
+}
+
+.season-winter {
+  --season-color: #64b5f6;
+}
+
+/* Hover effects */
+.env-item:hover {
+  background: rgba(212, 168, 70, 0.15);
+  border-color: rgba(212, 168, 70, 0.4);
+  transform: translateY(-1px);
+}
+
+/* Compact version (for header integration) */
+.environment-panel.compact {
+  gap: 0.5rem;
+  padding: 0.4rem 0.6rem;
+}
+
+.environment-panel.compact .env-item {
+  padding: 0.15rem 0.3rem;
+}
+
+.environment-panel.compact .env-label {
+  font-size: 0.75rem;
+}
+
+/* Dark theme adjustments */
+@media (prefers-color-scheme: dark) {
+  .environment-panel {
+    background: linear-gradient(135deg, rgba(212, 168, 70, 0.05) 0%, rgba(212, 168, 70, 0.02) 100%);
+    border-color: var(--gold-dim);
+  }
+
+  .env-item {
+    background: rgba(212, 168, 70, 0.08);
+    border-color: rgba(212, 168, 70, 0.15);
+  }
+
+  .env-item:hover {
+    background: rgba(212, 168, 70, 0.12);
+    border-color: rgba(212, 168, 70, 0.3);
+  }
+}
+
+/* Animation for weather changes */
+.environment-panel.weather-changing {
+  animation: weather-pulse 0.6s ease-out;
+}
+
+@keyframes weather-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(212, 168, 70, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 6px rgba(212, 168, 70, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(212, 168, 70, 0);
+  }
+}
