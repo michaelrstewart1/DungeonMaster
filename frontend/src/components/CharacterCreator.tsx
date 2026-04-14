@@ -10,31 +10,31 @@ import {
   type SubraceData, type SubclassData, type BackgroundData, type SkillData,
 } from '../data/dnd5e'
 
-const RACES: { value: Race; label: string }[] = [
-  { value: 'human', label: 'Human' },
-  { value: 'elf', label: 'Elf' },
-  { value: 'dwarf', label: 'Dwarf' },
-  { value: 'halfling', label: 'Halfling' },
-  { value: 'gnome', label: 'Gnome' },
-  { value: 'half-elf', label: 'Half-Elf' },
-  { value: 'half-orc', label: 'Half-Orc' },
-  { value: 'tiefling', label: 'Tiefling' },
-  { value: 'dragonborn', label: 'Dragonborn' },
+const RACES: { value: Race; label: string; desc: string }[] = [
+  { value: 'human', label: 'Human', desc: 'Versatile and ambitious, humans are the most adaptable of all races.' },
+  { value: 'elf', label: 'Elf', desc: 'Graceful and long-lived, with keen senses and a deep connection to magic.' },
+  { value: 'dwarf', label: 'Dwarf', desc: 'Bold and hardy, dwarves are skilled warriors and master artisans.' },
+  { value: 'halfling', label: 'Halfling', desc: 'Small and nimble, halflings are resourceful survivors with remarkable luck.' },
+  { value: 'gnome', label: 'Gnome', desc: 'Curious and inventive, gnomes delight in discovery and creation.' },
+  { value: 'half-elf', label: 'Half-Elf', desc: 'Walking in two worlds, half-elves combine human drive with elven grace.' },
+  { value: 'half-orc', label: 'Half-Orc', desc: 'Fierce and powerful, half-orcs channel their endurance into might.' },
+  { value: 'tiefling', label: 'Tiefling', desc: 'Bearing an infernal bloodline, tieflings wield dark charisma and fire.' },
+  { value: 'dragonborn', label: 'Dragonborn', desc: 'Proud dragon-blooded warriors who breathe elemental devastation.' },
 ]
 
-const CLASSES: { value: CharacterClass; label: string; icon: string }[] = [
-  { value: 'barbarian', label: 'Barbarian', icon: '🪓' },
-  { value: 'bard', label: 'Bard', icon: '🎵' },
-  { value: 'cleric', label: 'Cleric', icon: '✝️' },
-  { value: 'druid', label: 'Druid', icon: '🌿' },
-  { value: 'fighter', label: 'Fighter', icon: '🛡️' },
-  { value: 'monk', label: 'Monk', icon: '👊' },
-  { value: 'paladin', label: 'Paladin', icon: '⚜️' },
-  { value: 'ranger', label: 'Ranger', icon: '🏹' },
-  { value: 'rogue', label: 'Rogue', icon: '🗡️' },
-  { value: 'sorcerer', label: 'Sorcerer', icon: '⚡' },
-  { value: 'warlock', label: 'Warlock', icon: '👁️' },
-  { value: 'wizard', label: 'Wizard', icon: '🔮' },
+const CLASSES: { value: CharacterClass; label: string; icon: string; desc: string }[] = [
+  { value: 'barbarian', label: 'Barbarian', icon: '🪓', desc: 'A fierce warrior of primal rage and unmatched physical power.' },
+  { value: 'bard', label: 'Bard', icon: '🎵', desc: 'An inspiring magician whose power echoes the music of creation.' },
+  { value: 'cleric', label: 'Cleric', icon: '✝️', desc: 'A priestly champion who wields divine magic in service of a higher power.' },
+  { value: 'druid', label: 'Druid', icon: '🌿', desc: 'A priest of the Old Faith, wielding the powers of nature.' },
+  { value: 'fighter', label: 'Fighter', icon: '🛡️', desc: 'A master of martial combat, skilled with weapons and armor.' },
+  { value: 'monk', label: 'Monk', icon: '👊', desc: 'A master of martial arts, harnessing the power of body and soul.' },
+  { value: 'paladin', label: 'Paladin', icon: '⚜️', desc: 'A holy warrior bound to a sacred oath of justice and righteousness.' },
+  { value: 'ranger', label: 'Ranger', icon: '🏹', desc: 'A warrior who combats threats on the edges of civilization.' },
+  { value: 'rogue', label: 'Rogue', icon: '🗡️', desc: 'A scoundrel who uses stealth and cunning to overcome obstacles.' },
+  { value: 'sorcerer', label: 'Sorcerer', icon: '⚡', desc: 'A spellcaster who draws on inherent magic from a gift or bloodline.' },
+  { value: 'warlock', label: 'Warlock', icon: '👁️', desc: 'A wielder of magic derived from a bargain with an extraplanar entity.' },
+  { value: 'wizard', label: 'Wizard', icon: '🔮', desc: 'A scholarly magic-user who commands arcane spells through study.' },
 ]
 
 const ABILITY_INFO: { key: string; label: string; short: string; desc: string }[] = [
@@ -277,7 +277,12 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
 
   return (
     <form onSubmit={handleSubmit} className="character-creator" aria-label="form" role="form">
-      <h2>⚔️ Forge Your Hero</h2>
+      <div className="creator-header">
+        <h2>⚔️ Forge Your Hero</h2>
+        <div className="creator-header-divider">
+          <span className="divider-rune">☬</span>
+        </div>
+      </div>
 
       {/* Step indicator */}
       <div className="creator-steps" data-testid="creator-steps">
@@ -297,6 +302,17 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
         ))}
       </div>
 
+      {/* Floating mini-preview (visible from step 2+) */}
+      {step >= 2 && (
+        <div className="creator-mini-preview">
+          <CharacterPortrait race={race} className={className} size="sm" />
+          <div className="mini-preview-info">
+            <span className="mini-preview-race">{RACES.find(r => r.value === race)?.label}</span>
+            <span className="mini-preview-class">{CLASSES.find(c => c.value === className)?.label}</span>
+          </div>
+        </div>
+      )}
+
       {/* ================================================================ */}
       {/* Step 0: Race + Subrace */}
       {/* ================================================================ */}
@@ -315,6 +331,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
               >
                 <span className="race-symbol">{RACE_SYMBOLS[r.value]}</span>
                 <span className="race-name">{r.label}</span>
+                <span className="card-tooltip">{r.desc}</span>
               </button>
             ))}
           </div>
@@ -391,6 +408,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                   <span className="class-icon">{c.icon}</span>
                   <span className="class-name">{c.label}</span>
                   <span className="class-hit-die">d{HIT_DICE[c.value]}</span>
+                  <span className="card-tooltip">{c.desc}</span>
                 </button>
               )
             })}
@@ -564,6 +582,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                       {bonus !== 0 && <span className="ability-racial-bonus">+{bonus} racial</span>}
                       <span className="ability-final">Final: {finalVal}</span>
                       <span className={`ability-modifier ${modClass(finalVal)}`}>{abilityMod(finalVal)}</span>
+                      <span className="ability-cost">Cost: {POINT_BUY_COSTS[val] ?? 0} pts</span>
                     </div>
                   )
                 })}
@@ -663,8 +682,9 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
             )}
           </p>
 
-          <div className="skill-selection-count">
+          <div className={`skill-selection-count ${selectedSkills.length === classSkillInfo.count ? 'skills-full' : selectedSkills.length > classSkillInfo.count ? 'skills-over' : ''}`}>
             Selected: {selectedSkills.length} / {classSkillInfo.count}
+            {selectedSkills.length === classSkillInfo.count && <span className="skills-check"> ✓</span>}
           </div>
 
           <div className="skill-groups">
@@ -978,42 +998,77 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                 <p className="review-alignment">Alignment: {ALIGNMENTS.find(a => a.value === alignment)?.label}</p>
               )}
 
-              <div className="review-abilities">
-                {ABILITY_INFO.map(({ key, short }) => {
-                  const base = abilities[key as keyof AbilityScores]
-                  const bonus = racialBonuses[key] || 0
-                  const final_ = base + bonus
-                  return (
-                    <span key={key} className="review-stat">
-                      <span className="stat-label">{short}</span>
-                      <span className="stat-value">{final_}</span>
-                      <span className={`stat-mod ${modClass(final_)}`}>{abilityMod(final_)}</span>
-                    </span>
-                  )
-                })}
+              <div className="review-section">
+                <h5 className="review-section-header"><span className="review-section-icon">⚔️</span> Ability Scores</h5>
+                <div className="review-abilities">
+                  {ABILITY_INFO.map(({ key, short }) => {
+                    const base = abilities[key as keyof AbilityScores]
+                    const bonus = racialBonuses[key] || 0
+                    const final_ = base + bonus
+                    return (
+                      <span key={key} className="review-stat">
+                        <span className="stat-label">{short}</span>
+                        <span className="stat-value">{final_}</span>
+                        <span className={`stat-mod ${modClass(final_)}`}>{abilityMod(final_)}</span>
+                      </span>
+                    )
+                  })}
+                </div>
               </div>
 
-              <div className="review-derived">
-                <span>❤️ HP: {calculatedHP}</span>
-                <span>🛡️ AC: {calculatedAC}</span>
-                <span>🏃 Speed: {race === 'dwarf' || race === 'halfling' || race === 'gnome' ? 25 : 30} ft</span>
-                <span>🎯 Hit Die: d{HIT_DICE[className]}</span>
+              <div className="review-section">
+                <h5 className="review-section-header"><span className="review-section-icon">❤️</span> Combat Stats</h5>
+                <div className="review-derived">
+                  <span className="derived-stat"><span className="derived-label">HP</span><span className="derived-value">{calculatedHP}</span></span>
+                  <span className="derived-stat"><span className="derived-label">AC</span><span className="derived-value">{calculatedAC}</span></span>
+                  <span className="derived-stat"><span className="derived-label">Speed</span><span className="derived-value">{race === 'dwarf' || race === 'halfling' || race === 'gnome' ? 25 : 30} ft</span></span>
+                  <span className="derived-stat"><span className="derived-label">Hit Die</span><span className="derived-value">d{HIT_DICE[className]}</span></span>
+                </div>
               </div>
 
               {selectedSkills.length > 0 && (
-                <div className="review-skills">
-                  <strong>Skills:</strong> {selectedSkills.map(s =>
-                    SKILLS.find(sk => sk.value === s)?.label || s
-                  ).join(', ')}
-                  {selectedBackground && selectedBackground.skillProficiencies.length > 0 && (
-                    <>, {selectedBackground.skillProficiencies.join(', ')} (background)</>
-                  )}
+                <div className="review-section">
+                  <h5 className="review-section-header"><span className="review-section-icon">🎯</span> Skills</h5>
+                  <div className="review-skills">
+                    {selectedSkills.map(s => {
+                      const sk = SKILLS.find(sk => sk.value === s)
+                      return <span key={s} className="review-skill-tag">{sk?.label || s}</span>
+                    })}
+                    {selectedBackground && selectedBackground.skillProficiencies.map(sp => (
+                      <span key={sp} className="review-skill-tag background-tag">{sp}</span>
+                    ))}
+                  </div>
                 </div>
               )}
 
+              {(() => {
+                const selectedEquipment: string[] = []
+                const classEquip = STARTING_EQUIPMENT[className] || []
+                classEquip.forEach((choice, idx) => {
+                  const choiceIdx = equipmentChoices[idx] ?? 0
+                  if (choice.options[choiceIdx]) {
+                    selectedEquipment.push(...choice.options[choiceIdx])
+                  }
+                })
+                if (selectedBackground) selectedEquipment.push(...selectedBackground.equipment)
+                return selectedEquipment.length > 0 ? (
+                  <div className="review-section">
+                    <h5 className="review-section-header"><span className="review-section-icon">🎒</span> Equipment</h5>
+                    <div className="review-equipment-list">
+                      {selectedEquipment.map((item, i) => (
+                        <span key={i} className="review-equip-tag">{item}</span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null
+              })()}
+
               {backstory && (
-                <div className="review-backstory">
-                  <strong>Backstory:</strong> {backstory.length > 200 ? backstory.slice(0, 200) + '...' : backstory}
+                <div className="review-section">
+                  <h5 className="review-section-header"><span className="review-section-icon">📖</span> Backstory</h5>
+                  <div className="review-backstory">
+                    {backstory.length > 200 ? backstory.slice(0, 200) + '...' : backstory}
+                  </div>
                 </div>
               )}
             </div>
