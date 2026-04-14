@@ -238,7 +238,7 @@ test.describe('Background Art Generation', () => {
       `;
 
       await page.setContent(`<html><head><style>*{margin:0;padding:0;}body{width:160px;height:160px;overflow:hidden;}</style></head><body>${svg}</body></html>`);
-      await page.screenshot({ path: `../../public/art/backgrounds/${bg.id}.png`, clip: { x: 0, y: 0, width: 160, height: 160 } });
+      await page.screenshot({ path: `./public/art/backgrounds/${bg.id}.png`, clip: { x: 0, y: 0, width: 160, height: 160 } });
       await ctx.close();
     });
   }

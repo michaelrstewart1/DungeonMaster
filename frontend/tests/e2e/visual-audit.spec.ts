@@ -106,20 +106,13 @@ test.describe('Visual UI Audit', () => {
     await page.waitForSelector('[data-testid="step-class"]')
     await page.screenshot({ path: 'test-results/audit-08-creator-class.png', fullPage: true })
     
-    // Select wizard and go to step 3
+    // Select wizard and go to step 3 (Background)
     await page.click('[data-testid="class-wizard"]')
-    await page.click('button:has-text("Next: Abilities")')
+    await page.click('button:has-text("Next: Background")')
     
-    // Step 3: Abilities
-    await page.waitForSelector('[data-testid="step-abilities"]')
-    await page.screenshot({ path: 'test-results/audit-09-creator-abilities.png', fullPage: true })
-    
-    // Go to step 4
-    await page.click('button:has-text("Next: Review")')
-    
-    // Step 4: Review
-    await page.waitForSelector('[data-testid="step-review"]')
-    await page.screenshot({ path: 'test-results/audit-10-creator-review.png', fullPage: true })
+    // Step 3: Background
+    await page.waitForSelector('[data-testid="step-background"]')
+    await page.screenshot({ path: 'test-results/audit-08b-creator-background.png', fullPage: true })
   })
 
   test('Campaign Detail — character import', async ({ page }) => {

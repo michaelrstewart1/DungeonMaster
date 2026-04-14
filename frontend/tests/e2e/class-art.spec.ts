@@ -498,7 +498,7 @@ test.describe('Class Art Generation', () => {
       `;
 
       await page.setContent(`<html><head><style>*{margin:0;padding:0;}body{width:200px;height:260px;overflow:hidden;}</style></head><body>${svg}</body></html>`);
-      await page.screenshot({ path: `../../public/art/classes/${cls.id}.png`, clip: { x: 0, y: 0, width: 200, height: 260 } });
+      await page.screenshot({ path: `./public/art/classes/${cls.id}.png`, clip: { x: 0, y: 0, width: 200, height: 260 } });
       await ctx.close();
     });
   }

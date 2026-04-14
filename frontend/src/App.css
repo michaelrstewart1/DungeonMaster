@@ -95,18 +95,18 @@
   flex-direction: column;
   animation: pageEnter 0.3s ease;
   position: relative;
-  overflow: hidden;
 }
 
 /* ── Epic Fantasy Background Slideshow ── */
 .home-bg-slideshow {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 0;
   pointer-events: none;
+  overflow: hidden;
 }
 
 .home-bg-scene {
@@ -2079,8 +2079,8 @@
   background: linear-gradient(90deg, transparent, var(--gold), transparent);
 }
 
-.race-card.selected .race-symbol {
-  transform: scale(1.15);
+.race-card.selected .race-art {
+  transform: scale(1.05);
   filter: drop-shadow(0 0 10px rgba(212, 168, 70, 0.5));
 }
 
@@ -2109,8 +2109,8 @@
   background: linear-gradient(90deg, transparent, var(--class-color, var(--gold)), transparent);
 }
 
-.class-card.selected .class-icon {
-  transform: scale(1.15);
+.class-card.selected .class-art {
+  transform: scale(1.05);
   filter: drop-shadow(0 0 10px color-mix(in srgb, var(--class-glow, var(--gold)) 50%, transparent));
 }
 
@@ -2119,17 +2119,25 @@
   text-shadow: 0 0 8px color-mix(in srgb, var(--class-glow, var(--gold)) 20%, transparent);
 }
 
-.race-symbol {
-  font-size: 2.5rem;
+.race-art {
+  width: 80px;
+  height: 104px;
+  object-fit: cover;
+  border-radius: 6px;
   transition: transform 0.3s, filter 0.3s;
   position: relative;
   z-index: 1;
-  line-height: 1;
+  border: 1px solid var(--gold-border);
 }
 
-.race-card:hover .race-symbol {
-  transform: scale(1.2);
-  filter: drop-shadow(0 0 6px rgba(212, 168, 70, 0.3));
+.race-card:hover .race-art {
+  transform: scale(1.08);
+  filter: drop-shadow(0 0 8px rgba(212, 168, 70, 0.4));
+}
+
+.race-card.selected .race-art {
+  border-color: var(--gold);
+  box-shadow: 0 0 12px rgba(212, 168, 70, 0.5);
 }
 
 .race-name {
@@ -2141,17 +2149,25 @@
   letter-spacing: 0.03em;
 }
 
-.class-icon {
-  font-size: 2.5rem;
+.class-art {
+  width: 80px;
+  height: 104px;
+  object-fit: cover;
+  border-radius: 6px;
   transition: transform 0.3s, filter 0.3s;
   position: relative;
   z-index: 1;
-  line-height: 1;
+  border: 1px solid var(--gold-border);
 }
 
-.class-card:hover .class-icon {
-  transform: scale(1.2);
-  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--class-glow, var(--gold)) 40%, transparent));
+.class-card:hover .class-art {
+  transform: scale(1.08);
+  filter: drop-shadow(0 0 8px color-mix(in srgb, var(--class-glow, var(--gold)) 40%, transparent));
+}
+
+.class-card.selected .class-art {
+  border-color: var(--class-color, var(--gold));
+  box-shadow: 0 0 12px color-mix(in srgb, var(--class-glow, var(--gold)) 50%, transparent);
 }
 
 .class-name {
@@ -4959,8 +4975,9 @@
   min-height: 100px;
 }
 
-.race-symbol {
-  font-size: 2.5rem;
+.race-art {
+  width: 80px;
+  height: 104px;
 }
 
 .race-name {
@@ -4986,8 +5003,9 @@
   gap: 0.5rem;
 }
 
-.class-icon {
-  font-size: 2.4rem;
+.class-art {
+  width: 80px;
+  height: 104px;
 }
 
 .class-card::after {
@@ -7598,9 +7616,10 @@
     padding: 0.6rem 0.4rem;
   }
 
-  .race-symbol,
-  .class-icon {
-    font-size: 1.5rem;
+  .race-art,
+  .class-art {
+    width: 60px;
+    height: 78px;
   }
 
   .ability-grid {

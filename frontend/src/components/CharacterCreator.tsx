@@ -1,7 +1,7 @@
 import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import type { CharacterCreate, Race, CharacterClass } from '../types'
 import { CharacterPortrait } from './CharacterPortrait'
-import { RACE_SYMBOLS, CLASS_COLORS } from '../data/premadeCharacters'
+import { CLASS_COLORS } from '../data/premadeCharacters'
 import {
   SUBRACES, SUBCLASSES, BACKGROUNDS, SKILLS, CLASS_SKILL_CHOICES,
   ALIGNMENTS, LANGUAGES, RACIAL_LANGUAGES, HIT_DICE,
@@ -351,7 +351,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                 aria-pressed={race === r.value}
                 data-testid={`race-${r.value}`}
               >
-                <span className="race-symbol">{RACE_SYMBOLS[r.value]}</span>
+                <img className="race-art" src={`/art/races/${r.value}.png`} alt={r.label} />
                 <span className="race-name">{r.label}</span>
                 <span className="card-tooltip">{r.desc}</span>
               </button>
@@ -427,7 +427,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                     '--class-glow': colors.accent,
                   } as React.CSSProperties}
                 >
-                  <span className="class-icon">{c.icon}</span>
+                  <img className="class-art" src={`/art/classes/${c.value}.png`} alt={c.label} />
                   <span className="class-name">{c.label}</span>
                   <span className="class-hit-die">d{HIT_DICE[c.value]}</span>
                   <span className="card-tooltip">{c.desc}</span>
