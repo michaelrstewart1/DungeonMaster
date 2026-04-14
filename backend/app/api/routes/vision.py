@@ -1,5 +1,5 @@
 """Vision API routes for board image capture and analysis."""
-from fastapi import APIRouter, HTTPException, File, UploadFile, status
+from fastapi import APIRouter, HTTPException, File, Request, UploadFile, status
 from fastapi.responses import JSONResponse
 
 from app.services.vision.capture import FakeCamera
@@ -17,7 +17,7 @@ vision_sync = VisionStateSync()
 
 def _get_analyzer(app_state=None) -> BoardAnalyzer:
     """Get the best available analyzer (GPT-4o if API key set, else fake)."""
-    if app_state and hasattr(app_state, "vision_analyzer"):
+    if app_state and hasattr(app_state, "vision_analyzer") and app_state.vision_analyzer is not None:
         return app_state.vision_analyzer
     return fake_analyzer
 
@@ -37,10 +37,10 @@ def _serialize_analysis(analysis):
 
 
 @router.post("/vision/{session_id}/capture")
-async def capture_board(session_id: str) -> JSONResponse:
+async def capture_board(session_id: str, request: Request) -> JSONResponse:
     """Trigger camera capture and board analysis."""
     capture_result = await fake_camera.capture()
-    analyzer = _get_analyzer()
+    analyzer = _get_analyzer(request.app.state)
     analysis = await analyzer.analyze(capture_result.image_bytes)
 
     result = _serialize_analysis(analysis)
@@ -49,13 +49,13 @@ async def capture_board(session_id: str) -> JSONResponse:
 
 
 @router.post("/vision/{session_id}/upload")
-async def upload_board_image(session_id: str, file: UploadFile = File(...)) -> JSONResponse:
+async def upload_board_image(session_id: str, request: Request, file: UploadFile = File(...)) -> JSONResponse:
     """Upload a board image, analyze it with GPT-4o vision, return grid positions."""
     if not file:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No file provided")
 
     image_bytes = await file.read()
-    analyzer = _get_analyzer()
+    analyzer = _get_analyzer(request.app.state)
     analysis = await analyzer.analyze(image_bytes)
 
     result = _serialize_analysis(analysis)

@@ -4,7 +4,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useGameSocket } from '../hooks/useGameSocket';
-import type { Character, GameState } from '../types';
+import BattleMap from '../components/BattleMap';
+import type { Character, GameState, GameMap } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -27,6 +28,7 @@ export function PlayerView() {
   const [actionText, setActionText] = useState('');
   const [isMyTurn, setIsMyTurn] = useState(false);
   const [tab, setTab] = useState<'play' | 'sheet' | 'map'>('play');
+  const [gameMap, setGameMap] = useState<GameMap | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
 
   // Load game state and character
@@ -80,6 +82,20 @@ export function PlayerView() {
 
     if (last.type === 'game_state' as string) {
       setGameState(last.payload as GameState);
+    }
+
+    if (last.type === 'vision_update' as string) {
+      const v = last.payload as { tokens?: Array<{ entity_id: string; x: number; y: number }>; grid_width?: number; grid_height?: number };
+      if (v.grid_width && v.grid_height) {
+        setGameMap((prev) => ({
+          id: prev?.id || 'vision-map',
+          width: v.grid_width!,
+          height: v.grid_height!,
+          terrain: prev?.terrain || Array.from({ length: v.grid_height! }, () => Array(v.grid_width!).fill('empty')),
+          tokens: (v.tokens || []).map((t) => ({ entity_id: t.entity_id, x: t.x, y: t.y })),
+          fog_of_war: prev?.fog_of_war || Array.from({ length: v.grid_height! }, () => Array(v.grid_width!).fill(false)),
+        }));
+      }
     }
   }, [messages]);
 
@@ -244,12 +260,16 @@ export function PlayerView() {
         </div>
       )}
 
-      {/* Map tab — minimap */}
+      {/* Map tab — battle map from vision or game state */}
       {tab === 'map' && (
         <div className="pv-map-tab">
-          <div className="pv-map-placeholder">
-            🗺️ Battle map will appear here during combat
-          </div>
+          {gameMap ? (
+            <BattleMap map={gameMap} />
+          ) : (
+            <div className="pv-map-placeholder">
+              🗺️ Battle map will appear when the DM scans the board
+            </div>
+          )}
         </div>
       )}
     </div>

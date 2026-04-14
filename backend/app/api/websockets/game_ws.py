@@ -176,7 +176,48 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     "timestamp": datetime.now().isoformat(),
                 }
                 await manager.broadcast(session_id, map_sync_msg)
-            
+
+            elif message_type == "player_join":
+                # Register player name/character in session_players
+                from app.api import storage as _storage
+                name = message.get("name", "Unknown")
+                character_id = message.get("character_id")
+                player_info = {
+                    "id": player_id,
+                    "name": name,
+                    "character_id": character_id,
+                    "is_ready": False,
+                    "joined_at": datetime.now().isoformat(),
+                }
+                if session_id not in _storage.session_players:
+                    _storage.session_players[session_id] = []
+                # Update existing or append
+                existing = [p for p in _storage.session_players[session_id] if p["id"] == player_id]
+                if existing:
+                    existing[0].update(player_info)
+                else:
+                    _storage.session_players[session_id].append(player_info)
+                # Broadcast updated player list
+                await manager.broadcast(session_id, {
+                    "type": "player_update",
+                    "players": _storage.session_players[session_id],
+                    "connection_count": manager.get_connection_count(session_id),
+                })
+
+            elif message_type == "player_ready":
+                from app.api import storage as _storage
+                ready = message.get("ready", True)
+                players = _storage.session_players.get(session_id, [])
+                for p in players:
+                    if p["id"] == player_id:
+                        p["is_ready"] = ready
+                        break
+                await manager.broadcast(session_id, {
+                    "type": "player_update",
+                    "players": players,
+                    "connection_count": manager.get_connection_count(session_id),
+                })
+
             # Other message types are ignored gracefully
     
     except WebSocketDisconnect:

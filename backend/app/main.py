@@ -52,6 +52,17 @@ def _init_app_state(app: FastAPI) -> None:
     app.state.narrator = narrator
     app.state.tts = tts
 
+    # Vision: wire GPT-4o analyzer when OpenAI key is available
+    vision_analyzer = None
+    if settings.openai_api_key:
+        try:
+            from app.services.vision.gpt4_analyzer import GPT4VisionAnalyzer
+            vision_analyzer = GPT4VisionAnalyzer(api_key=settings.openai_api_key)
+            logger.info("Vision: GPT-4o board analyzer ready")
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Vision: could not init GPT-4o analyzer (%s) — using fake", exc)
+    app.state.vision_analyzer = vision_analyzer
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

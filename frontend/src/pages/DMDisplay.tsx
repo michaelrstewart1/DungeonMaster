@@ -4,7 +4,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useGameSocket } from '../hooks/useGameSocket';
-import type { GameState, Character } from '../types';
+import BattleMap from '../components/BattleMap';
+import type { GameState, GameMap, Character } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -37,6 +38,9 @@ export function DMDisplay() {
     gaze: { x: 0, y: 0 },
   });
   const [currentNarration, setCurrentNarration] = useState('');
+  const [gameMap, setGameMap] = useState<GameMap | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const narrativeRef = useRef<HTMLDivElement>(null);
 
   // Load initial data
@@ -97,7 +101,54 @@ export function DMDisplay() {
     if (last.type === 'game_state' as string) {
       setGameState(last.payload as GameState);
     }
+
+    if (last.type === 'vision_update' as string) {
+      const v = last.payload as { tokens?: Array<{ entity_id: string; x: number; y: number }>; grid_width?: number; grid_height?: number };
+      if (v.grid_width && v.grid_height) {
+        setGameMap((prev) => ({
+          id: prev?.id || 'vision-map',
+          width: v.grid_width!,
+          height: v.grid_height!,
+          terrain: prev?.terrain || Array.from({ length: v.grid_height! }, () => Array(v.grid_width!).fill('empty')),
+          tokens: (v.tokens || []).map((t) => ({ entity_id: t.entity_id, x: t.x, y: t.y })),
+          fog_of_war: prev?.fog_of_war || Array.from({ length: v.grid_height! }, () => Array(v.grid_width!).fill(false)),
+        }));
+      }
+    }
   }, [messages]);
+
+  // Camera upload handler
+  async function handleBoardUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !sessionId) return;
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(`${API_BASE}/vision/${sessionId}/upload`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.grid_width && data.grid_height) {
+          setGameMap({
+            id: 'vision-map',
+            width: data.grid_width,
+            height: data.grid_height,
+            terrain: Array.from({ length: data.grid_height }, () => Array(data.grid_width).fill('empty')),
+            tokens: (data.tokens || []).map((t: { entity_id: string; x: number; y: number }) => ({ entity_id: t.entity_id, x: t.x, y: t.y })),
+            fog_of_war: Array.from({ length: data.grid_height }, () => Array(data.grid_width).fill(false)),
+          });
+        }
+      }
+    } catch {
+      // Vision upload failed silently
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
 
   // TTS audio playback
   async function speakNarration(text: string) {
@@ -174,10 +225,11 @@ export function DMDisplay() {
       <div className="dm-main-section">
         {/* Battle Map */}
         <div className="dm-map-area">
-          {isCombat ? (
+          {gameMap ? (
+            <BattleMap map={gameMap} />
+          ) : isCombat ? (
             <div className="dm-battle-map">
               <div className="dm-map-grid">
-                {/* Placeholder grid — will be replaced with real map data */}
                 {Array.from({ length: 100 }).map((_, i) => (
                   <div key={i} className="dm-map-cell" />
                 ))}
@@ -191,6 +243,25 @@ export function DMDisplay() {
               <span className="dm-scene-label">{phase.charAt(0).toUpperCase() + phase.slice(1)}</span>
             </div>
           )}
+          {/* Camera upload button */}
+          <div className="dm-camera-controls">
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="image/*"
+              capture="environment"
+              onChange={handleBoardUpload}
+              style={{ display: 'none' }}
+            />
+            <button
+              className="dm-camera-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={uploading}
+              title="Upload board photo"
+            >
+              {uploading ? '⏳ Analyzing...' : '📷 Scan Board'}
+            </button>
+          </div>
         </div>
 
         {/* Initiative / Turn Order (combat) or Player list (non-combat) */}

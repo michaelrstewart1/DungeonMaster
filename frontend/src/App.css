@@ -6742,8 +6742,45 @@
   border-radius: 12px;
   overflow: hidden;
   display: flex;
+  flex-direction: column;
   align-items: center;
   justify-content: center;
+  position: relative;
+}
+
+.dm-map-area .battle-map {
+  width: 100%;
+  height: calc(100% - 40px);
+  overflow: auto;
+}
+
+.dm-camera-controls {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  z-index: 10;
+}
+
+.dm-camera-btn {
+  background: rgba(201, 168, 76, 0.15);
+  border: 1px solid var(--gold-dim, #9a7a32);
+  color: var(--gold, #c9a84c);
+  padding: 6px 14px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: 'Cinzel', serif;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.dm-camera-btn:hover:not(:disabled) {
+  background: rgba(201, 168, 76, 0.3);
+  border-color: var(--gold, #c9a84c);
+}
+
+.dm-camera-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .dm-battle-map {

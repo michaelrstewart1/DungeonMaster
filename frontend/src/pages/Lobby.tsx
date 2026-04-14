@@ -1,6 +1,7 @@
 /** Game Lobby — host view showing room code, QR, and connected players. */
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { QRCodeSVG } from 'qrcode.react';
 import { useGameSocket } from '../hooks/useGameSocket';
 import type { Character } from '../types';
 
@@ -65,11 +66,20 @@ export function Lobby() {
           <div className="lobby-url">{joinUrl}</div>
           <p className="lobby-hint">Or enter the code at <strong>/join</strong></p>
 
-          {/* Simple QR placeholder — rendered as a text-based URL */}
+          {/* QR code for joining */}
           <div className="lobby-qr">
-            <div className="lobby-qr-placeholder">
-              📱 QR
-            </div>
+            {roomCode ? (
+              <QRCodeSVG
+                value={joinUrl}
+                size={180}
+                level="H"
+                bgColor="#1a1a2e"
+                fgColor="#c9a84c"
+                includeMargin
+              />
+            ) : (
+              <div className="lobby-qr-placeholder">Loading...</div>
+            )}
             <span className="lobby-qr-label">Scan to join</span>
           </div>
         </div>
