@@ -5,3 +5,5 @@ dist/
 .env
 backend/dungeon_master.db
 frontend/test-results/
+backend/data/
+data/

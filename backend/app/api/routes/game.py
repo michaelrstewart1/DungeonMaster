@@ -1252,6 +1252,295 @@ async def update_party_gold(session_id: str, body: GoldTransactionRequest) -> di
     return {"gold": new_total, "transaction": f"{'+' if body.amount >= 0 else ''}{body.amount} GP — {body.reason or 'adjustment'}"}
 
 
+# ─── Loot Distribution ────────────────────────────────────────────────
+
+
+class DistributeLootRequest(BaseModel):
+    """Request to distribute a loot item to a character."""
+    item_index: int = Field(..., ge=0, description="Index of item in party_loot list")
+    character_id: str = Field(..., description="Character to receive the item")
+    quantity: int = Field(default=1, ge=1, description="Quantity to give (for stackable items)")
+
+
+@router.post("/sessions/{session_id}/distribute-loot")
+async def distribute_loot(session_id: str, body: DistributeLootRequest) -> dict:
+    """Move a loot item from party inventory to a character's inventory."""
+    if session_id not in storage.game_sessions:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+    if body.character_id not in storage.characters:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+
+    session = storage.game_sessions[session_id]
+    party_loot = session.get("party_loot", [])
+
+    if body.item_index >= len(party_loot):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid item index")
+
+    item = party_loot[body.item_index]
+    available = item.get("quantity", 1)
+    take = min(body.quantity, available)
+
+    character = storage.characters[body.character_id]
+    if "inventory" not in character:
+        character["inventory"] = []
+
+    # Add item name (and quantity if >1) to character inventory
+    label = item["name"] if take == 1 else f"{item['name']} x{take}"
+    character["inventory"].append(label)
+
+    # Track structured inventory separately for rich item data
+    if "structured_inventory" not in character:
+        character["structured_inventory"] = []
+    distributed_item = {**item, "quantity": take}
+    character["structured_inventory"].append(distributed_item)
+
+    # Reduce or remove from party loot
+    remaining = available - take
+    if remaining <= 0:
+        party_loot.pop(body.item_index)
+    else:
+        item["quantity"] = remaining
+
+    return {
+        "distributed": {"item": item["name"], "quantity": take, "to": character.get("name", body.character_id)},
+        "party_loot": party_loot,
+        "character_inventory": character["inventory"],
+    }
+
+
+# ─── XP Auto-Award from Game Events ───────────────────────────────────
+
+# CR-based XP values (D&D 5e standard)
+CR_XP_VALUES = {
+    "0": 10, "1/8": 25, "1/4": 50, "1/2": 100,
+    "1": 200, "2": 450, "3": 700, "4": 1100, "5": 1800,
+    "6": 2300, "7": 2900, "8": 3900, "9": 5000, "10": 5900,
+    "11": 7200, "12": 8400, "13": 10000, "14": 11500, "15": 13000,
+    "16": 15000, "17": 18000, "18": 20000, "19": 22000, "20": 25000,
+}
+
+
+class XPEventRequest(BaseModel):
+    """Structured XP event from the DM (combat victory, quest completion, etc)."""
+    event_type: str = Field(..., description="Type: combat, quest, milestone, discovery, roleplay")
+    description: str = Field(default="", description="What happened")
+    xp_total: Optional[int] = Field(None, ge=0, description="Total XP to split (if known)")
+    cr: Optional[str] = Field(None, description="CR of defeated creature (auto-calculates XP)")
+    creature_count: int = Field(default=1, ge=1, description="Number of creatures defeated")
+    character_ids: List[str] = Field(default_factory=list, description="Characters to award XP to (empty = all in campaign)")
+
+
+class XPEventResponse(BaseModel):
+    """Response after awarding XP from a game event."""
+    total_xp: int
+    xp_per_character: int
+    awards: List[dict]
+
+
+@router.post("/sessions/{session_id}/xp-event", response_model=XPEventResponse)
+async def award_xp_event(session_id: str, body: XPEventRequest) -> XPEventResponse:
+    """Award XP to characters from a game event (combat, quest, etc)."""
+    if session_id not in storage.game_sessions:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+
+    session = storage.game_sessions[session_id]
+    campaign_id = session.get("campaign_id", "")
+    campaign = storage.campaigns.get(campaign_id, {})
+
+    # Determine total XP
+    if body.xp_total is not None:
+        total_xp = body.xp_total
+    elif body.cr is not None:
+        per_creature = CR_XP_VALUES.get(body.cr, 0)
+        total_xp = per_creature * body.creature_count
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Must provide either xp_total or cr")
+
+    # Determine recipients
+    if body.character_ids:
+        char_ids = [cid for cid in body.character_ids if cid in storage.characters]
+    else:
+        char_ids = [cid for cid in campaign.get("character_ids", []) if cid in storage.characters]
+
+    if not char_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No valid characters to award XP to")
+
+    xp_each = total_xp // len(char_ids)
+    awards = []
+
+    for cid in char_ids:
+        character = storage.characters[cid]
+        old_xp = character.get("experience_points", 0)
+        old_level = character.get("level", 1)
+        character["experience_points"] = old_xp + xp_each
+
+        # Import level calculation from characters module
+        from app.api.routes.characters import _level_for_xp
+        new_level = _level_for_xp(character["experience_points"])
+        leveled_up = new_level > old_level
+        if leveled_up:
+            character["level"] = new_level
+            # Mark pending level-up choices
+            pending = character.get("pending_level_ups", [])
+            for lvl in range(old_level + 1, new_level + 1):
+                pending.append({
+                    "from_level": lvl - 1,
+                    "to_level": lvl,
+                    "choices_made": False,
+                    "hp_rolled": False,
+                })
+            character["pending_level_ups"] = pending
+
+        awards.append({
+            "character_id": cid,
+            "character_name": character.get("name", "Unknown"),
+            "xp_awarded": xp_each,
+            "total_xp": character["experience_points"],
+            "old_level": old_level,
+            "new_level": new_level,
+            "leveled_up": leveled_up,
+        })
+
+    # Log the event to session
+    xp_log = session.get("xp_log", [])
+    xp_log.append({
+        "event_type": body.event_type,
+        "description": body.description,
+        "total_xp": total_xp,
+        "xp_per_character": xp_each,
+        "character_ids": char_ids,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+    session["xp_log"] = xp_log
+
+    return XPEventResponse(total_xp=total_xp, xp_per_character=xp_each, awards=awards)
+
+
+# ─── Level-Up Management ──────────────────────────────────────────────
+
+
+class LevelUpChoices(BaseModel):
+    """Player's choices for a level-up."""
+    ability_score_increase: Optional[dict] = Field(None, description="ASI choices, e.g. {'strength': 2} or {'dex': 1, 'con': 1}")
+    hp_roll: Optional[int] = Field(None, description="HP roll result (if rolling; None = take average)")
+    new_spells: List[str] = Field(default_factory=list, description="New spells learned")
+    new_skill: Optional[str] = Field(None, description="New skill proficiency (if applicable)")
+    feat: Optional[str] = Field(None, description="Feat chosen (instead of ASI)")
+
+
+# Hit dice by class
+_HIT_DICE = {
+    "barbarian": 12, "fighter": 10, "paladin": 10, "ranger": 10,
+    "bard": 8, "cleric": 8, "druid": 8, "monk": 8, "rogue": 8, "warlock": 8,
+    "sorcerer": 6, "wizard": 6,
+}
+
+# ASI levels (standard D&D 5e)
+_ASI_LEVELS = {4, 8, 12, 16, 19}
+
+
+@router.get("/characters/{character_id}/pending-level-ups")
+async def get_pending_level_ups(character_id: str) -> dict:
+    """Get any pending level-up choices for a character."""
+    if character_id not in storage.characters:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+    character = storage.characters[character_id]
+    return {
+        "character_id": character_id,
+        "character_name": character.get("name", "Unknown"),
+        "level": character.get("level", 1),
+        "pending": character.get("pending_level_ups", []),
+    }
+
+
+@router.post("/characters/{character_id}/apply-level-up")
+async def apply_level_up(character_id: str, body: LevelUpChoices) -> dict:
+    """Apply level-up choices to a character."""
+    if character_id not in storage.characters:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+
+    character = storage.characters[character_id]
+    pending = character.get("pending_level_ups", [])
+    if not pending:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending level-ups")
+
+    level_up = pending[0]  # Process the oldest pending level-up
+    to_level = level_up["to_level"]
+    class_name = character.get("class_name", "fighter").lower()
+
+    # 1. HP increase
+    hit_die = _HIT_DICE.get(class_name, 8)
+    con_mod = (character.get("constitution", 10) - 10) // 2
+    if body.hp_roll is not None:
+        hp_gain = max(1, body.hp_roll + con_mod)
+    else:
+        # Take the average (rounded up)
+        hp_gain = max(1, (hit_die // 2 + 1) + con_mod)
+
+    character["hp"] = character.get("hp", 8) + hp_gain
+    if character.get("max_hp"):
+        character["max_hp"] = character["max_hp"] + hp_gain
+    else:
+        character["max_hp"] = character["hp"]
+
+    # 2. ASI or Feat (only at ASI levels)
+    if to_level in _ASI_LEVELS:
+        if body.feat:
+            features = character.get("features", [])
+            features.append(f"Feat: {body.feat}")
+            character["features"] = features
+        elif body.ability_score_increase:
+            ability_map = {
+                "str": "strength", "strength": "strength",
+                "dex": "dexterity", "dexterity": "dexterity",
+                "con": "constitution", "constitution": "constitution",
+                "int": "intelligence", "intelligence": "intelligence",
+                "wis": "wisdom", "wisdom": "wisdom",
+                "cha": "charisma", "charisma": "charisma",
+            }
+            total_increase = 0
+            for ability, increase in body.ability_score_increase.items():
+                full_name = ability_map.get(ability.lower(), ability.lower())
+                if full_name in character:
+                    character[full_name] = min(20, character[full_name] + increase)
+                    total_increase += increase
+            if total_increase > 2:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                    detail="ASI total cannot exceed +2")
+
+    # 3. New spells
+    if body.new_spells:
+        spells = character.get("spells_known", [])
+        spells.extend(body.new_spells)
+        character["spells_known"] = spells
+
+    # 4. New skill
+    if body.new_skill:
+        skills = character.get("skills", [])
+        if body.new_skill not in skills:
+            skills.append(body.new_skill)
+            character["skills"] = skills
+
+    # 5. Update proficiency bonus
+    character["proficiency_bonus"] = (to_level - 1) // 4 + 2
+
+    # Mark this level-up as complete
+    level_up["choices_made"] = True
+    level_up["hp_rolled"] = True
+    pending.pop(0)
+    character["pending_level_ups"] = pending
+
+    return {
+        "character_id": character_id,
+        "level": character.get("level", 1),
+        "hp_gained": hp_gain,
+        "changes_applied": True,
+        "remaining_level_ups": len(pending),
+        "character": character,
+    }
+
+
 # ─── Multiplayer: Room Codes & Join ────────────────────────────────────
 
 

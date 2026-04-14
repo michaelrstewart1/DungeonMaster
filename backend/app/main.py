@@ -67,8 +67,12 @@ def _init_app_state(app: FastAPI) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """ASGI lifespan: boot narrator/TTS on startup, clean up on shutdown."""
+    from app.api import storage
+    storage.load_from_disk()
     _init_app_state(app)
     yield
+    # Auto-save on shutdown
+    storage.save_to_disk()
     # Shutdown — close any open HTTP clients
     narrator = getattr(app.state, "narrator", None)
     if narrator is not None:
@@ -105,6 +109,24 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Auto-save middleware: persist state after any mutating request
+    from starlette.middleware.base import BaseHTTPMiddleware
+    from starlette.requests import Request as StarletteRequest
+    from starlette.responses import Response as StarletteResponse
+
+    class AutoSaveMiddleware(BaseHTTPMiddleware):
+        _MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+        async def dispatch(self, request: StarletteRequest, call_next) -> StarletteResponse:
+            response = await call_next(request)
+            if (request.method in self._MUTATING_METHODS
+                    and 200 <= response.status_code < 300):
+                from app.api import storage as _storage
+                _storage.save_to_disk()
+            return response
+
+    app.add_middleware(AutoSaveMiddleware)
 
     app.include_router(health_router, prefix="/api", tags=["health"])
     app.include_router(campaigns_router, prefix="/api", tags=["campaigns"])

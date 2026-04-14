@@ -147,6 +147,16 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     "timestamp": datetime.now().isoformat(),
                 }
                 await manager.broadcast(session_id, turn_result)
+
+                # Update session state and auto-save
+                from app.api import storage as _storage
+                session_data = _storage.game_sessions.get(session_id, {})
+                if session_data:
+                    player_text = f"{character_id}: {action}" if character_id else (action or "")
+                    session_data.setdefault("narrative_history", []).append(f"Player: {player_text}")
+                    session_data["narrative_history"].append(f"DM: {narration}")
+                    session_data["turn_count"] = session_data.get("turn_count", 0) + 1
+                    _storage.save_to_disk()
             
             elif message_type == "token_move":
                 # Broadcast token move to all players

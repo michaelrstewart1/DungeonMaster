@@ -36,13 +36,13 @@ const CLASSES: { value: CharacterClass; label: string; icon: string; desc: strin
   { value: 'wizard', label: 'Wizard', icon: '🔮', desc: 'A scholarly magic-user who commands arcane spells through study.' },
 ]
 
-const ABILITY_INFO: { key: string; label: string; short: string; desc: string }[] = [
-  { key: 'strength', label: 'Strength', short: 'STR', desc: 'Physical power' },
-  { key: 'dexterity', label: 'Dexterity', short: 'DEX', desc: 'Agility & reflexes' },
-  { key: 'constitution', label: 'Constitution', short: 'CON', desc: 'Endurance & health' },
-  { key: 'intelligence', label: 'Intelligence', short: 'INT', desc: 'Reasoning & memory' },
-  { key: 'wisdom', label: 'Wisdom', short: 'WIS', desc: 'Perception & insight' },
-  { key: 'charisma', label: 'Charisma', short: 'CHA', desc: 'Force of personality' },
+const ABILITY_INFO: { key: string; label: string; short: string; desc: string; tooltip: string }[] = [
+  { key: 'strength', label: 'Strength', short: 'STR', desc: 'Physical power', tooltip: 'Measures bodily power. Affects melee attack/damage rolls, Athletics checks, carrying capacity, and how far you can jump or push.' },
+  { key: 'dexterity', label: 'Dexterity', short: 'DEX', desc: 'Agility & reflexes', tooltip: 'Measures agility and reflexes. Affects AC (armor class), initiative, ranged attack rolls, Acrobatics, Sleight of Hand, and Stealth checks.' },
+  { key: 'constitution', label: 'Constitution', short: 'CON', desc: 'Endurance & health', tooltip: 'Measures endurance and stamina. Determines your hit points (HP) at each level and affects concentration saves to maintain spells.' },
+  { key: 'intelligence', label: 'Intelligence', short: 'INT', desc: 'Reasoning & memory', tooltip: 'Measures reasoning, memory, and analytical skill. Key ability for Wizards. Affects Arcana, History, Investigation, Nature, and Religion checks.' },
+  { key: 'wisdom', label: 'Wisdom', short: 'WIS', desc: 'Perception & insight', tooltip: 'Measures awareness, intuition, and willpower. Key ability for Clerics, Druids, Rangers. Affects Perception, Insight, Medicine, Survival, and Animal Handling.' },
+  { key: 'charisma', label: 'Charisma', short: 'CHA', desc: 'Force of personality', tooltip: 'Measures force of personality and social influence. Key ability for Bards, Paladins, Sorcerers, Warlocks. Affects Deception, Intimidation, Performance, and Persuasion.' },
 ]
 
 type AbilityScores = { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number }
@@ -562,17 +562,18 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                 </div>
               </div>
               <div className="ability-grid">
-                {ABILITY_INFO.map(({ key, label, short, desc }) => {
+                {ABILITY_INFO.map(({ key, label, short, desc, tooltip }) => {
                   const val = abilities[key as keyof AbilityScores]
                   const bonus = racialBonuses[key] || 0
                   const finalVal = val + bonus
                   return (
-                    <div key={key} className="ability-card">
+                    <div key={key} className="ability-card" data-tooltip={tooltip}>
                       <label htmlFor={`ability-${key}`} className="ability-card-label">
                         <span className="ability-short">{short}</span>
                         <span className="ability-name">{label}</span>
                         <span className="ability-desc">{desc}</span>
                       </label>
+                      <div className="tooltip-text">{tooltip}</div>
                       <div className="ability-controls">
                         <button
                           type="button"
@@ -617,17 +618,18 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
             <div className="standard-array-section">
               <p className="array-hint">Assign each value to an ability: {STANDARD_ARRAY.join(', ')}</p>
               <div className="ability-grid">
-                {ABILITY_INFO.map(({ key, label, short }) => {
+                {ABILITY_INFO.map(({ key, label, short, tooltip }) => {
                   const assigned = standardArrayAssignments[key]
                   const usedValues = Object.values(standardArrayAssignments)
                   const bonus = racialBonuses[key] || 0
                   const finalVal = (assigned || 8) + bonus
                   return (
-                    <div key={key} className="ability-card">
+                    <div key={key} className="ability-card" data-tooltip={tooltip}>
                       <label htmlFor={`ability-${key}`} className="ability-card-label">
                         <span className="ability-short">{short}</span>
                         <span className="ability-name">{label}</span>
                       </label>
+                      <div className="tooltip-text">{tooltip}</div>
                       <select
                         id={`ability-${key}`}
                         value={assigned || ''}
@@ -663,16 +665,17 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                 🎲 Re-Roll All
               </button>
               <div className="ability-grid">
-                {ABILITY_INFO.map(({ key, label, short }) => {
+                {ABILITY_INFO.map(({ key, label, short, tooltip }) => {
                   const val = abilities[key as keyof AbilityScores]
                   const bonus = racialBonuses[key] || 0
                   const finalVal = val + bonus
                   return (
-                    <div key={key} className="ability-card">
+                    <div key={key} className="ability-card" data-tooltip={tooltip}>
                       <label className="ability-card-label">
                         <span className="ability-short">{short}</span>
                         <span className="ability-name">{label}</span>
                       </label>
+                      <div className="tooltip-text">{tooltip}</div>
                       <div className="ability-rolled-value">{val}</div>
                       {bonus !== 0 && <span className="ability-racial-bonus">+{bonus} racial</span>}
                       <span className="ability-final">Final: {finalVal}</span>
