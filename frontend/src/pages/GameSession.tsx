@@ -9,6 +9,7 @@ import { DMAvatar } from '../components/DMAvatar'
 import { AudioControls } from '../components/AudioControls'
 import { PartyStatus } from '../components/PartyStatus'
 import { ScreenEffects, type EffectType } from '../components/ScreenEffects'
+import { AtmosphericBackground, type Atmosphere } from '../components/AtmosphericBackground'
 import BattleMap from '../components/BattleMap'
 import TokenLayer from '../components/TokenLayer'
 import type { TokenInfo } from '../components/TokenLayer'
@@ -49,6 +50,7 @@ export function GameSession() {
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
   const [partyCharacters, setPartyCharacters] = useState<Character[]>([])
   const [activeEffect, setActiveEffect] = useState<EffectType>(null)
+  const [atmosphere, setAtmosphere] = useState<Atmosphere>('neutral')
   const [adventureLogOpen, setAdventureLogOpen] = useState(false)
   const [quests, setQuests] = useState<Quest[]>([])
   const [adventureEntries, setAdventureEntries] = useState<AdventureEntry[]>([])
@@ -71,6 +73,27 @@ export function GameSession() {
       setActiveEffect('damage')
     } else if (/casts? |spell|magical|arcane|conjure|invoke/.test(lower)) {
       setActiveEffect('spell')
+    }
+  }, [])
+
+  // Detect atmosphere from mood field or narration text
+  const detectAtmosphere = useCallback((mood?: string, text?: string) => {
+    if (mood && ['dark', 'warm', 'peaceful', 'combat', 'mystical', 'neutral'].includes(mood)) {
+      setAtmosphere(mood as Atmosphere)
+      return
+    }
+    if (!text) return
+    const lower = text.toLowerCase()
+    if (/combat begins|initiative|attack|sword|fight|battle|enemy/.test(lower)) {
+      setAtmosphere('combat')
+    } else if (/tavern|inn|fire|hearth|warm|ale|drink|barkeep/.test(lower)) {
+      setAtmosphere('warm')
+    } else if (/dungeon|cave|dark|shadow|underground|crypt|tomb/.test(lower)) {
+      setAtmosphere('dark')
+    } else if (/forest|grove|meadow|stream|birds|peaceful|glade/.test(lower)) {
+      setAtmosphere('peaceful')
+    } else if (/magic|arcane|rune|enchant|mystical|ethereal|portal|wizard/.test(lower)) {
+      setAtmosphere('mystical')
     }
   }, [])
 
@@ -291,7 +314,7 @@ export function GameSession() {
           setGameState(msg.payload as GameState)
           break
         case 'turn_result': {
-          const result = msg.payload as { narration?: string; narrative?: string; dice_results?: DiceResult[] }
+          const result = msg.payload as { narration?: string; narrative?: string; mood?: string; dice_results?: DiceResult[] }
           const text = result.narration || result.narrative || 'The DM ponders...'
           setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
           processDMMessage(text)
@@ -299,6 +322,7 @@ export function GameSession() {
           setTimeout(() => setAvatarState((prev) => ({ ...prev, isSpeaking: false, expression: 'neutral' })), 2000)
           speakText(text)
           detectEffect(text)
+          detectAtmosphere(result.mood, text)
           if (result.dice_results?.length) {
             setLastDiceResult(result.dice_results[0])
           }
@@ -350,12 +374,13 @@ export function GameSession() {
       setTimeout(() => setAvatarState((prev) => ({ ...prev, isSpeaking: false, expression: 'neutral' })), 2000)
       speakText(text)
       detectEffect(text)
+      detectAtmosphere(result.mood, text)
     } catch {
       setMessages((prev) => [...prev, { role: 'dm', text: 'Failed to send action. Try again.', timestamp: Date.now() }])
     } finally {
       setWaitingForDM(false)
     }
-  }, [sessionId, speakText, detectEffect, processDMMessage])
+  }, [sessionId, speakText, detectEffect, detectAtmosphere, processDMMessage])
 
   const handleDiceRoll = useCallback((notation: string) => {
     if (wsRef.current) {
@@ -437,6 +462,7 @@ export function GameSession() {
 
   return (
     <div className="game-session">
+      <AtmosphericBackground atmosphere={atmosphere} />
       <ScreenEffects
         activeEffect={activeEffect}
         onEffectComplete={() => setActiveEffect(null)}

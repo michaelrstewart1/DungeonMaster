@@ -864,6 +864,22 @@
   30% { transform: translateY(-6px); opacity: 1; }
 }
 
+/* Typewriter effect for DM narration */
+.typewriter-cursor {
+  display: inline;
+  animation: blink 0.8s step-end infinite;
+  color: var(--gold);
+  font-weight: bold;
+}
+
+@keyframes blink {
+  50% { opacity: 0; }
+}
+
+.typewriter-message {
+  cursor: pointer;
+}
+
 .scroll-to-bottom {
   position: absolute;
   bottom: 70px;
@@ -3264,4 +3280,317 @@
   box-shadow: 0 0 3px 1px rgba(212, 168, 70, 0.3);
   animation: ambient-float linear infinite;
   will-change: transform, opacity;
+}
+
+/* ============================================================
+   Atmospheric Background System
+   ============================================================ */
+
+.atmo-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  overflow: hidden;
+  transition: background 2s ease, opacity 2s ease;
+}
+
+.atmo-gradient,
+.atmo-overlay,
+.atmo-darkness,
+.atmo-fog,
+.atmo-mist,
+.atmo-firelight,
+.atmo-vignette,
+.atmo-glow {
+  position: absolute;
+  inset: 0;
+  transition: opacity 2s ease, background 2s ease;
+}
+
+.atmo-particles {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.atmo-particle {
+  position: absolute;
+  will-change: transform, opacity;
+  pointer-events: none;
+}
+
+/* ---- Neutral ---- */
+.atmo-neutral .atmo-gradient {
+  background: linear-gradient(180deg, #0d0d14 0%, #141420 50%, #0d0d14 100%);
+}
+
+.atmo-neutral .atmo-dust {
+  border-radius: 50%;
+  background: rgba(176, 176, 200, 0.12);
+  top: -5px;
+  animation: atmo-drift-down linear infinite;
+}
+
+/* ---- Dark / Dungeon ---- */
+.atmo-dark .atmo-gradient {
+  background: linear-gradient(180deg, #050508 0%, #0a0a12 40%, #08081a 100%);
+}
+
+.atmo-dark .atmo-overlay {
+  background: radial-gradient(ellipse at 50% 30%, rgba(40, 60, 100, 0.06) 0%, transparent 70%);
+  animation: atmo-flicker 4s ease-in-out infinite;
+}
+
+.atmo-fog {
+  background: linear-gradient(0deg,
+    rgba(60, 80, 120, 0.08) 0%,
+    rgba(40, 55, 90, 0.04) 30%,
+    transparent 60%);
+  animation: atmo-fog-drift 20s ease-in-out infinite alternate;
+}
+
+.atmo-dark .atmo-drip {
+  width: 2px !important;
+  height: 8px !important;
+  border-radius: 0 0 50% 50%;
+  background: rgba(100, 140, 200, 0.2);
+  top: -10px;
+  animation: atmo-drip-fall linear infinite;
+}
+
+.atmo-dark .atmo-dust {
+  border-radius: 50%;
+  background: rgba(80, 100, 140, 0.1);
+  top: -5px;
+  animation: atmo-drift-down linear infinite;
+}
+
+/* ---- Warm / Tavern ---- */
+.atmo-warm .atmo-gradient {
+  background: linear-gradient(180deg, #1a1008 0%, #1f150a 40%, #14100a 100%);
+}
+
+.atmo-warm .atmo-overlay {
+  background:
+    repeating-linear-gradient(
+      90deg,
+      transparent 0px,
+      rgba(80, 50, 20, 0.02) 2px,
+      transparent 4px
+    ),
+    repeating-linear-gradient(
+      0deg,
+      transparent 0px,
+      rgba(60, 40, 15, 0.015) 3px,
+      transparent 6px
+    );
+}
+
+.atmo-firelight {
+  background: radial-gradient(ellipse at 50% 80%,
+    rgba(255, 160, 50, 0.08) 0%,
+    rgba(200, 100, 20, 0.04) 40%,
+    transparent 70%);
+  animation: atmo-firelight-pulse 3s ease-in-out infinite;
+}
+
+.atmo-warm .atmo-ember {
+  border-radius: 50%;
+  background: rgba(255, 140, 40, 0.5);
+  box-shadow: 0 0 3px rgba(255, 120, 20, 0.3);
+  bottom: -5px;
+  animation: atmo-float-up linear infinite;
+}
+
+.atmo-warm .atmo-spark {
+  width: 1px !important;
+  height: 1px !important;
+  border-radius: 50%;
+  background: rgba(255, 200, 80, 0.8);
+  box-shadow: 0 0 4px rgba(255, 180, 50, 0.6);
+  bottom: -5px;
+  animation: atmo-float-up-fast linear infinite;
+}
+
+/* ---- Peaceful / Forest ---- */
+.atmo-peaceful .atmo-gradient {
+  background: linear-gradient(180deg, #0a120a 0%, #0d1a0d 40%, #081008 100%);
+}
+
+.atmo-peaceful .atmo-overlay {
+  background: radial-gradient(ellipse at 40% 20%, rgba(80, 140, 60, 0.04) 0%, transparent 60%);
+}
+
+.atmo-mist {
+  background: linear-gradient(0deg,
+    rgba(120, 160, 120, 0.06) 0%,
+    rgba(80, 120, 80, 0.03) 20%,
+    transparent 40%);
+  animation: atmo-fog-drift 25s ease-in-out infinite alternate;
+}
+
+.atmo-peaceful .atmo-leaf {
+  width: 6px !important;
+  height: 4px !important;
+  border-radius: 0 80% 0 80%;
+  background: rgba(80, 140, 50, 0.25);
+  top: -10px;
+  animation: atmo-leaf-fall linear infinite;
+}
+
+.atmo-peaceful .atmo-dapple {
+  border-radius: 50%;
+  background: rgba(160, 200, 80, 0.06);
+  animation: atmo-dapple-shift ease-in-out infinite;
+}
+
+/* ---- Combat / Tense ---- */
+.atmo-combat .atmo-gradient {
+  background: linear-gradient(180deg, #140808 0%, #1a0a0a 40%, #100808 100%);
+}
+
+.atmo-combat .atmo-overlay {
+  background: radial-gradient(ellipse at 50% 50%, transparent 40%, rgba(180, 30, 30, 0.06) 100%);
+}
+
+.atmo-vignette {
+  background: radial-gradient(ellipse at 50% 50%,
+    transparent 30%,
+    rgba(140, 20, 20, 0.1) 70%,
+    rgba(80, 10, 10, 0.2) 100%);
+  animation: atmo-vignette-pulse 2s ease-in-out infinite;
+}
+
+.atmo-combat .atmo-combat-spark {
+  border-radius: 50%;
+  background: rgba(255, 80, 40, 0.4);
+  box-shadow: 0 0 2px rgba(255, 60, 20, 0.3);
+  bottom: -5px;
+  animation: atmo-float-up-fast linear infinite;
+}
+
+.atmo-combat .atmo-ash {
+  border-radius: 50%;
+  background: rgba(100, 60, 60, 0.2);
+  top: -5px;
+  animation: atmo-drift-down linear infinite;
+}
+
+/* ---- Mystical ---- */
+.atmo-mystical .atmo-gradient {
+  background: linear-gradient(180deg, #0a0814 0%, #100a1e 40%, #0a0814 100%);
+}
+
+.atmo-mystical .atmo-overlay {
+  background: radial-gradient(ellipse at 50% 50%, rgba(120, 80, 200, 0.04) 0%, transparent 60%);
+}
+
+.atmo-glow {
+  background: radial-gradient(circle at 50% 50%,
+    rgba(140, 100, 220, 0.06) 0%,
+    rgba(100, 60, 180, 0.03) 40%,
+    transparent 70%);
+  animation: atmo-glow-pulse 5s ease-in-out infinite;
+}
+
+.atmo-mystical .atmo-sparkle {
+  border-radius: 50%;
+  background: rgba(180, 150, 255, 0.5);
+  box-shadow: 0 0 4px rgba(160, 120, 255, 0.4);
+  animation: atmo-sparkle-blink ease-in-out infinite;
+}
+
+.atmo-rune {
+  font-size: 1.2rem;
+  color: rgba(160, 120, 255, 0.15);
+  text-shadow: 0 0 8px rgba(140, 100, 220, 0.2);
+  top: -30px;
+  animation: atmo-rune-drift linear infinite;
+}
+
+/* ============================================================
+   Atmospheric Keyframes
+   ============================================================ */
+
+@keyframes atmo-drift-down {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  10% { opacity: 0.6; }
+  90% { opacity: 0.6; }
+  100% { transform: translateY(100vh) translateX(20px); opacity: 0; }
+}
+
+@keyframes atmo-drip-fall {
+  0% { transform: translateY(0); opacity: 0; }
+  5% { opacity: 0.7; }
+  95% { opacity: 0.5; }
+  100% { transform: translateY(100vh); opacity: 0; }
+}
+
+@keyframes atmo-float-up {
+  0% { transform: translateY(0) translateX(0) scale(1); opacity: 0; }
+  10% { opacity: 0.6; }
+  80% { opacity: 0.3; }
+  100% { transform: translateY(-100vh) translateX(30px) scale(0.3); opacity: 0; }
+}
+
+@keyframes atmo-float-up-fast {
+  0% { transform: translateY(0) translateX(0) scale(1); opacity: 0; }
+  5% { opacity: 0.8; }
+  60% { opacity: 0.2; }
+  100% { transform: translateY(-80vh) translateX(15px) scale(0.2); opacity: 0; }
+}
+
+@keyframes atmo-leaf-fall {
+  0% { transform: translateY(0) translateX(0) rotate(0deg); opacity: 0; }
+  10% { opacity: 0.5; }
+  50% { transform: translateY(50vh) translateX(40px) rotate(180deg); opacity: 0.4; }
+  90% { opacity: 0.3; }
+  100% { transform: translateY(100vh) translateX(-20px) rotate(360deg); opacity: 0; }
+}
+
+@keyframes atmo-dapple-shift {
+  0%, 100% { opacity: 0.03; transform: scale(1); }
+  50% { opacity: 0.08; transform: scale(1.3); }
+}
+
+@keyframes atmo-sparkle-blink {
+  0%, 100% { opacity: 0; transform: scale(0.5); }
+  50% { opacity: 0.7; transform: scale(1); }
+}
+
+@keyframes atmo-rune-drift {
+  0% { transform: translateY(0) translateX(0); opacity: 0; }
+  15% { opacity: 0.2; }
+  85% { opacity: 0.1; }
+  100% { transform: translateY(100vh) translateX(-30px); opacity: 0; }
+}
+
+@keyframes atmo-flicker {
+  0%, 100% { opacity: 0.4; }
+  30% { opacity: 0.7; }
+  50% { opacity: 0.3; }
+  70% { opacity: 0.6; }
+  90% { opacity: 0.5; }
+}
+
+@keyframes atmo-firelight-pulse {
+  0%, 100% { opacity: 0.6; transform: scale(1); }
+  30% { opacity: 0.9; transform: scale(1.02); }
+  60% { opacity: 0.5; transform: scale(0.98); }
+}
+
+@keyframes atmo-fog-drift {
+  0% { transform: translateX(-3%); }
+  100% { transform: translateX(3%); }
+}
+
+@keyframes atmo-vignette-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes atmo-glow-pulse {
+  0%, 100% { opacity: 0.5; transform: scale(1); }
+  50% { opacity: 0.8; transform: scale(1.05); }
 }

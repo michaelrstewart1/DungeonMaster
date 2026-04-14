@@ -92,6 +92,7 @@ export interface TurnResult {
   turn_number: number;
   narration: string;
   phase: string;
+  mood?: 'dark' | 'warm' | 'peaceful' | 'combat' | 'mystical' | 'neutral';
   action_result?: {
     action_type: string;
     success: boolean;
