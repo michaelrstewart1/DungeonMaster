@@ -13,6 +13,11 @@ export type CharacterClass =
 export type GamePhase = 'lobby' | 'exploration' | 'combat' | 'rest' | 'shopping' | 'dialogue';
 export type TerrainType = 'empty' | 'wall' | 'water' | 'difficult' | 'pit';
 
+export type Alignment =
+  | 'lawful-good' | 'neutral-good' | 'chaotic-good'
+  | 'lawful-neutral' | 'true-neutral' | 'chaotic-neutral'
+  | 'lawful-evil' | 'neutral-evil' | 'chaotic-evil';
+
 // Character
 export interface CharacterCreate {
   name: string;
@@ -20,7 +25,7 @@ export interface CharacterCreate {
   class_name: CharacterClass;
   level: number;
   hp: number;
-  max_hp: number;
+  max_hp?: number;
   ac: number;
   experience_points?: number;
   strength: number;
@@ -31,6 +36,28 @@ export interface CharacterCreate {
   charisma: number;
   campaign_id?: string;
   portrait_url?: string;
+  // New 5e fields
+  subrace?: string;
+  subclass?: string;
+  background?: string;
+  alignment?: string;
+  speed?: number;
+  hit_dice?: string;
+  skills?: string[];
+  saving_throws?: string[];
+  languages?: string[];
+  tool_proficiencies?: string[];
+  armor_proficiencies?: string[];
+  weapon_proficiencies?: string[];
+  features?: string[];
+  spells_known?: string[];
+  cantrips_known?: string[];
+  equipment?: string[];
+  personality_traits?: string;
+  ideals?: string;
+  bonds?: string;
+  flaws?: string;
+  backstory?: string;
 }
 
 export interface Character extends CharacterCreate {

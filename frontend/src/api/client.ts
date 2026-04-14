@@ -138,6 +138,26 @@ export async function generatePortrait(characterId: string): Promise<Character> 
   });
 }
 
+export async function generatePortraitFree(characterId: string): Promise<Character> {
+  return request<Character>(`/characters/${characterId}/generate-portrait-free`, {
+    method: 'POST',
+  });
+}
+
+export async function exportCharacter(characterId: string): Promise<void> {
+  const response = await fetch(`${BASE_URL}/characters/${characterId}/export`);
+  if (!response.ok) throw new ApiError(response.status, 'Export failed');
+  const blob = await response.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `character-${characterId}.json`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
+
 export async function importCharacter(format: string, data: Record<string, unknown>): Promise<Character> {
   return request<Character>('/characters/import', {
     method: 'POST',

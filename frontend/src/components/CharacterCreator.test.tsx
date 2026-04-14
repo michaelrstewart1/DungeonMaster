@@ -1,6 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { CharacterCreator } from './CharacterCreator'
+
+// Helper to navigate through the wizard steps
+function navigateTo(stepName: string) {
+  const navMap: Record<string, string[]> = {
+    'Class': ['Next: Choose Class'],
+    'Background': ['Next: Choose Class', 'Next: Background'],
+    'Abilities': ['Next: Choose Class', 'Next: Background', 'Next: Abilities'],
+    'Skills': ['Next: Choose Class', 'Next: Background', 'Next: Abilities', 'Next: Skills'],
+    'Equipment': ['Next: Choose Class', 'Next: Background', 'Next: Abilities', 'Next: Skills', 'Next: Equipment'],
+    'Details': ['Next: Choose Class', 'Next: Background', 'Next: Abilities', 'Next: Skills', 'Next: Equipment', 'Next: Details'],
+    'Review': ['Next: Choose Class', 'Next: Background', 'Next: Abilities', 'Next: Skills', 'Next: Equipment', 'Next: Details', 'Next: Review'],
+  }
+  const clicks = navMap[stepName] || []
+  for (const text of clicks) {
+    fireEvent.click(screen.getByText(new RegExp(text)))
+  }
+}
 
 describe('CharacterCreator', () => {
   const mockOnCreate = vi.fn()
@@ -26,18 +43,24 @@ describe('CharacterCreator', () => {
 
   it('renders class options on step 2', () => {
     render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
-    // Navigate to class step
-    fireEvent.click(screen.getByText(/Next: Choose Class/))
+    navigateTo('Class')
     expect(screen.getByTestId('step-class')).toBeTruthy()
     expect(screen.getByTestId('class-fighter')).toBeTruthy()
     expect(screen.getByTestId('class-wizard')).toBeTruthy()
     expect(screen.getByTestId('class-rogue')).toBeTruthy()
   })
 
-  it('renders ability score inputs on step 3', () => {
+  it('renders background options on step 3', () => {
     render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
-    fireEvent.click(screen.getByText(/Next: Choose Class/))
-    fireEvent.click(screen.getByText(/Next: Abilities/))
+    navigateTo('Background')
+    expect(screen.getByTestId('step-background')).toBeTruthy()
+    expect(screen.getByTestId('bg-acolyte')).toBeTruthy()
+    expect(screen.getByTestId('bg-sage')).toBeTruthy()
+  })
+
+  it('renders ability score inputs on step 4', () => {
+    render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
+    navigateTo('Abilities')
     expect(screen.getByTestId('step-abilities')).toBeTruthy()
     const abilities = ['strength', 'dexterity', 'constitution', 'intelligence', 'wisdom', 'charisma']
     abilities.forEach((a) => {
@@ -45,18 +68,37 @@ describe('CharacterCreator', () => {
     })
   })
 
+  it('renders skill selection on step 5', () => {
+    render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
+    navigateTo('Skills')
+    expect(screen.getByTestId('step-skills')).toBeTruthy()
+  })
+
+  it('renders equipment choices on step 6', () => {
+    render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
+    navigateTo('Equipment')
+    expect(screen.getByTestId('step-equipment')).toBeTruthy()
+  })
+
   it('calls onCreate with character data on submit', () => {
     render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
     // Select elf race
     fireEvent.click(screen.getByTestId('race-elf'))
-    fireEvent.click(screen.getByText(/Next: Choose Class/))
+    navigateTo('Class')
     // Select wizard class
     fireEvent.click(screen.getByTestId('class-wizard'))
+    // Navigate through remaining steps to Details
+    fireEvent.click(screen.getByText(/Next: Background/))
     fireEvent.click(screen.getByText(/Next: Abilities/))
-    // Skip to review
-    fireEvent.click(screen.getByText(/Next: Review/))
-    // Enter name and submit
+    fireEvent.click(screen.getByText(/Next: Skills/))
+    fireEvent.click(screen.getByText(/Next: Equipment/))
+    // Wizard is a caster, so go through Spells step first
+    fireEvent.click(screen.getByText(/Next: Spells/))
+    fireEvent.click(screen.getByText(/Next: Details/))
+    // Enter name on details step
     fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Gandalf' } })
+    fireEvent.click(screen.getByText(/Next: Review/))
+    // Submit on review
     fireEvent.submit(screen.getByRole('form'))
     expect(mockOnCreate).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -73,18 +115,16 @@ describe('CharacterCreator', () => {
     expect(mockOnCancel).toHaveBeenCalled()
   })
 
-  it('validates that name is required on review step', () => {
+  it('validates that name is required on details step', () => {
     render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
-    fireEvent.click(screen.getByText(/Next: Choose Class/))
-    fireEvent.click(screen.getByText(/Next: Abilities/))
-    fireEvent.click(screen.getByText(/Next: Review/))
+    navigateTo('Details')
     const nameInput = screen.getByLabelText(/name/i) as HTMLInputElement
     expect(nameInput.required).toBe(true)
   })
 
   it('navigates back through steps', () => {
     render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
-    fireEvent.click(screen.getByText(/Next: Choose Class/))
+    navigateTo('Class')
     expect(screen.getByTestId('step-class')).toBeTruthy()
     fireEvent.click(screen.getByText(/← Back/))
     expect(screen.getByTestId('step-race')).toBeTruthy()
@@ -95,13 +135,47 @@ describe('CharacterCreator', () => {
     expect(screen.getByTestId('creator-steps')).toBeTruthy()
   })
 
-  it('ability +/- buttons change values', () => {
+  it('ability +/- buttons change values with point buy', () => {
     render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
-    fireEvent.click(screen.getByText(/Next: Choose Class/))
-    fireEvent.click(screen.getByText(/Next: Abilities/))
+    navigateTo('Abilities')
+    // Default point buy starts at 8
     const strInput = document.getElementById('ability-strength') as HTMLInputElement
-    expect(strInput.value).toBe('10')
+    expect(strInput.value).toBe('8')
     fireEvent.click(screen.getByLabelText('Increase Strength'))
-    expect((document.getElementById('ability-strength') as HTMLInputElement).value).toBe('11')
+    expect((document.getElementById('ability-strength') as HTMLInputElement).value).toBe('9')
+  })
+
+  it('supports multiple ability score methods', () => {
+    render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
+    navigateTo('Abilities')
+    expect(screen.getByTestId('method-point-buy')).toBeTruthy()
+    expect(screen.getByTestId('method-standard-array')).toBeTruthy()
+    expect(screen.getByTestId('method-roll')).toBeTruthy()
+  })
+
+  it('shows subrace options for races that have them', () => {
+    render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
+    fireEvent.click(screen.getByTestId('race-dwarf'))
+    expect(screen.getByTestId('subrace-hill-dwarf')).toBeTruthy()
+    expect(screen.getByTestId('subrace-mountain-dwarf')).toBeTruthy()
+  })
+
+  it('shows subclass options for classes', () => {
+    render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
+    navigateTo('Class')
+    fireEvent.click(screen.getByTestId('class-fighter'))
+    expect(screen.getByTestId('subclass-champion')).toBeTruthy()
+  })
+
+  it('shows alignment selection on details step', () => {
+    render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
+    navigateTo('Details')
+    expect(screen.getByLabelText(/alignment/i)).toBeTruthy()
+  })
+
+  it('shows background feature preview', () => {
+    render(<CharacterCreator onCreate={mockOnCreate} onCancel={mockOnCancel} />)
+    navigateTo('Background')
+    expect(screen.getByText(/Shelter of the Faithful/)).toBeTruthy()
   })
 })

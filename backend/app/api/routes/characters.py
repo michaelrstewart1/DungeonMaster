@@ -1,9 +1,12 @@
 """Character management endpoints."""
+import json
 import os
+import urllib.parse
 from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from app.models.schemas import (
@@ -374,3 +377,93 @@ async def get_progression(character_id: str) -> ProgressionResponse:
         xp_progress_pct=_xp_progress_pct(level, xp),
         milestones=milestones,
     )
+
+
+# ============================================================================
+# JSON Export
+# ============================================================================
+
+
+@router.get("/{character_id}/export")
+async def export_character(character_id: str) -> JSONResponse:
+    """Export a character as a downloadable JSON file."""
+    if character_id not in storage.characters:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+
+    character = storage.characters[character_id]
+    char_name = character.get("name", "character").replace(" ", "_").lower()
+
+    return JSONResponse(
+        content=character,
+        headers={
+            "Content-Disposition": f'attachment; filename="{char_name}.json"',
+        },
+    )
+
+
+# ============================================================================
+# Pollinations.ai Portrait Generation (free, no API key)
+# ============================================================================
+
+GENERATED_PORTRAITS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "generated_portraits",
+)
+
+
+async def _generate_pollinations_portrait(character_id: str, character: dict) -> str:
+    """Generate a portrait using the free Pollinations.ai API."""
+    race = character.get("race", "human")
+    class_name = character.get("class_name", "adventurer")
+    subrace = character.get("subrace", "")
+    name = character.get("name", "adventurer")
+
+    race_desc = f"{subrace} {race}" if subrace else race
+    prompt = (
+        f"dark fantasy portrait of a {race_desc} {class_name}, "
+        f"detailed face, dramatic lighting, digital painting, "
+        f"blurred background, no text, no watermark"
+    )
+
+    encoded = urllib.parse.quote(prompt)
+    seed = abs(hash(f"{character_id}-{name}")) % 99999
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=512&height=512&seed={seed}&nologo=true"
+
+    async with httpx.AsyncClient(timeout=180.0) as client:
+        resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+        resp.raise_for_status()
+        image_data = resp.content
+
+        if len(image_data) < 1000:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Portrait generation returned too-small image",
+            )
+
+    os.makedirs(GENERATED_PORTRAITS_DIR, exist_ok=True)
+    filename = f"{character_id}.jpg"
+    filepath = os.path.join(GENERATED_PORTRAITS_DIR, filename)
+    with open(filepath, "wb") as f:
+        f.write(image_data)
+
+    return f"/api/portraits/{filename}"
+
+
+@router.post("/{character_id}/generate-portrait-free", response_model=CharacterResponse)
+async def generate_portrait_free(character_id: str) -> CharacterResponse:
+    """Generate a free portrait using Pollinations.ai (no API key required)."""
+    if character_id not in storage.characters:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+
+    character = storage.characters[character_id]
+
+    try:
+        portrait_url = await _generate_pollinations_portrait(character_id, character)
+        character["portrait_url"] = portrait_url
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Portrait generation failed: {exc}",
+        )
+
+    return CharacterResponse(**character)

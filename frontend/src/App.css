@@ -2022,6 +2022,530 @@
   letter-spacing: 0.04em;
 }
 
+/* New 5e Creator: Subraces */
+.subrace-section, .subclass-section {
+  margin-top: 1.5rem;
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.subrace-section h4, .subclass-section h4 {
+  font-family: var(--font-display);
+  color: var(--gold-light);
+  margin-bottom: 0.75rem;
+  font-size: 1.1rem;
+}
+
+.subrace-grid, .subclass-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.subrace-card, .subclass-card {
+  background: var(--bg-medium);
+  border: 2px solid var(--gold-border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  transition: all 0.2s ease;
+  color: var(--text-primary);
+}
+
+.subrace-card:hover, .subclass-card:hover {
+  border-color: var(--gold);
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
+}
+
+.subrace-card.selected, .subclass-card.selected {
+  border-color: var(--gold);
+  background: var(--gold-bg);
+  box-shadow: 0 0 15px rgba(212, 175, 55, 0.3);
+}
+
+.subrace-name, .subclass-name {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--gold-light);
+}
+
+.subrace-bonuses {
+  font-size: 0.8rem;
+  color: #4ecdc4;
+  font-weight: 600;
+}
+
+.subrace-traits, .subclass-feature {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+/* New 5e Creator: Backgrounds */
+.background-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.background-card {
+  background: var(--bg-medium);
+  border: 2px solid var(--gold-border);
+  border-radius: 8px;
+  padding: 0.75rem;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  transition: all 0.2s ease;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.background-card:hover {
+  border-color: var(--gold);
+  box-shadow: 0 0 10px rgba(212, 175, 55, 0.2);
+}
+
+.background-card.selected {
+  border-color: var(--gold);
+  background: var(--gold-bg);
+  box-shadow: 0 0 15px rgba(212, 175, 55, 0.3);
+}
+
+.bg-name {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--gold-light);
+}
+
+.bg-skills, .bg-tools, .bg-languages {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.background-preview {
+  background: var(--bg-dark);
+  border: 1px solid var(--gold-border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 0.75rem;
+}
+
+.background-preview h4 {
+  color: var(--gold-light);
+  font-family: var(--font-display);
+  margin-bottom: 0.5rem;
+}
+
+.background-preview p {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+}
+
+/* New 5e Creator: Ability Method Selector */
+.ability-method-selector {
+  display: flex;
+  gap: 0.75rem;
+  margin-bottom: 1.25rem;
+  justify-content: center;
+}
+
+.method-btn {
+  background: var(--bg-medium);
+  border: 2px solid var(--gold-border);
+  border-radius: 8px;
+  padding: 0.5rem 1.25rem;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.method-btn:hover {
+  border-color: var(--gold);
+}
+
+.method-btn.active {
+  border-color: var(--gold);
+  background: var(--gold-bg);
+  color: var(--gold-light);
+  box-shadow: 0 0 12px rgba(212, 175, 55, 0.3);
+}
+
+.ability-racial-bonus {
+  font-size: 0.75rem;
+  color: #4ecdc4;
+  font-weight: 600;
+}
+
+.ability-final {
+  font-size: 0.8rem;
+  color: var(--gold-light);
+  font-weight: 700;
+}
+
+.ability-rolled-value {
+  font-size: 2rem;
+  font-family: var(--font-display);
+  color: var(--gold);
+  text-align: center;
+  font-weight: 700;
+}
+
+.ability-select {
+  background: var(--bg-dark);
+  border: 1px solid var(--gold-border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  padding: 0.4rem;
+  font-size: 1.1rem;
+  text-align: center;
+}
+
+.btn-roll {
+  background: var(--bg-medium);
+  border: 2px solid var(--gold);
+  border-radius: 8px;
+  padding: 0.75rem 2rem;
+  color: var(--gold-light);
+  font-family: var(--font-display);
+  font-size: 1.1rem;
+  cursor: pointer;
+  margin: 0 auto 1rem;
+  display: block;
+  transition: all 0.2s ease;
+}
+
+.btn-roll:hover {
+  background: var(--gold-bg);
+  box-shadow: 0 0 15px rgba(212, 175, 55, 0.3);
+}
+
+.over-budget {
+  color: #ff4757;
+}
+
+.standard-array-section .array-hint {
+  text-align: center;
+  color: var(--text-secondary);
+  margin-bottom: 1rem;
+}
+
+/* New 5e Creator: Skills */
+.skill-hint {
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+  text-align: center;
+}
+
+.skill-selection-count {
+  text-align: center;
+  font-family: var(--font-display);
+  color: var(--gold-light);
+  margin-bottom: 1rem;
+  font-size: 1.1rem;
+}
+
+.skill-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.skill-card {
+  background: var(--bg-medium);
+  border: 2px solid var(--gold-border);
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  color: var(--text-primary);
+}
+
+.skill-card:hover:not(:disabled) {
+  border-color: var(--gold);
+}
+
+.skill-card.selected {
+  border-color: var(--gold);
+  background: var(--gold-bg);
+}
+
+.skill-card.background-skill {
+  border-color: #4ecdc4;
+  background: rgba(78, 205, 196, 0.1);
+  cursor: default;
+}
+
+.skill-card.unavailable {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.skill-name {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.skill-ability {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+
+.skill-source {
+  font-size: 0.65rem;
+  background: rgba(78, 205, 196, 0.2);
+  color: #4ecdc4;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  margin-left: auto;
+}
+
+/* New 5e Creator: Equipment */
+.equipment-choice {
+  background: var(--bg-medium);
+  border: 1px solid var(--gold-border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.equipment-choice h4 {
+  font-family: var(--font-display);
+  color: var(--gold-light);
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+.equipment-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.equipment-option {
+  background: var(--bg-dark);
+  border: 2px solid var(--gold-border);
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: all 0.2s ease;
+}
+
+.equipment-option:hover {
+  border-color: var(--gold);
+}
+
+.equipment-option.selected {
+  border-color: var(--gold);
+  background: var(--gold-bg);
+}
+
+.background-equipment {
+  background: var(--bg-dark);
+  border: 1px solid rgba(78, 205, 196, 0.3);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-top: 1rem;
+}
+
+.background-equipment h4 {
+  color: #4ecdc4;
+  font-family: var(--font-display);
+  margin-bottom: 0.5rem;
+  font-size: 0.95rem;
+}
+
+/* New 5e Creator: Spells */
+.spell-section {
+  background: var(--bg-medium);
+  border: 1px solid var(--gold-border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.spell-section h4 {
+  font-family: var(--font-display);
+  color: var(--gold-light);
+  margin-bottom: 0.5rem;
+}
+
+.spell-count {
+  color: var(--gold);
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.spell-hint {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* New 5e Creator: Details */
+.details-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.form-group-full {
+  grid-column: 1 / -1;
+}
+
+.alignment-select {
+  background: var(--bg-dark);
+  border: 1px solid var(--gold-border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  padding: 0.5rem;
+  font-size: 0.95rem;
+  width: 100%;
+}
+
+.language-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+
+.language-btn {
+  background: var(--bg-dark);
+  border: 1px solid var(--gold-border);
+  border-radius: 4px;
+  padding: 0.25rem 0.6rem;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.8rem;
+  transition: all 0.2s ease;
+}
+
+.language-btn:hover:not(:disabled) {
+  border-color: var(--gold);
+}
+
+.language-btn.selected {
+  border-color: var(--gold);
+  background: var(--gold-bg);
+  color: var(--gold-light);
+}
+
+.language-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.trait-suggestions {
+  margin-top: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.suggestions-label {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
+.trait-suggestion {
+  background: var(--bg-dark);
+  border: 1px solid var(--gold-border);
+  border-radius: 4px;
+  padding: 0.2rem 0.5rem;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.7rem;
+  transition: all 0.2s ease;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trait-suggestion:hover {
+  border-color: var(--gold);
+  color: var(--gold-light);
+}
+
+/* New 5e Creator: Review Enhancements */
+.review-name {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  color: var(--gold);
+  margin-bottom: 0.5rem;
+}
+
+.review-summary {
+  font-size: 1.2rem;
+  color: var(--gold-light);
+  font-family: var(--font-display);
+}
+
+.review-background, .review-alignment {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}
+
+.review-stat .stat-label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  display: block;
+}
+
+.review-stat .stat-value {
+  font-size: 1.3rem;
+  font-weight: 700;
+  display: block;
+}
+
+.review-stat .stat-mod {
+  font-size: 0.8rem;
+  color: var(--gold-dim);
+}
+
+.review-skills, .review-backstory {
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin-top: 0.5rem;
+}
+
+.review-note {
+  text-align: center;
+  margin-top: 1rem;
+  padding: 0.75rem;
+  background: var(--bg-medium);
+  border: 1px solid var(--gold-border);
+  border-radius: 8px;
+  color: var(--gold-light);
+  font-size: 0.9rem;
+}
+
+.btn-create {
+  font-size: 1.2rem;
+  padding: 0.75rem 2.5rem;
+}
+
+.class-hit-die {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.2rem;
+}
+
 /* ============================================================
    Character Import
    ============================================================ */

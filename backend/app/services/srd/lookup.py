@@ -2,7 +2,10 @@
 SRD lookup service for D&D 5e reference data.
 """
 from typing import Optional
-from app.services.srd.models import SRDSpell, SRDMonster, SRDEquipment, SRDClass, SRDRace
+from app.services.srd.models import (
+    SRDSpell, SRDMonster, SRDEquipment, SRDClass, SRDRace,
+    SRDSubrace, SRDSubclass, SRDBackground, SRDSkill, SRDFeat,
+)
 from app.services.srd.data import srd_spells, srd_monsters, srd_equipment, srd_classes, srd_races
 
 
@@ -221,3 +224,55 @@ class SRDLookupService:
             List of all SRD races
         """
         return srd_races.copy()
+
+    # ========================================================================
+    # CHARACTER CREATION DATA LOOKUPS
+    # ========================================================================
+
+    async def get_subraces(self, race: Optional[str] = None) -> list[SRDSubrace]:
+        """Get subraces, optionally filtered by parent race."""
+        try:
+            from app.services.srd.chargen_data import SUBRACES
+            results = SUBRACES
+            if race:
+                race_lower = race.lower()
+                results = [s for s in results if s.get("parent_race", "").lower() == race_lower]
+            return [SRDSubrace(**s) for s in results]
+        except (ImportError, Exception):
+            return []
+
+    async def get_subclasses(self, class_name: Optional[str] = None) -> list[SRDSubclass]:
+        """Get subclasses, optionally filtered by parent class."""
+        try:
+            from app.services.srd.chargen_data import SUBCLASSES
+            results = SUBCLASSES
+            if class_name:
+                class_lower = class_name.lower()
+                results = [s for s in results if s.get("parent_class", "").lower() == class_lower]
+            return [SRDSubclass(**s) for s in results]
+        except (ImportError, Exception):
+            return []
+
+    async def get_backgrounds(self) -> list[SRDBackground]:
+        """Get all available backgrounds."""
+        try:
+            from app.services.srd.chargen_data import BACKGROUNDS
+            return [SRDBackground(**b) for b in BACKGROUNDS]
+        except (ImportError, Exception):
+            return []
+
+    async def get_skills(self) -> list[SRDSkill]:
+        """Get all 18 D&D 5e skills."""
+        try:
+            from app.services.srd.chargen_data import SKILLS
+            return [SRDSkill(**s) for s in SKILLS]
+        except (ImportError, Exception):
+            return []
+
+    async def get_feats(self) -> list[SRDFeat]:
+        """Get all available feats."""
+        try:
+            from app.services.srd.chargen_data import FEATS
+            return [SRDFeat(**f) for f in FEATS]
+        except (ImportError, Exception):
+            return []

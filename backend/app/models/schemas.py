@@ -21,6 +21,12 @@ class CharacterCreate(BaseModel):
     level: int = Field(..., ge=1, le=20, description="Character level (1-20)")
     campaign_id: Optional[str] = Field(None, description="Campaign to add this character to")
     
+    # New 5e fields (all optional for backward compatibility)
+    subrace: Optional[str] = Field(None, description="Character subrace (e.g., 'hill-dwarf')")
+    subclass: Optional[str] = Field(None, description="Character subclass (e.g., 'champion')")
+    background: Optional[str] = Field(None, description="Character background (e.g., 'acolyte')")
+    alignment: Optional[str] = Field(None, description="Character alignment (e.g., 'chaotic-good')")
+    
     # Ability scores
     strength: int = Field(default=10, ge=3, le=20, description="Strength ability score")
     dexterity: int = Field(default=10, ge=3, le=20, description="Dexterity ability score")
@@ -34,14 +40,40 @@ class CharacterCreate(BaseModel):
 
     # Other attributes
     hp: int = Field(default=8, gt=0, description="Hit points (must be positive)")
+    max_hp: Optional[int] = Field(None, gt=0, description="Maximum hit points")
     ac: int = Field(default=10, ge=1, description="Armor class (minimum 1)")
+    speed: int = Field(default=30, ge=0, description="Base movement speed in feet")
+    hit_dice: Optional[str] = Field(None, description="Hit dice (e.g., '1d10')")
     
     # Portrait
     portrait_url: Optional[str] = Field(None, description="URL to character portrait image")
 
+    # Proficiencies & Skills
+    skills: List[str] = Field(default_factory=list, description="Proficient skills")
+    saving_throws: List[str] = Field(default_factory=list, description="Saving throw proficiencies")
+    languages: List[str] = Field(default_factory=list, description="Known languages")
+    tool_proficiencies: List[str] = Field(default_factory=list, description="Tool proficiencies")
+    armor_proficiencies: List[str] = Field(default_factory=list, description="Armor proficiencies")
+    weapon_proficiencies: List[str] = Field(default_factory=list, description="Weapon proficiencies")
+    
+    # Features & Traits
+    features: List[str] = Field(default_factory=list, description="Class/race features")
+    
+    # Spells (for spellcasters)
+    spells_known: List[str] = Field(default_factory=list, description="Known/prepared spells")
+    cantrips_known: List[str] = Field(default_factory=list, description="Known cantrips")
+
     # Collections
     conditions: List[str] = Field(default_factory=list, description="Active conditions")
     inventory: List[str] = Field(default_factory=list, description="Inventory items")
+    equipment: List[str] = Field(default_factory=list, description="Equipped items")
+    
+    # Personality (from background)
+    personality_traits: Optional[str] = Field(None, description="Personality traits")
+    ideals: Optional[str] = Field(None, description="Character ideals")
+    bonds: Optional[str] = Field(None, description="Character bonds")
+    flaws: Optional[str] = Field(None, description="Character flaws")
+    backstory: Optional[str] = Field(None, description="Character backstory")
 
     @field_validator("race", mode="before")
     @classmethod
@@ -107,6 +139,10 @@ class CharacterUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1)
     level: Optional[int] = Field(None, ge=1, le=20)
     experience_points: Optional[int] = Field(None, ge=0)
+    subrace: Optional[str] = None
+    subclass: Optional[str] = None
+    background: Optional[str] = None
+    alignment: Optional[str] = None
     strength: Optional[int] = Field(None, ge=3, le=20)
     dexterity: Optional[int] = Field(None, ge=3, le=20)
     constitution: Optional[int] = Field(None, ge=3, le=20)
@@ -114,10 +150,28 @@ class CharacterUpdate(BaseModel):
     wisdom: Optional[int] = Field(None, ge=3, le=20)
     charisma: Optional[int] = Field(None, ge=3, le=20)
     hp: Optional[int] = Field(None, gt=0)
+    max_hp: Optional[int] = Field(None, gt=0)
     ac: Optional[int] = Field(None, ge=1)
+    speed: Optional[int] = Field(None, ge=0)
+    hit_dice: Optional[str] = None
     portrait_url: Optional[str] = None
+    skills: Optional[List[str]] = None
+    saving_throws: Optional[List[str]] = None
+    languages: Optional[List[str]] = None
+    tool_proficiencies: Optional[List[str]] = None
+    armor_proficiencies: Optional[List[str]] = None
+    weapon_proficiencies: Optional[List[str]] = None
+    features: Optional[List[str]] = None
+    spells_known: Optional[List[str]] = None
+    cantrips_known: Optional[List[str]] = None
     conditions: Optional[List[str]] = None
     inventory: Optional[List[str]] = None
+    equipment: Optional[List[str]] = None
+    personality_traits: Optional[str] = None
+    ideals: Optional[str] = None
+    bonds: Optional[str] = None
+    flaws: Optional[str] = None
+    backstory: Optional[str] = None
 
 
 # ============================================================================

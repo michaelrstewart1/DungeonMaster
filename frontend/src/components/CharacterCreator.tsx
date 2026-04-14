@@ -1,7 +1,14 @@
-import { useState } from 'react'
+import { useState, useMemo, useCallback } from 'react'
 import type { CharacterCreate, Race, CharacterClass } from '../types'
 import { CharacterPortrait } from './CharacterPortrait'
 import { RACE_SYMBOLS, CLASS_COLORS } from '../data/premadeCharacters'
+import {
+  SUBRACES, SUBCLASSES, BACKGROUNDS, SKILLS, CLASS_SKILL_CHOICES,
+  ALIGNMENTS, LANGUAGES, RACIAL_LANGUAGES, HIT_DICE,
+  POINT_BUY_COSTS, STANDARD_ARRAY, POINT_BUY_BUDGET,
+  SPELLCASTING_CLASSES, STARTING_EQUIPMENT,
+  type SubraceData, type SubclassData, type BackgroundData, type SkillData,
+} from '../data/dnd5e'
 
 const RACES: { value: Race; label: string }[] = [
   { value: 'human', label: 'Human' },
@@ -39,54 +46,231 @@ const ABILITY_INFO: { key: string; label: string; short: string; desc: string }[
   { key: 'charisma', label: 'Charisma', short: 'CHA', desc: 'Force of personality' },
 ]
 
+type AbilityScores = { strength: number; dexterity: number; constitution: number; intelligence: number; wisdom: number; charisma: number }
+type AbilityMethod = 'point-buy' | 'standard-array' | 'roll'
+
 interface CharacterCreatorProps {
   onCreate: (character: CharacterCreate) => void
   onCancel: () => void
 }
 
-const DEFAULT_ABILITIES = { strength: 10, dexterity: 10, constitution: 10, intelligence: 10, wisdom: 10, charisma: 10 }
+const DEFAULT_ABILITIES: AbilityScores = { strength: 8, dexterity: 8, constitution: 8, intelligence: 8, wisdom: 8, charisma: 8 }
 
 export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) {
   const [step, setStep] = useState(0)
-  const [name, setName] = useState('')
+
+  // Step 0: Race + Subrace
   const [race, setRace] = useState<Race>('human')
+  const [subrace, setSubrace] = useState<string>('')
+
+  // Step 1: Class + Subclass
   const [className, setClassName] = useState<CharacterClass>('fighter')
-  const [abilities, setAbilities] = useState(DEFAULT_ABILITIES)
+  const [subclass, setSubclass] = useState<string>('')
 
-  const totalPoints = Object.values(abilities).reduce((sum, v) => sum + v, 0) - 60
-  const pointBudget = 27
+  // Step 2: Background
+  const [background, setBackground] = useState<string>('acolyte')
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    onCreate({
-      name,
-      race,
-      class_name: className,
-      level: 1,
-      hp: 10 + Math.floor((abilities.constitution - 10) / 2),
-      max_hp: 10 + Math.floor((abilities.constitution - 10) / 2),
-      ac: 10 + Math.floor((abilities.dexterity - 10) / 2),
-      ...abilities,
-    })
-  }
+  // Step 3: Ability Scores
+  const [abilityMethod, setAbilityMethod] = useState<AbilityMethod>('point-buy')
+  const [abilities, setAbilities] = useState<AbilityScores>({ ...DEFAULT_ABILITIES })
+  const [standardArrayAssignments, setStandardArrayAssignments] = useState<Record<string, number>>({})
 
-  const updateAbility = (key: keyof typeof abilities, delta: number) => {
-    setAbilities((prev) => {
-      const newVal = Math.min(18, Math.max(3, prev[key] + delta))
-      return { ...prev, [key]: newVal }
-    })
-  }
+  // Step 4: Skills
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([])
+
+  // Step 5: Equipment
+  const [equipmentChoices, setEquipmentChoices] = useState<Record<number, number>>({})
+
+  // Step 6: Spells (casters only)
+  const [selectedCantrips, setSelectedCantrips] = useState<string[]>([])
+  const [selectedSpells, setSelectedSpells] = useState<string[]>([])
+
+  // Step 7: Details
+  const [name, setName] = useState('')
+  const [alignment, setAlignment] = useState<string>('true-neutral')
+  const [personalityTraits, setPersonalityTraits] = useState('')
+  const [ideals, setIdeals] = useState('')
+  const [bonds, setBonds] = useState('')
+  const [flaws, setFlaws] = useState('')
+  const [backstory, setBackstory] = useState('')
+  const [selectedLanguages, setSelectedLanguages] = useState<string[]>([])
+
+  // Derived data
+  const availableSubraces = useMemo(() =>
+    SUBRACES.filter(s => s.parentRace === race), [race])
+
+  const availableSubclasses = useMemo(() =>
+    SUBCLASSES.filter(s => s.parentClass === className), [className])
+
+  const selectedBackground = useMemo(() =>
+    BACKGROUNDS.find(b => b.value === background), [background])
+
+  const classSkillInfo = useMemo(() =>
+    CLASS_SKILL_CHOICES[className] || { count: 2, options: [] }, [className])
+
+  const isSpellcaster = useMemo(() =>
+    className in SPELLCASTING_CLASSES, [className])
+
+  const selectedSubrace = useMemo(() =>
+    SUBRACES.find(s => s.value === subrace), [subrace])
+
+  // Get racial ability bonuses
+  const racialBonuses = useMemo(() => {
+    const bonuses: Record<string, number> = {}
+    if (selectedSubrace) {
+      Object.entries(selectedSubrace.abilityBonuses).forEach(([k, v]) => {
+        bonuses[k] = (bonuses[k] || 0) + v
+      })
+    }
+    return bonuses
+  }, [selectedSubrace])
+
+  // Point buy cost calculation
+  const pointBuySpent = useMemo(() => {
+    if (abilityMethod !== 'point-buy') return 0
+    return Object.values(abilities).reduce((sum, score) => {
+      return sum + (POINT_BUY_COSTS[score] ?? 0)
+    }, 0)
+  }, [abilities, abilityMethod])
 
   const abilityMod = (score: number) => {
     const mod = Math.floor((score - 10) / 2)
     return mod >= 0 ? `+${mod}` : `${mod}`
   }
 
-  const steps = ['Race', 'Class', 'Abilities', 'Name & Review']
+  // Calculate final ability scores (base + racial)
+  const finalAbilities = useMemo(() => {
+    const result = { ...abilities }
+    for (const [key, bonus] of Object.entries(racialBonuses)) {
+      if (key in result) {
+        result[key as keyof AbilityScores] += bonus
+      }
+    }
+    return result
+  }, [abilities, racialBonuses])
+
+  // Calculate HP based on class hit die + CON mod
+  const calculatedHP = useMemo(() => {
+    const hitDie = HIT_DICE[className] || 8
+    const conMod = Math.floor((finalAbilities.constitution - 10) / 2)
+    return hitDie + conMod
+  }, [className, finalAbilities])
+
+  // Calculate AC (base 10 + DEX mod)
+  const calculatedAC = useMemo(() => {
+    return 10 + Math.floor((finalAbilities.dexterity - 10) / 2)
+  }, [finalAbilities])
+
+  const updateAbility = useCallback((key: keyof AbilityScores, delta: number) => {
+    setAbilities(prev => {
+      const newVal = Math.min(15, Math.max(8, prev[key] + delta))
+      return { ...prev, [key]: newVal }
+    })
+  }, [])
+
+  // Roll 4d6 drop lowest
+  const rollAbilities = useCallback(() => {
+    const roll4d6 = () => {
+      const rolls = Array.from({ length: 4 }, () => Math.floor(Math.random() * 6) + 1)
+      rolls.sort((a, b) => b - a)
+      return rolls[0] + rolls[1] + rolls[2]
+    }
+    setAbilities({
+      strength: roll4d6(),
+      dexterity: roll4d6(),
+      constitution: roll4d6(),
+      intelligence: roll4d6(),
+      wisdom: roll4d6(),
+      charisma: roll4d6(),
+    })
+  }, [])
+
+  // Apply standard array
+  const applyStandardArray = useCallback((assignments: Record<string, number>) => {
+    const newAbilities = { ...DEFAULT_ABILITIES }
+    for (const [key, value] of Object.entries(assignments)) {
+      if (key in newAbilities) {
+        newAbilities[key as keyof AbilityScores] = value
+      }
+    }
+    setAbilities(newAbilities)
+    setStandardArrayAssignments(assignments)
+  }, [])
+
+  // Determine if we should show the spells step
+  const spellcasterInfo = isSpellcaster ? SPELLCASTING_CLASSES[className] : null
+
+  // Dynamic step list (spells step only for casters)
+  const steps = useMemo(() => {
+    const base = ['Race', 'Class', 'Background', 'Abilities', 'Skills', 'Equipment']
+    if (isSpellcaster && spellcasterInfo && spellcasterInfo.cantripsKnown > 0) {
+      base.push('Spells')
+    }
+    base.push('Details', 'Review')
+    return base
+  }, [isSpellcaster, spellcasterInfo])
+
+  // Handle submit
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+
+    // Gather equipment from choices
+    const selectedEquipment: string[] = []
+    const classEquip = STARTING_EQUIPMENT[className] || []
+    classEquip.forEach((choice, idx) => {
+      const choiceIdx = equipmentChoices[idx] ?? 0
+      if (choice.options[choiceIdx]) {
+        selectedEquipment.push(...choice.options[choiceIdx])
+      }
+    })
+
+    // Gather background equipment
+    if (selectedBackground) {
+      selectedEquipment.push(...selectedBackground.equipment)
+    }
+
+    // Gather languages
+    const raceLanguages = RACIAL_LANGUAGES[race] || ['Common']
+    const allLanguages = [...new Set([...raceLanguages, ...selectedLanguages])]
+
+    const hitDie = HIT_DICE[className] || 8
+
+    onCreate({
+      name,
+      race,
+      class_name: className,
+      level: 1,
+      hp: calculatedHP,
+      max_hp: calculatedHP,
+      ac: calculatedAC,
+      speed: race === 'dwarf' || race === 'halfling' || race === 'gnome' ? 25 : 30,
+      hit_dice: `1d${hitDie}`,
+      ...finalAbilities,
+      subrace: subrace || undefined,
+      subclass: subclass || undefined,
+      background,
+      alignment,
+      skills: selectedSkills,
+      saving_throws: [],
+      languages: allLanguages,
+      features: [],
+      spells_known: selectedSpells,
+      cantrips_known: selectedCantrips,
+      equipment: selectedEquipment,
+      personality_traits: personalityTraits || undefined,
+      ideals: ideals || undefined,
+      bonds: bonds || undefined,
+      flaws: flaws || undefined,
+      backstory: backstory || undefined,
+    })
+  }
+
+  // Determine actual step index for spells
+  const getStepIndex = (stepName: string) => steps.indexOf(stepName)
 
   return (
     <form onSubmit={handleSubmit} className="character-creator" aria-label="form" role="form">
-      <h2>Forge Your Hero</h2>
+      <h2>⚔️ Forge Your Hero</h2>
 
       {/* Step indicator */}
       <div className="creator-steps" data-testid="creator-steps">
@@ -106,17 +290,19 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
         ))}
       </div>
 
-      {/* Step 0: Race */}
-      {step === 0 && (
+      {/* ================================================================ */}
+      {/* Step 0: Race + Subrace */}
+      {/* ================================================================ */}
+      {steps[step] === 'Race' && (
         <div className="creator-section" data-testid="step-race">
           <h3>Choose Your Race</h3>
           <div className="race-grid stagger-children" role="radiogroup" aria-label="Race selection">
-            {RACES.map((r) => (
+            {RACES.map(r => (
               <button
                 key={r.value}
                 type="button"
                 className={`race-card animate-in ${race === r.value ? 'selected' : ''}`}
-                onClick={() => setRace(r.value)}
+                onClick={() => { setRace(r.value); setSubrace('') }}
                 aria-pressed={race === r.value}
                 data-testid={`race-${r.value}`}
               >
@@ -125,18 +311,45 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
               </button>
             ))}
           </div>
+
+          {/* Subrace selection */}
+          {availableSubraces.length > 0 && (
+            <div className="subrace-section">
+              <h4>Choose Your Subrace</h4>
+              <div className="subrace-grid" role="radiogroup" aria-label="Subrace selection">
+                {availableSubraces.map(sr => (
+                  <button
+                    key={sr.value}
+                    type="button"
+                    className={`subrace-card ${subrace === sr.value ? 'selected' : ''}`}
+                    onClick={() => setSubrace(sr.value)}
+                    aria-pressed={subrace === sr.value}
+                    data-testid={`subrace-${sr.value}`}
+                  >
+                    <span className="subrace-name">{sr.label}</span>
+                    <span className="subrace-bonuses">
+                      {Object.entries(sr.abilityBonuses).map(([ab, val]) =>
+                        `${ab.slice(0, 3).toUpperCase()} ${val > 0 ? '+' : ''}${val}`
+                      ).join(', ')}
+                    </span>
+                    <span className="subrace-traits">{sr.traits.join(', ')}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Hidden select for test compatibility */}
           <select
             id="char-race"
             aria-label="Race"
             value={race}
-            onChange={(e) => setRace(e.target.value as Race)}
+            onChange={e => setRace(e.target.value as Race)}
             style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}
           >
-            {RACES.map((r) => (
-              <option key={r.value} value={r.value}>{r.label}</option>
-            ))}
+            {RACES.map(r => <option key={r.value} value={r.value}>{r.label}</option>)}
           </select>
+
           <div className="form-actions">
             <button type="button" className="btn-primary" onClick={() => setStep(1)}>
               Next: Choose Class →
@@ -146,19 +359,21 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
         </div>
       )}
 
-      {/* Step 1: Class */}
-      {step === 1 && (
+      {/* ================================================================ */}
+      {/* Step 1: Class + Subclass */}
+      {/* ================================================================ */}
+      {steps[step] === 'Class' && (
         <div className="creator-section" data-testid="step-class">
           <h3>Choose Your Class</h3>
           <div className="class-grid stagger-children" role="radiogroup" aria-label="Class selection">
-            {CLASSES.map((c) => {
+            {CLASSES.map(c => {
               const colors = CLASS_COLORS[c.value]
               return (
                 <button
                   key={c.value}
                   type="button"
                   className={`class-card animate-in ${className === c.value ? 'selected' : ''}`}
-                  onClick={() => setClassName(c.value)}
+                  onClick={() => { setClassName(c.value); setSubclass('') }}
                   aria-pressed={className === c.value}
                   data-testid={`class-${c.value}`}
                   style={{
@@ -168,143 +383,621 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                 >
                   <span className="class-icon">{c.icon}</span>
                   <span className="class-name">{c.label}</span>
+                  <span className="class-hit-die">d{HIT_DICE[c.value]}</span>
                 </button>
               )
             })}
           </div>
+
+          {/* Subclass selection */}
+          {availableSubclasses.length > 0 && (
+            <div className="subclass-section">
+              <h4>Choose Your Subclass</h4>
+              <div className="subclass-grid" role="radiogroup" aria-label="Subclass selection">
+                {availableSubclasses.map(sc => (
+                  <button
+                    key={sc.value}
+                    type="button"
+                    className={`subclass-card ${subclass === sc.value ? 'selected' : ''}`}
+                    onClick={() => setSubclass(sc.value)}
+                    aria-pressed={subclass === sc.value}
+                    data-testid={`subclass-${sc.value}`}
+                  >
+                    <span className="subclass-name">{sc.label}</span>
+                    {sc.features.length > 0 && (
+                      <span className="subclass-feature">{sc.features[0].name}</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Hidden select for test compatibility */}
           <select
             id="char-class"
             aria-label="Class"
             value={className}
-            onChange={(e) => setClassName(e.target.value as CharacterClass)}
+            onChange={e => setClassName(e.target.value as CharacterClass)}
             style={{ position: 'absolute', opacity: 0, pointerEvents: 'none' }}
           >
-            {CLASSES.map((c) => (
-              <option key={c.value} value={c.value}>{c.label}</option>
-            ))}
+            {CLASSES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
           </select>
+
           <div className="form-actions">
-            <button type="button" className="btn-secondary" onClick={() => setStep(0)}>
-              ← Back
-            </button>
-            <button type="button" className="btn-primary" onClick={() => setStep(2)}>
-              Next: Abilities →
+            <button type="button" className="btn-secondary" onClick={() => setStep(0)}>← Back</button>
+            <button type="button" className="btn-primary" onClick={() => setStep(2)}>Next: Background →</button>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* Step 2: Background */}
+      {/* ================================================================ */}
+      {steps[step] === 'Background' && (
+        <div className="creator-section" data-testid="step-background">
+          <h3>Choose Your Background</h3>
+          <div className="background-grid" role="radiogroup" aria-label="Background selection">
+            {BACKGROUNDS.map(bg => (
+              <button
+                key={bg.value}
+                type="button"
+                className={`background-card ${background === bg.value ? 'selected' : ''}`}
+                onClick={() => setBackground(bg.value)}
+                aria-pressed={background === bg.value}
+                data-testid={`bg-${bg.value}`}
+              >
+                <span className="bg-name">{bg.label}</span>
+                <span className="bg-skills">Skills: {bg.skillProficiencies.join(', ')}</span>
+                {bg.toolProficiencies.length > 0 && (
+                  <span className="bg-tools">Tools: {bg.toolProficiencies.join(', ')}</span>
+                )}
+                {bg.languages > 0 && (
+                  <span className="bg-languages">+{bg.languages} language{bg.languages > 1 ? 's' : ''}</span>
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Background feature preview */}
+          {selectedBackground && (
+            <div className="background-preview">
+              <h4>{selectedBackground.feature.name}</h4>
+              <p>{selectedBackground.feature.description}</p>
+            </div>
+          )}
+
+          <div className="form-actions">
+            <button type="button" className="btn-secondary" onClick={() => setStep(1)}>← Back</button>
+            <button type="button" className="btn-primary" onClick={() => setStep(3)}>Next: Abilities →</button>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* Step 3: Ability Scores */}
+      {/* ================================================================ */}
+      {steps[step] === 'Abilities' && (
+        <div className="creator-section" data-testid="step-abilities">
+          <h3>Set Ability Scores</h3>
+
+          {/* Method selector */}
+          <div className="ability-method-selector" role="radiogroup" aria-label="Ability score method">
+            {(['point-buy', 'standard-array', 'roll'] as AbilityMethod[]).map(method => (
+              <button
+                key={method}
+                type="button"
+                className={`method-btn ${abilityMethod === method ? 'active' : ''}`}
+                onClick={() => {
+                  setAbilityMethod(method)
+                  if (method === 'point-buy') setAbilities({ ...DEFAULT_ABILITIES })
+                  if (method === 'roll') rollAbilities()
+                }}
+                data-testid={`method-${method}`}
+              >
+                {method === 'point-buy' ? '🎯 Point Buy' : method === 'standard-array' ? '📊 Standard Array' : '🎲 Roll 4d6'}
+              </button>
+            ))}
+          </div>
+
+          {/* Point Buy */}
+          {abilityMethod === 'point-buy' && (
+            <>
+              <p className="points-budget">
+                Points spent: <strong className={pointBuySpent > POINT_BUY_BUDGET ? 'over-budget' : ''}>{pointBuySpent}</strong> / {POINT_BUY_BUDGET}
+              </p>
+              <div className="ability-grid">
+                {ABILITY_INFO.map(({ key, label, short, desc }) => {
+                  const val = abilities[key as keyof AbilityScores]
+                  const bonus = racialBonuses[key] || 0
+                  const finalVal = val + bonus
+                  return (
+                    <div key={key} className="ability-card">
+                      <label htmlFor={`ability-${key}`} className="ability-card-label">
+                        <span className="ability-short">{short}</span>
+                        <span className="ability-name">{label}</span>
+                        <span className="ability-desc">{desc}</span>
+                      </label>
+                      <div className="ability-controls">
+                        <button
+                          type="button"
+                          className="ability-btn"
+                          onClick={() => updateAbility(key as keyof AbilityScores, -1)}
+                          disabled={val <= 8}
+                          aria-label={`Decrease ${label}`}
+                        >−</button>
+                        <input
+                          id={`ability-${key}`}
+                          type="number"
+                          min={8}
+                          max={15}
+                          value={val}
+                          onChange={e => {
+                            const n = parseInt(e.target.value) || 8
+                            setAbilities(prev => ({ ...prev, [key]: Math.min(15, Math.max(8, n)) }))
+                          }}
+                          className="ability-input"
+                        />
+                        <button
+                          type="button"
+                          className="ability-btn"
+                          onClick={() => updateAbility(key as keyof AbilityScores, 1)}
+                          disabled={val >= 15}
+                          aria-label={`Increase ${label}`}
+                        >+</button>
+                      </div>
+                      {bonus !== 0 && <span className="ability-racial-bonus">+{bonus} racial</span>}
+                      <span className="ability-final">Final: {finalVal}</span>
+                      <span className="ability-modifier">{abilityMod(finalVal)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+
+          {/* Standard Array */}
+          {abilityMethod === 'standard-array' && (
+            <div className="standard-array-section">
+              <p className="array-hint">Assign each value to an ability: {STANDARD_ARRAY.join(', ')}</p>
+              <div className="ability-grid">
+                {ABILITY_INFO.map(({ key, label, short }) => {
+                  const assigned = standardArrayAssignments[key]
+                  const usedValues = Object.values(standardArrayAssignments)
+                  const bonus = racialBonuses[key] || 0
+                  const finalVal = (assigned || 8) + bonus
+                  return (
+                    <div key={key} className="ability-card">
+                      <label htmlFor={`ability-${key}`} className="ability-card-label">
+                        <span className="ability-short">{short}</span>
+                        <span className="ability-name">{label}</span>
+                      </label>
+                      <select
+                        id={`ability-${key}`}
+                        value={assigned || ''}
+                        onChange={e => {
+                          const val = parseInt(e.target.value)
+                          const newAssignments = { ...standardArrayAssignments, [key]: val }
+                          applyStandardArray(newAssignments)
+                        }}
+                        className="ability-select"
+                      >
+                        <option value="">—</option>
+                        {STANDARD_ARRAY.map(v => (
+                          <option
+                            key={v}
+                            value={v}
+                            disabled={usedValues.includes(v) && standardArrayAssignments[key] !== v}
+                          >{v}</option>
+                        ))}
+                      </select>
+                      {bonus !== 0 && <span className="ability-racial-bonus">+{bonus} racial</span>}
+                      <span className="ability-final">Final: {finalVal}</span>
+                      <span className="ability-modifier">{abilityMod(finalVal)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Roll */}
+          {abilityMethod === 'roll' && (
+            <div className="roll-section">
+              <button type="button" className="btn-roll" onClick={rollAbilities} data-testid="reroll-btn">
+                🎲 Re-Roll All
+              </button>
+              <div className="ability-grid">
+                {ABILITY_INFO.map(({ key, label, short }) => {
+                  const val = abilities[key as keyof AbilityScores]
+                  const bonus = racialBonuses[key] || 0
+                  const finalVal = val + bonus
+                  return (
+                    <div key={key} className="ability-card">
+                      <label className="ability-card-label">
+                        <span className="ability-short">{short}</span>
+                        <span className="ability-name">{label}</span>
+                      </label>
+                      <div className="ability-rolled-value">{val}</div>
+                      {bonus !== 0 && <span className="ability-racial-bonus">+{bonus} racial</span>}
+                      <span className="ability-final">Final: {finalVal}</span>
+                      <span className="ability-modifier">{abilityMod(finalVal)}</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          )}
+
+          <div className="form-actions">
+            <button type="button" className="btn-secondary" onClick={() => setStep(2)}>← Back</button>
+            <button type="button" className="btn-primary" onClick={() => setStep(4)}>Next: Skills →</button>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* Step 4: Skills */}
+      {/* ================================================================ */}
+      {steps[step] === 'Skills' && (
+        <div className="creator-section" data-testid="step-skills">
+          <h3>Choose Your Skills</h3>
+          <p className="skill-hint">
+            Choose <strong>{classSkillInfo.count}</strong> skills from your class list.
+            {selectedBackground && (
+              <> Your background ({selectedBackground.label}) grants: <strong>{selectedBackground.skillProficiencies.join(', ')}</strong></>
+            )}
+          </p>
+
+          <div className="skill-selection-count">
+            Selected: {selectedSkills.length} / {classSkillInfo.count}
+          </div>
+
+          <div className="skill-grid">
+            {SKILLS.map(skill => {
+              const isClassOption = classSkillInfo.options.includes(skill.value)
+              const isBackgroundSkill = selectedBackground?.skillProficiencies.includes(skill.label) ?? false
+              const isSelected = selectedSkills.includes(skill.value) || isBackgroundSkill
+              const canSelect = isClassOption && !isBackgroundSkill && selectedSkills.length < classSkillInfo.count
+
+              return (
+                <button
+                  key={skill.value}
+                  type="button"
+                  className={`skill-card ${isSelected ? 'selected' : ''} ${isBackgroundSkill ? 'background-skill' : ''} ${!isClassOption && !isBackgroundSkill ? 'unavailable' : ''}`}
+                  onClick={() => {
+                    if (isBackgroundSkill) return
+                    if (!isClassOption) return
+                    if (selectedSkills.includes(skill.value)) {
+                      setSelectedSkills(prev => prev.filter(s => s !== skill.value))
+                    } else if (canSelect) {
+                      setSelectedSkills(prev => [...prev, skill.value])
+                    }
+                  }}
+                  disabled={isBackgroundSkill || (!isClassOption && !isBackgroundSkill)}
+                  data-testid={`skill-${skill.value}`}
+                >
+                  <span className="skill-name">{skill.label}</span>
+                  <span className="skill-ability">({skill.abilityShort})</span>
+                  {isBackgroundSkill && <span className="skill-source">Background</span>}
+                </button>
+              )
+            })}
+          </div>
+
+          <div className="form-actions">
+            <button type="button" className="btn-secondary" onClick={() => setStep(3)}>← Back</button>
+            <button type="button" className="btn-primary" onClick={() => setStep(5)}>Next: Equipment →</button>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* Step 5: Equipment */}
+      {/* ================================================================ */}
+      {steps[step] === 'Equipment' && (
+        <div className="creator-section" data-testid="step-equipment">
+          <h3>Choose Starting Equipment</h3>
+
+          {(STARTING_EQUIPMENT[className] || []).map((choice, idx) => (
+            <div key={idx} className="equipment-choice">
+              <h4>{choice.label}</h4>
+              <div className="equipment-options" role="radiogroup" aria-label={choice.label}>
+                {choice.options.map((option, optIdx) => (
+                  <button
+                    key={optIdx}
+                    type="button"
+                    className={`equipment-option ${(equipmentChoices[idx] ?? 0) === optIdx ? 'selected' : ''}`}
+                    onClick={() => setEquipmentChoices(prev => ({ ...prev, [idx]: optIdx }))}
+                    aria-pressed={(equipmentChoices[idx] ?? 0) === optIdx}
+                  >
+                    {option.join(', ')}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+
+          {selectedBackground && selectedBackground.equipment.length > 0 && (
+            <div className="background-equipment">
+              <h4>From Background ({selectedBackground.label})</h4>
+              <p>{selectedBackground.equipment.join(', ')}</p>
+            </div>
+          )}
+
+          <div className="form-actions">
+            <button type="button" className="btn-secondary" onClick={() => setStep(4)}>← Back</button>
+            <button type="button" className="btn-primary" onClick={() => setStep(step + 1)}>
+              Next: {isSpellcaster && spellcasterInfo && spellcasterInfo.cantripsKnown > 0 ? 'Spells' : 'Details'} →
             </button>
           </div>
         </div>
       )}
 
-      {/* Step 2: Abilities */}
-      {step === 2 && (
-        <div className="creator-section" data-testid="step-abilities">
-          <h3>Set Ability Scores</h3>
-          <p className="points-budget">
-            Points spent: <strong>{totalPoints}</strong> / {pointBudget}
-          </p>
-          <div className="ability-grid">
-            {ABILITY_INFO.map(({ key, label, short, desc }) => {
-              const val = abilities[key as keyof typeof abilities]
-              return (
-                <div key={key} className="ability-card">
-                  <label htmlFor={`ability-${key}`} className="ability-card-label">
-                    <span className="ability-short">{short}</span>
-                    <span className="ability-name">{label}</span>
-                    <span className="ability-desc">{desc}</span>
-                  </label>
-                  <div className="ability-controls">
-                    <button
-                      type="button"
-                      className="ability-btn"
-                      onClick={() => updateAbility(key as keyof typeof abilities, -1)}
-                      disabled={val <= 3}
-                      aria-label={`Decrease ${label}`}
-                    >
-                      −
-                    </button>
-                    <input
-                      id={`ability-${key}`}
-                      type="number"
-                      min={3}
-                      max={18}
-                      value={val}
-                      onChange={(e) => {
-                        const n = parseInt(e.target.value) || 10
-                        setAbilities((prev) => ({ ...prev, [key]: Math.min(18, Math.max(3, n)) }))
-                      }}
-                      className="ability-input"
-                    />
-                    <button
-                      type="button"
-                      className="ability-btn"
-                      onClick={() => updateAbility(key as keyof typeof abilities, 1)}
-                      disabled={val >= 18}
-                      aria-label={`Increase ${label}`}
-                    >
-                      +
-                    </button>
-                  </div>
-                  <span className="ability-modifier">{abilityMod(val)}</span>
-                </div>
-              )
-            })}
-          </div>
+      {/* ================================================================ */}
+      {/* Step 6: Spells (casters only) */}
+      {/* ================================================================ */}
+      {steps[step] === 'Spells' && spellcasterInfo && (
+        <div className="creator-section" data-testid="step-spells">
+          <h3>Choose Your Spells</h3>
+
+          {spellcasterInfo.cantripsKnown > 0 && (
+            <div className="spell-section">
+              <h4>Cantrips (Choose {spellcasterInfo.cantripsKnown})</h4>
+              <p className="spell-count">Selected: {selectedCantrips.length} / {spellcasterInfo.cantripsKnown}</p>
+              <p className="spell-hint">Cantrip selection will be available after character creation via the spell management interface.</p>
+            </div>
+          )}
+
+          {spellcasterInfo.spellsKnownOrPrepared > 0 && (
+            <div className="spell-section">
+              <h4>1st Level Spells (Choose {spellcasterInfo.spellsKnownOrPrepared})</h4>
+              <p className="spell-count">Selected: {selectedSpells.length} / {spellcasterInfo.spellsKnownOrPrepared}</p>
+              <p className="spell-hint">Spell selection will be available after character creation via the spell management interface.</p>
+            </div>
+          )}
+
           <div className="form-actions">
-            <button type="button" className="btn-secondary" onClick={() => setStep(1)}>
-              ← Back
-            </button>
-            <button type="button" className="btn-primary" onClick={() => setStep(3)}>
+            <button type="button" className="btn-secondary" onClick={() => setStep(step - 1)}>← Back</button>
+            <button type="button" className="btn-primary" onClick={() => setStep(step + 1)}>Next: Details →</button>
+          </div>
+        </div>
+      )}
+
+      {/* ================================================================ */}
+      {/* Step 7: Details (Name, Alignment, Backstory, Personality) */}
+      {/* ================================================================ */}
+      {steps[step] === 'Details' && (
+        <div className="creator-section" data-testid="step-details">
+          <h3>Character Details</h3>
+
+          <div className="details-grid">
+            <div className="form-group">
+              <label htmlFor="char-name">Name</label>
+              <input
+                id="char-name"
+                type="text"
+                value={name}
+                onChange={e => setName(e.target.value)}
+                placeholder="Enter your hero's name..."
+                required
+                autoFocus
+                className="name-input"
+              />
+            </div>
+
+            <div className="form-group">
+              <label htmlFor="char-alignment">Alignment</label>
+              <select
+                id="char-alignment"
+                value={alignment}
+                onChange={e => setAlignment(e.target.value)}
+                className="alignment-select"
+              >
+                {ALIGNMENTS.map(a => (
+                  <option key={a.value} value={a.value}>{a.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Extra language selection (from background) */}
+            {selectedBackground && selectedBackground.languages > 0 && (
+              <div className="form-group">
+                <label>Extra Languages ({selectedBackground.languages})</label>
+                <div className="language-grid">
+                  {LANGUAGES
+                    .filter(l => !(RACIAL_LANGUAGES[race] || []).includes(l.value))
+                    .map(lang => (
+                      <button
+                        key={lang.value}
+                        type="button"
+                        className={`language-btn ${selectedLanguages.includes(lang.value) ? 'selected' : ''}`}
+                        onClick={() => {
+                          if (selectedLanguages.includes(lang.value)) {
+                            setSelectedLanguages(prev => prev.filter(l => l !== lang.value))
+                          } else if (selectedLanguages.length < selectedBackground.languages) {
+                            setSelectedLanguages(prev => [...prev, lang.value])
+                          }
+                        }}
+                        disabled={!selectedLanguages.includes(lang.value) && selectedLanguages.length >= selectedBackground.languages}
+                      >
+                        {lang.label}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Personality from background */}
+            {selectedBackground && (
+              <>
+                <div className="form-group">
+                  <label htmlFor="char-personality">Personality Traits</label>
+                  <textarea
+                    id="char-personality"
+                    value={personalityTraits}
+                    onChange={e => setPersonalityTraits(e.target.value)}
+                    placeholder="Describe your personality..."
+                    rows={2}
+                  />
+                  {selectedBackground.personalityTraits.length > 0 && (
+                    <div className="trait-suggestions">
+                      <span className="suggestions-label">Suggestions:</span>
+                      {selectedBackground.personalityTraits.slice(0, 4).map((trait, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          className="trait-suggestion"
+                          onClick={() => setPersonalityTraits(trait)}
+                        >{trait}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="char-ideals">Ideals</label>
+                  <textarea
+                    id="char-ideals"
+                    value={ideals}
+                    onChange={e => setIdeals(e.target.value)}
+                    placeholder="What drives you?"
+                    rows={2}
+                  />
+                  {selectedBackground.ideals.length > 0 && (
+                    <div className="trait-suggestions">
+                      <span className="suggestions-label">Suggestions:</span>
+                      {selectedBackground.ideals.slice(0, 3).map((ideal, i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          className="trait-suggestion"
+                          onClick={() => setIdeals(ideal)}
+                        >{ideal}</button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="char-bonds">Bonds</label>
+                  <textarea
+                    id="char-bonds"
+                    value={bonds}
+                    onChange={e => setBonds(e.target.value)}
+                    placeholder="What connects you to the world?"
+                    rows={2}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label htmlFor="char-flaws">Flaws</label>
+                  <textarea
+                    id="char-flaws"
+                    value={flaws}
+                    onChange={e => setFlaws(e.target.value)}
+                    placeholder="What are your weaknesses?"
+                    rows={2}
+                  />
+                </div>
+              </>
+            )}
+
+            <div className="form-group form-group-full">
+              <label htmlFor="char-backstory">Backstory</label>
+              <textarea
+                id="char-backstory"
+                value={backstory}
+                onChange={e => setBackstory(e.target.value)}
+                placeholder="Tell your hero's story..."
+                rows={4}
+              />
+            </div>
+          </div>
+
+          <div className="form-actions">
+            <button type="button" className="btn-secondary" onClick={() => setStep(step - 1)}>← Back</button>
+            <button type="button" className="btn-primary" onClick={() => setStep(step + 1)} disabled={!name.trim()}>
               Next: Review →
             </button>
           </div>
         </div>
       )}
 
-      {/* Step 3: Name & Review */}
-      {step === 3 && (
+      {/* ================================================================ */}
+      {/* Step 8: Review */}
+      {/* ================================================================ */}
+      {steps[step] === 'Review' && (
         <div className="creator-section" data-testid="step-review">
-          <h3>Name Your Hero</h3>
+          <h3>Review Your Hero</h3>
           <div className="review-layout">
             <div className="review-portrait">
               <CharacterPortrait race={race} className={className} size="lg" selected />
             </div>
             <div className="review-info">
-              <div className="form-group">
-                <label htmlFor="char-name">Name</label>
-                <input
-                  id="char-name"
-                  type="text"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="Enter your hero's name..."
-                  required
-                  autoFocus
-                  className="name-input"
-                />
-              </div>
+              <h4 className="review-name">{name || '???'}</h4>
               <p className="review-summary">
-                Level 1 {RACES.find((r) => r.value === race)?.label}{' '}
-                {CLASSES.find((c) => c.value === className)?.label}
+                Level 1{' '}
+                {selectedSubrace ? availableSubraces.find(s => s.value === subrace)?.label : RACES.find(r => r.value === race)?.label}{' '}
+                {CLASSES.find(c => c.value === className)?.label}
+                {subclass && ` (${availableSubclasses.find(s => s.value === subclass)?.label})`}
               </p>
+              {background && (
+                <p className="review-background">Background: {BACKGROUNDS.find(b => b.value === background)?.label}</p>
+              )}
+              {alignment && (
+                <p className="review-alignment">Alignment: {ALIGNMENTS.find(a => a.value === alignment)?.label}</p>
+              )}
+
               <div className="review-abilities">
-                {ABILITY_INFO.map(({ key, short }) => (
-                  <span key={key} className="review-stat">
-                    {short}: {abilities[key as keyof typeof abilities]}
-                  </span>
-                ))}
+                {ABILITY_INFO.map(({ key, short }) => {
+                  const base = abilities[key as keyof AbilityScores]
+                  const bonus = racialBonuses[key] || 0
+                  const final_ = base + bonus
+                  return (
+                    <span key={key} className="review-stat">
+                      <span className="stat-label">{short}</span>
+                      <span className="stat-value">{final_}</span>
+                      <span className="stat-mod">{abilityMod(final_)}</span>
+                    </span>
+                  )
+                })}
               </div>
+
               <div className="review-derived">
-                <span>HP: {10 + Math.floor((abilities.constitution - 10) / 2)}</span>
-                <span>AC: {10 + Math.floor((abilities.dexterity - 10) / 2)}</span>
+                <span>❤️ HP: {calculatedHP}</span>
+                <span>🛡️ AC: {calculatedAC}</span>
+                <span>🏃 Speed: {race === 'dwarf' || race === 'halfling' || race === 'gnome' ? 25 : 30} ft</span>
+                <span>🎯 Hit Die: d{HIT_DICE[className]}</span>
               </div>
+
+              {selectedSkills.length > 0 && (
+                <div className="review-skills">
+                  <strong>Skills:</strong> {selectedSkills.map(s =>
+                    SKILLS.find(sk => sk.value === s)?.label || s
+                  ).join(', ')}
+                  {selectedBackground && selectedBackground.skillProficiencies.length > 0 && (
+                    <>, {selectedBackground.skillProficiencies.join(', ')} (background)</>
+                  )}
+                </div>
+              )}
+
+              {backstory && (
+                <div className="review-backstory">
+                  <strong>Backstory:</strong> {backstory.length > 200 ? backstory.slice(0, 200) + '...' : backstory}
+                </div>
+              )}
             </div>
           </div>
+
+          <div className="review-note">
+            <p>🎨 A portrait will be auto-generated after creation!</p>
+          </div>
+
           <div className="form-actions">
-            <button type="button" className="btn-secondary" onClick={() => setStep(2)}>
-              ← Back
-            </button>
-            <button type="submit" className="btn-primary" disabled={!name.trim()}>
-              Create Character
+            <button type="button" className="btn-secondary" onClick={() => setStep(step - 1)}>← Back</button>
+            <button type="submit" className="btn-primary btn-create" disabled={!name.trim()}>
+              ⚔️ Create Character
             </button>
           </div>
         </div>

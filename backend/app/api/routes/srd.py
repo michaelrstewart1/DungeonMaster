@@ -4,7 +4,10 @@ API routes for D&D 5e SRD reference data.
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query
 from app.services.srd.lookup import SRDLookupService
-from app.services.srd.models import SRDSpell, SRDMonster, SRDEquipment, SRDClass, SRDRace
+from app.services.srd.models import (
+    SRDSpell, SRDMonster, SRDEquipment, SRDClass, SRDRace,
+    SRDSubrace, SRDSubclass, SRDBackground, SRDSkill, SRDFeat,
+)
 
 router = APIRouter(tags=["srd"])
 lookup_service = SRDLookupService()
@@ -139,3 +142,42 @@ async def get_race(name: str) -> SRDRace:
     if race is None:
         raise HTTPException(status_code=404, detail=f"Race '{name}' not found")
     return race
+
+
+# ============================================================================
+# CHARACTER CREATION DATA ROUTES
+# ============================================================================
+
+
+@router.get("/srd/chargen/subraces", response_model=list[SRDSubrace])
+async def list_subraces(
+    race: Optional[str] = Query(None, description="Filter by parent race"),
+) -> list[SRDSubrace]:
+    """Get subraces, optionally filtered by parent race."""
+    return await lookup_service.get_subraces(race=race)
+
+
+@router.get("/srd/chargen/subclasses", response_model=list[SRDSubclass])
+async def list_subclasses(
+    class_name: Optional[str] = Query(None, description="Filter by parent class"),
+) -> list[SRDSubclass]:
+    """Get subclasses, optionally filtered by parent class."""
+    return await lookup_service.get_subclasses(class_name=class_name)
+
+
+@router.get("/srd/chargen/backgrounds", response_model=list[SRDBackground])
+async def list_backgrounds() -> list[SRDBackground]:
+    """Get all available backgrounds."""
+    return await lookup_service.get_backgrounds()
+
+
+@router.get("/srd/chargen/skills", response_model=list[SRDSkill])
+async def list_skills() -> list[SRDSkill]:
+    """Get all 18 D&D 5e skills."""
+    return await lookup_service.get_skills()
+
+
+@router.get("/srd/chargen/feats", response_model=list[SRDFeat])
+async def list_feats() -> list[SRDFeat]:
+    """Get all available feats."""
+    return await lookup_service.get_feats()

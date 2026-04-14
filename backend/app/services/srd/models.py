@@ -71,3 +71,56 @@ class SRDRace(BaseModel):
     size: str = Field(..., description="Size (Tiny, Small, Medium, Large)")
     ability_bonuses: Dict[str, int] = Field(..., description="Ability score bonuses")
     traits: List[str] = Field(..., description="Racial traits")
+
+
+class SRDSubrace(BaseModel):
+    """Model for a D&D 5e subrace."""
+
+    name: str = Field(..., description="Subrace name")
+    parent_race: str = Field(..., description="Parent race name")
+    ability_bonuses: Dict[str, int] = Field(default_factory=dict, description="Additional ability bonuses")
+    traits: List[str] = Field(default_factory=list, description="Subrace traits")
+    trait_descriptions: Dict[str, str] = Field(default_factory=dict, description="Descriptions of subrace traits")
+
+
+class SRDSubclass(BaseModel):
+    """Model for a D&D 5e subclass."""
+
+    name: str = Field(..., description="Subclass name")
+    parent_class: str = Field(..., description="Parent class name")
+    subclass_level: int = Field(..., description="Level at which subclass is chosen")
+    description: str = Field("", description="Subclass description")
+    features: List[Dict[str, str]] = Field(default_factory=list, description="Subclass features by level")
+
+
+class SRDBackground(BaseModel):
+    """Model for a D&D 5e background."""
+
+    name: str = Field(..., description="Background name")
+    skill_proficiencies: List[str] = Field(..., description="Granted skill proficiencies")
+    tool_proficiencies: List[str] = Field(default_factory=list, description="Granted tool proficiencies")
+    languages: int = Field(default=0, description="Number of extra languages granted")
+    equipment: List[str] = Field(default_factory=list, description="Starting equipment")
+    feature_name: str = Field("", description="Background feature name")
+    feature_description: str = Field("", description="Background feature description")
+    personality_traits: List[str] = Field(default_factory=list, description="Personality trait options")
+    ideals: List[str] = Field(default_factory=list, description="Ideal options")
+    bonds: List[str] = Field(default_factory=list, description="Bond options")
+    flaws: List[str] = Field(default_factory=list, description="Flaw options")
+
+
+class SRDSkill(BaseModel):
+    """Model for a D&D 5e skill."""
+
+    name: str = Field(..., description="Skill name")
+    ability: str = Field(..., description="Associated ability score")
+    description: str = Field("", description="Skill description")
+
+
+class SRDFeat(BaseModel):
+    """Model for a D&D 5e feat."""
+
+    name: str = Field(..., description="Feat name")
+    prerequisite: Optional[str] = Field(None, description="Prerequisite requirement")
+    description: str = Field(..., description="Feat description")
+    ability_bonus: Optional[Dict[str, int]] = Field(None, description="Ability score bonuses from feat")
