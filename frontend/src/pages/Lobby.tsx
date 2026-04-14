@@ -13,7 +13,7 @@ export function Lobby() {
   const { connected, players, connectionCount } = useGameSocket(sessionId);
   const [roomCode, setRoomCode] = useState('');
   const [characters, setCharacters] = useState<Character[]>([]);
-  const [sessionInfo, setSessionInfo] = useState<{ campaign_id?: string }>({});
+  const [, setSessionInfo] = useState<{ campaign_id?: string }>({});
 
   // Fetch session info and room code
   useEffect(() => {

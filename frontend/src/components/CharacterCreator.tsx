@@ -7,7 +7,6 @@ import {
   ALIGNMENTS, LANGUAGES, RACIAL_LANGUAGES, HIT_DICE,
   POINT_BUY_COSTS, STANDARD_ARRAY, POINT_BUY_BUDGET,
   SPELLCASTING_CLASSES, STARTING_EQUIPMENT,
-  type SubraceData, type SubclassData, type BackgroundData, type SkillData,
 } from '../data/dnd5e'
 
 const RACES: { value: Race; label: string; desc: string }[] = [
@@ -88,8 +87,8 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
   const [equipmentChoices, setEquipmentChoices] = useState<Record<number, number>>({})
 
   // Step 6: Spells (casters only)
-  const [selectedCantrips, setSelectedCantrips] = useState<string[]>([])
-  const [selectedSpells, setSelectedSpells] = useState<string[]>([])
+  const [selectedCantrips, _setSelectedCantrips] = useState<string[]>([])
+  const [selectedSpells, _setSelectedSpells] = useState<string[]>([])
 
   // Step 7: Details
   const [name, setName] = useState('')
@@ -296,7 +295,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
   }
 
   // Determine actual step index for spells
-  const getStepIndex = (stepName: string) => steps.indexOf(stepName)
+  // const getStepIndex = (stepName: string) => steps.indexOf(stepName)
 
   return (
     <form ref={creatorRef} onSubmit={handleSubmit} className="character-creator" aria-label="form" role="form">

@@ -23,10 +23,10 @@ export function PlayerView() {
   const { connected, messages, sendChat, sendAction } = useGameSocket(sessionId);
 
   const [character, setCharacter] = useState<Character | null>(null);
-  const [gameState, setGameState] = useState<GameState | null>(null);
+  const [, setGameState] = useState<GameState | null>(null);
   const [narrative, setNarrative] = useState<NarrativeEntry[]>([]);
   const [actionText, setActionText] = useState('');
-  const [isMyTurn, setIsMyTurn] = useState(false);
+  const [isMyTurn, _setIsMyTurn] = useState(false);
   const [tab, setTab] = useState<'play' | 'sheet' | 'map'>('play');
   const [gameMap, setGameMap] = useState<GameMap | null>(null);
   const feedRef = useRef<HTMLDivElement>(null);
@@ -66,7 +66,7 @@ export function PlayerView() {
       ]);
     }
 
-    if (last.type === 'chat') {
+    if ((last.type as string) === 'chat') {
       const p = last.payload as { message?: string; sender?: string };
       setNarrative((prev) => [
         ...prev,

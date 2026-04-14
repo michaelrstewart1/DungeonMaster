@@ -51,8 +51,8 @@ export function PartyStatus({ characters }: PartyStatusProps) {
       <h3 className="party-status-title">⚔ Party</h3>
       <div className="party-member-list">
         {characters.map((char) => {
-          const hpPercent = char.max_hp > 0 ? Math.max(0, Math.min(100, (char.hp / char.max_hp) * 100)) : 0
-          const hpColor = getHpColor(char.hp, char.max_hp)
+          const hpPercent = (char.max_hp ?? 0) > 0 ? Math.max(0, Math.min(100, (char.hp / (char.max_hp ?? 1)) * 100)) : 0
+          const hpColor = getHpColor(char.hp, char.max_hp ?? 0)
           const classIcon = CLASS_ICONS[char.class_name] || '⚔️'
 
           return (

@@ -25,7 +25,7 @@ interface AvatarState {
 
 export function DMDisplay() {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const { connected, messages, players, connectionCount } = useGameSocket(sessionId);
+  const { connected, messages, connectionCount } = useGameSocket(sessionId);
 
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
