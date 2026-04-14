@@ -6,6 +6,17 @@ import { PREMADE_CAMPAIGNS } from '../data/premadeCampaigns'
 import type { Campaign } from '../types'
 import type { PremadeCampaign } from '../data/premadeCampaigns'
 
+const LANDSCAPE_SCENES = [
+  '/art/landscapes/dragon-peak.png',
+  '/art/landscapes/ancient-citadel.png',
+  '/art/landscapes/enchanted-forest.png',
+  '/art/landscapes/volcanic-wasteland.png',
+  '/art/landscapes/frozen-throne.png',
+  '/art/landscapes/abyssal-depths.png',
+  '/art/landscapes/celestial-sanctum.png',
+  '/art/landscapes/stormy-seas.png',
+]
+
 export function Home() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
   const [loading, setLoading] = useState(true)
@@ -17,6 +28,44 @@ export function Home() {
   const [randomizing, setRandomizing] = useState(false)
   const [launchingCampaign, setLaunchingCampaign] = useState<string | null>(null)
   const navigate = useNavigate()
+
+  // Background landscape slideshow
+  const [sceneIndex, setSceneIndex] = useState(0)
+  const [sceneOpacity, setSceneOpacity] = useState(0)
+  const [nextSceneIndex, setNextSceneIndex] = useState(1)
+  const [nextOpacity, setNextOpacity] = useState(0)
+
+  useEffect(() => {
+    // Preload all landscape images
+    LANDSCAPE_SCENES.forEach(src => {
+      const img = new Image()
+      img.src = src
+    })
+  }, [])
+
+  useEffect(() => {
+    // Fade in the current scene
+    const fadeInTimer = setTimeout(() => setSceneOpacity(1), 100)
+
+    // Start fading in the next scene (crossfade)
+    const crossfadeTimer = setTimeout(() => {
+      setNextOpacity(1)
+    }, 7000)
+
+    // After crossfade completes, swap scenes
+    const swapTimer = setTimeout(() => {
+      setSceneIndex(nextSceneIndex)
+      setSceneOpacity(1)
+      setNextOpacity(0)
+      setNextSceneIndex((nextSceneIndex + 1) % LANDSCAPE_SCENES.length)
+    }, 10000)
+
+    return () => {
+      clearTimeout(fadeInTimer)
+      clearTimeout(crossfadeTimer)
+      clearTimeout(swapTimer)
+    }
+  }, [nextSceneIndex])
 
   // Escape key closes the form
   useEffect(() => {
@@ -101,6 +150,12 @@ export function Home() {
 
   if (loading) return (
     <div className="page-home">
+      <div className="home-bg-slideshow">
+        <div
+          className="home-bg-scene"
+          style={{ backgroundImage: `url(${LANDSCAPE_SCENES[sceneIndex]})`, opacity: sceneOpacity }}
+        />
+      </div>
       <header className="hero">
         <h1>⚔️ AI Dungeon Master</h1>
         <p className="subtitle">Your AI-powered D&amp;D 5e experience</p>
@@ -121,6 +176,16 @@ export function Home() {
 
   return (
     <div className="page-home">
+      <div className="home-bg-slideshow">
+        <div
+          className="home-bg-scene"
+          style={{ backgroundImage: `url(${LANDSCAPE_SCENES[sceneIndex]})`, opacity: sceneOpacity }}
+        />
+        <div
+          className="home-bg-scene"
+          style={{ backgroundImage: `url(${LANDSCAPE_SCENES[nextSceneIndex]})`, opacity: nextOpacity }}
+        />
+      </div>
       <header className="hero">
         <div className="hero-emblem">⚔️</div>
         <h1>AI Dungeon Master</h1>

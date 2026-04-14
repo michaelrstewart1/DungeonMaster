@@ -5,7 +5,7 @@ import urllib.parse
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -467,3 +467,97 @@ async def generate_portrait_free(character_id: str) -> CharacterResponse:
         )
 
     return CharacterResponse(**character)
+
+
+# ── AI Character Detail Generation ──────────────────────────────
+
+class AIGenerateRequest(BaseModel):
+    """Request body for AI character detail generation."""
+    field: str = Field(..., description="Which field to generate: name, personality_traits, ideals, bonds, flaws, backstory, full")
+    race: str = ""
+    class_name: str = ""
+    subrace: str = ""
+    subclass: str = ""
+    background: str = ""
+    alignment: str = ""
+    name: str = ""
+    personality_traits: str = ""
+    ideals: str = ""
+    bonds: str = ""
+    flaws: str = ""
+    backstory: str = ""
+
+
+class AIGenerateResponse(BaseModel):
+    """Response with AI-generated content."""
+    field: str
+    value: str
+    values: Optional[Dict[str, str]] = None
+
+
+_FIELD_PROMPTS = {
+    "name": "Generate a single creative fantasy name for a {race} {class_name}. Just the name, nothing else. Make it sound authentic to the race.",
+    "personality_traits": "Write 1-2 personality traits (2 sentences max) for a {race} {class_name} with the {background} background named {name}. Be specific and flavorful. Just the traits, no labels.",
+    "ideals": "Write one ideal (1 sentence) for a {race} {class_name} with a {background} background named {name} who is {alignment}. What principle drives them? Just the ideal, no labels.",
+    "bonds": "Write one bond (1 sentence) for a {race} {class_name} with a {background} background named {name}. What person, place, or thing do they care about most? Just the bond, no labels.",
+    "flaws": "Write one flaw (1 sentence) for a {race} {class_name} with a {background} background named {name}. What weakness or vice could get them in trouble? Just the flaw, no labels.",
+    "backstory": "Write a short backstory (3-5 sentences) for a {race} {class_name} with the {background} background named {name} who is {alignment}. Personality: {personality_traits}. Ideal: {ideals}. Bond: {bonds}. Flaw: {flaws}. Make it vivid and adventure-ready.",
+}
+
+
+@router.post("/generate-details", response_model=AIGenerateResponse)
+async def generate_character_details(req: AIGenerateRequest, request: Request) -> AIGenerateResponse:
+    """Use the AI to generate character details like name, backstory, personality."""
+    from app.services.llm.base import LLMMessage
+
+    narrator = getattr(request.app.state, "narrator", None)
+    if narrator is None or narrator.llm is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="AI generation requires an LLM provider. Configure OPENAI_API_KEY or another provider.",
+        )
+
+    llm = narrator.llm
+    context = {
+        "race": req.race or "human",
+        "class_name": req.class_name or "fighter",
+        "subrace": req.subrace or "",
+        "subclass": req.subclass or "",
+        "background": req.background or "folk hero",
+        "alignment": req.alignment or "neutral",
+        "name": req.name or "the character",
+        "personality_traits": req.personality_traits or "(not yet defined)",
+        "ideals": req.ideals or "(not yet defined)",
+        "bonds": req.bonds or "(not yet defined)",
+        "flaws": req.flaws or "(not yet defined)",
+        "backstory": req.backstory or "(not yet defined)",
+    }
+
+    if req.field == "full":
+        results: Dict[str, str] = {}
+        fields_order = ["name", "personality_traits", "ideals", "bonds", "flaws", "backstory"]
+        for f in fields_order:
+            prompt = _FIELD_PROMPTS[f].format(**context)
+            try:
+                resp = await llm.generate([
+                    LLMMessage(role="system", content="You are a D&D 5e character creation assistant. Be creative, concise, and flavorful. Output ONLY the requested content with no labels, quotes, or markdown."),
+                    LLMMessage(role="user", content=prompt),
+                ])
+                results[f] = resp.content.strip().strip('"').strip("'")
+                context[f] = results[f]
+            except Exception:
+                results[f] = ""
+        return AIGenerateResponse(field="full", value="", values=results)
+    else:
+        if req.field not in _FIELD_PROMPTS:
+            raise HTTPException(status_code=400, detail=f"Unknown field: {req.field}. Valid: {list(_FIELD_PROMPTS.keys())}")
+
+        prompt = _FIELD_PROMPTS[req.field].format(**context)
+        try:
+            resp = await llm.generate([
+                LLMMessage(role="system", content="You are a D&D 5e character creation assistant. Be creative, concise, and flavorful. Output ONLY the requested content with no labels, quotes, or markdown."),
+                LLMMessage(role="user", content=prompt),
+            ])
+            return AIGenerateResponse(field=req.field, value=resp.content.strip().strip('"').strip("'"))
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"AI generation failed: {exc}")
