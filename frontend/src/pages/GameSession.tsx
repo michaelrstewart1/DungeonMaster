@@ -21,6 +21,9 @@ import { NPCDialogue, parseNPCDialogue } from '../components/NPCDialogue'
 import type { NPCType } from '../components/NPCDialogue'
 import { SessionRecap } from '../components/SessionRecap'
 import PartyInventory from '../components/PartyInventory'
+import { SceneArt, detectScene } from '../components/SceneArt'
+import type { SceneType } from '../components/SceneArt'
+import { EncounterPanel } from '../components/EncounterPanel'
 import type { GameState, GameMap, DiceResult, Character } from '../types'
 import './GameSession.css'
 
@@ -66,6 +69,8 @@ export function GameSession() {
   const [showRecap, setShowRecap] = useState(false)
   const [recapText, setRecapText] = useState('')
   const [showInventory, setShowInventory] = useState(false)
+  const [currentScene, setCurrentScene] = useState<SceneType>('tavern')
+  const [showEncounters, setShowEncounters] = useState(false)
   const turnCounterRef = useRef(0)
 
   const wsRef = useRef<GameWebSocket | null>(null)
@@ -454,6 +459,7 @@ export function GameSession() {
           speakText(text)
           detectEffect(text)
           detectAtmosphere(result.mood, text)
+          setCurrentScene(detectScene(text))
           if (result.dice_results?.length) {
             setLastDiceResult(result.dice_results[0])
           }
@@ -507,6 +513,7 @@ export function GameSession() {
       speakText(text)
       detectEffect(text)
       detectAtmosphere(result.mood, text)
+      setCurrentScene(detectScene(text))
     } catch {
       setMessages((prev) => [...prev, { role: 'dm', text: 'Failed to send action. Try again.', timestamp: Date.now() }])
     } finally {
@@ -602,6 +609,7 @@ export function GameSession() {
         />
       )}
       <AtmosphericBackground atmosphere={atmosphere} />
+      <SceneArt sceneType={currentScene} />
       <ScreenEffects
         activeEffect={activeEffect}
         onEffectComplete={() => setActiveEffect(null)}
@@ -691,6 +699,7 @@ export function GameSession() {
           <InitiativeTracker combatants={combatants} />
           <CombatLog entries={combatLogEntries} isInCombat={gameState?.phase === 'combat'} />
           <DiceRoller onRoll={handleDiceRoll} lastResult={lastDiceResult ?? undefined} />
+          <EncounterPanel sessionId={sessionId || ''} partyLevel={partyCharacters[0]?.level || 1} />
         </aside>
       </div>
 

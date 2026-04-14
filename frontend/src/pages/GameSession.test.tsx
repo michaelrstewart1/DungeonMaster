@@ -26,6 +26,7 @@ vi.mock('../api/client', () => ({
   getPartyLoot: () => Promise.resolve({ items: [], gold: 0 }),
   addPartyLoot: () => Promise.resolve({ items: [], gold: 0 }),
   updatePartyGold: () => Promise.resolve({ gold: 0, transaction: '' }),
+  generateEncounter: () => Promise.resolve({ enemies: [], total_xp: 0, difficulty_rating: 'easy', description: '' }),
 }))
 
 const mockConnect = vi.fn()
@@ -149,6 +150,15 @@ vi.mock('../components/SessionRecap', () => ({
 
 vi.mock('../components/PartyInventory', () => ({
   default: () => <div data-testid="party-inventory" />,
+}))
+
+vi.mock('../components/SceneArt', () => ({
+  SceneArt: () => <div data-testid="scene-art" />,
+  detectScene: () => 'tavern',
+}))
+
+vi.mock('../components/EncounterPanel', () => ({
+  EncounterPanel: () => <div data-testid="encounter-panel" />,
 }))
 
 describe('GameSession', () => {
