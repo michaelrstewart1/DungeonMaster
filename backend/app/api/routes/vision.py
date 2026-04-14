@@ -3,113 +3,74 @@ from fastapi import APIRouter, HTTPException, File, UploadFile, status
 from fastapi.responses import JSONResponse
 
 from app.services.vision.capture import FakeCamera
-from app.services.vision.analyzer import FakeBoardAnalyzer
+from app.services.vision.analyzer import FakeBoardAnalyzer, BoardAnalyzer
+from app.services.vision.sync import VisionStateSync
 from app.api import storage
 
 router = APIRouter()
 
-# Create fake instances for testing
+# Create instances — will use GPT-4o when API key is configured
 fake_camera = FakeCamera()
 fake_analyzer = FakeBoardAnalyzer()
+vision_sync = VisionStateSync()
+
+
+def _get_analyzer(app_state=None) -> BoardAnalyzer:
+    """Get the best available analyzer (GPT-4o if API key set, else fake)."""
+    if app_state and hasattr(app_state, "vision_analyzer"):
+        return app_state.vision_analyzer
+    return fake_analyzer
+
+
+def _serialize_analysis(analysis):
+    """Serialize a BoardAnalysis to dict."""
+    return {
+        "grid_width": analysis.grid_width,
+        "grid_height": analysis.grid_height,
+        "tokens": [
+            {"entity_id": t.entity_id, "x": t.x, "y": t.y, "confidence": t.confidence}
+            for t in analysis.tokens
+        ],
+        "confidence": analysis.confidence,
+        "raw_description": analysis.raw_description,
+    }
 
 
 @router.post("/vision/{session_id}/capture")
 async def capture_board(session_id: str) -> JSONResponse:
-    """
-    Trigger camera capture and board analysis.
-
-    Returns analyzed grid positions as JSON.
-
-    Args:
-        session_id: Session identifier
-
-    Returns:
-        JSONResponse with analyzed board data
-    """
-    # Capture image from camera
+    """Trigger camera capture and board analysis."""
     capture_result = await fake_camera.capture()
+    analyzer = _get_analyzer()
+    analysis = await analyzer.analyze(capture_result.image_bytes)
 
-    # Analyze the board
-    analysis = await fake_analyzer.analyze(capture_result.image_bytes)
-
-    # Store the analysis in memory
-    storage.vision_analyses[session_id] = {
-        "grid_width": analysis.grid_width,
-        "grid_height": analysis.grid_height,
-        "tokens": [
-            {"entity_id": token.entity_id, "x": token.x, "y": token.y, "confidence": token.confidence}
-            for token in analysis.tokens
-        ],
-        "confidence": analysis.confidence,
-        "raw_description": analysis.raw_description,
-    }
-
-    # Return the analysis
-    return JSONResponse(
-        status_code=200,
-        content={
-            "grid_width": analysis.grid_width,
-            "grid_height": analysis.grid_height,
-            "tokens": [
-                {"entity_id": token.entity_id, "x": token.x, "y": token.y, "confidence": token.confidence}
-                for token in analysis.tokens
-            ],
-            "confidence": analysis.confidence,
-            "raw_description": analysis.raw_description,
-        },
-    )
+    result = _serialize_analysis(analysis)
+    storage.vision_analyses[session_id] = result
+    return JSONResponse(status_code=200, content=result)
 
 
 @router.post("/vision/{session_id}/upload")
 async def upload_board_image(session_id: str, file: UploadFile = File(...)) -> JSONResponse:
-    """
-    Upload a board image, analyze it, return grid positions.
-
-    Args:
-        session_id: Session identifier
-        file: Image file to upload
-
-    Returns:
-        JSONResponse with analyzed board data
-
-    Raises:
-        HTTPException: If no file is provided
-    """
+    """Upload a board image, analyze it with GPT-4o vision, return grid positions."""
     if not file:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No file provided")
 
-    # Read the uploaded file
     image_bytes = await file.read()
+    analyzer = _get_analyzer()
+    analysis = await analyzer.analyze(image_bytes)
 
-    # Analyze the board
-    analysis = await fake_analyzer.analyze(image_bytes)
+    result = _serialize_analysis(analysis)
+    storage.vision_analyses[session_id] = result
 
-    # Store the analysis in memory
-    storage.vision_analyses[session_id] = {
-        "grid_width": analysis.grid_width,
-        "grid_height": analysis.grid_height,
-        "tokens": [
-            {"entity_id": token.entity_id, "x": token.x, "y": token.y, "confidence": token.confidence}
-            for token in analysis.tokens
-        ],
-        "confidence": analysis.confidence,
-        "raw_description": analysis.raw_description,
-    }
+    # Broadcast token positions via WebSocket if available
+    from app.api.websockets.game_ws import manager
+    await manager.broadcast(session_id, {
+        "type": "vision_update",
+        "tokens": result["tokens"],
+        "grid_width": result["grid_width"],
+        "grid_height": result["grid_height"],
+    })
 
-    # Return the analysis
-    return JSONResponse(
-        status_code=200,
-        content={
-            "grid_width": analysis.grid_width,
-            "grid_height": analysis.grid_height,
-            "tokens": [
-                {"entity_id": token.entity_id, "x": token.x, "y": token.y, "confidence": token.confidence}
-                for token in analysis.tokens
-            ],
-            "confidence": analysis.confidence,
-            "raw_description": analysis.raw_description,
-        },
-    )
+    return JSONResponse(status_code=200, content=result)
 
 
 @router.get("/vision/{session_id}/latest")

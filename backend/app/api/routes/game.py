@@ -96,6 +96,13 @@ async def create_game_session(session_create: GameSessionCreate) -> GameStateRes
     }
     
     storage.game_sessions[session_id] = session_data
+
+    # Auto-generate a room code for multiplayer join
+    room_code = storage.generate_room_code()
+    storage.room_codes[room_code] = session_id
+    session_data["room_code"] = room_code
+    storage.session_players[session_id] = []
+
     return GameStateResponse(**session_data)
 
 
@@ -1243,3 +1250,101 @@ async def update_party_gold(session_id: str, body: GoldTransactionRequest) -> di
     new_total = max(0, current + body.amount)
     session["party_gold"] = new_total
     return {"gold": new_total, "transaction": f"{'+' if body.amount >= 0 else ''}{body.amount} GP — {body.reason or 'adjustment'}"}
+
+
+# ─── Multiplayer: Room Codes & Join ────────────────────────────────────
+
+
+class JoinRequest(BaseModel):
+    """Schema for joining a game session via room code."""
+    room_code: str = Field(..., description="4-letter room code")
+    player_name: str = Field(..., description="Player's display name")
+    character_id: Optional[str] = Field(default=None, description="Optional character ID to use")
+
+
+@router.get("/sessions/{session_id}/room-code")
+async def get_room_code(session_id: str) -> dict:
+    """Get or create the room code for a session."""
+    if session_id not in storage.game_sessions:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+
+    session = storage.game_sessions[session_id]
+    code = session.get("room_code")
+    if not code:
+        code = storage.generate_room_code()
+        storage.room_codes[code] = session_id
+        session["room_code"] = code
+
+    return {"room_code": code, "session_id": session_id}
+
+
+@router.post("/join")
+async def join_game(body: JoinRequest) -> dict:
+    """Join a game session using a room code. Returns session ID and player ID."""
+    code = body.room_code.strip().upper()
+    session_id = storage.room_codes.get(code)
+    if not session_id or session_id not in storage.game_sessions:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid room code")
+
+    player_id = storage.generate_id()
+    player_info = {
+        "id": player_id,
+        "name": body.player_name,
+        "character_id": body.character_id,
+        "joined_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    if session_id not in storage.session_players:
+        storage.session_players[session_id] = []
+    storage.session_players[session_id].append(player_info)
+
+    return {
+        "session_id": session_id,
+        "player_id": player_id,
+        "campaign_id": storage.game_sessions[session_id].get("campaign_id", ""),
+    }
+
+
+@router.get("/sessions/{session_id}/players")
+async def get_session_players(session_id: str) -> dict:
+    """Get the list of players in a session."""
+    if session_id not in storage.game_sessions:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+    return {"players": storage.session_players.get(session_id, [])}
+
+
+# ─── TTS Narration ──────────────────────────────────────────────────────
+
+
+class NarrateTTSRequest(BaseModel):
+    """Request TTS audio for narration text."""
+    text: str = Field(..., description="Narration text to synthesize")
+
+
+@router.post("/sessions/{session_id}/narrate-tts")
+async def narrate_tts(session_id: str, body: NarrateTTSRequest, request: Request):
+    """Synthesize narration text to audio and return MP3 bytes.
+    Used by the DM Display to speak narration aloud.
+    """
+    if session_id not in storage.game_sessions:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Text is required")
+
+    # Use configured TTS provider from app state, fall back to fake
+    from app.services.voice.tts import FakeTTS
+    tts = getattr(request.app.state, "tts", FakeTTS())
+
+    try:
+        audio_bytes = await tts.synthesize(text)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"TTS synthesis failed: {e}")
+
+    from fastapi.responses import Response
+    return Response(
+        content=audio_bytes,
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": "inline; filename=narration.mp3"},
+    )

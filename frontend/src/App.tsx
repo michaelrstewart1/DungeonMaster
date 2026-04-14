@@ -3,6 +3,10 @@ import { useState, useEffect, Component, type ReactNode } from 'react'
 import { Home } from './pages/Home'
 import { CampaignDetail } from './pages/CampaignDetail'
 import { GameSession } from './pages/GameSession'
+import { JoinGame } from './pages/JoinGame'
+import { Lobby } from './pages/Lobby'
+import { PlayerView } from './pages/PlayerView'
+import { DMDisplay } from './pages/DMDisplay'
 import { NotFound } from './pages/NotFound'
 import { Footer } from './components/Footer'
 import { ToastProvider } from './components/Toast'
@@ -37,6 +41,7 @@ function AppLayout() {
   const [scrolled, setScrolled] = useState(false)
   const location = useLocation()
   const isGameSession = location.pathname.startsWith('/game/')
+  const isFullscreen = location.pathname.startsWith('/dm/') || location.pathname.startsWith('/play/') || location.pathname.startsWith('/join')
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 10)
@@ -45,9 +50,9 @@ function AppLayout() {
   }, [])
 
   return (
-    <div className={`app ${isGameSession ? 'app-fullscreen' : ''}`}>
+    <div className={`app ${isGameSession || isFullscreen ? 'app-fullscreen' : ''}`}>
       <a href="#main-content" className="skip-link">Skip to content</a>
-      {!isGameSession && (
+      {!isGameSession && !isFullscreen && (
         <nav className={`navbar ${scrolled ? 'navbar-scrolled' : ''}`} role="navigation" aria-label="Main navigation">
           <Link to="/" className="navbar-brand">
             <span className="brand-icon" aria-hidden="true">⚔️</span>
@@ -55,15 +60,19 @@ function AppLayout() {
           </Link>
         </nav>
       )}
-      <main id="main-content" className={isGameSession ? 'main-fullscreen' : ''}>
+      <main id="main-content" className={isGameSession || isFullscreen ? 'main-fullscreen' : ''}>
         <Routes>
           <Route path="/" element={<Home />} />
           <Route path="/campaign/:campaignId" element={<CampaignDetail />} />
           <Route path="/game/:sessionId" element={<GameSession />} />
+          <Route path="/join" element={<JoinGame />} />
+          <Route path="/lobby/:sessionId" element={<Lobby />} />
+          <Route path="/play/:sessionId" element={<PlayerView />} />
+          <Route path="/dm/:sessionId" element={<DMDisplay />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>
-      {!isGameSession && <Footer />}
+      {!isGameSession && !isFullscreen && <Footer />}
     </div>
   )
 }
