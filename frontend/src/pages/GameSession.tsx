@@ -16,6 +16,7 @@ import type { TokenInfo } from '../components/TokenLayer'
 import FogOfWar from '../components/FogOfWar'
 import { AdventureLog } from '../components/AdventureLog'
 import type { Quest, AdventureEntry, LootItem } from '../components/AdventureLog'
+import { CombatLog, type CombatLogEntry } from '../components/CombatLog'
 import type { GameState, GameMap, DiceResult, Character } from '../types'
 import './GameSession.css'
 
@@ -55,6 +56,8 @@ export function GameSession() {
   const [quests, setQuests] = useState<Quest[]>([])
   const [adventureEntries, setAdventureEntries] = useState<AdventureEntry[]>([])
   const [lootItems, setLootItems] = useState<LootItem[]>([])
+  const [combatLogEntries, setCombatLogEntries] = useState<CombatLogEntry[]>([])
+  const [combatRound, setCombatRound] = useState(0)
   const turnCounterRef = useRef(0)
 
   const wsRef = useRef<GameWebSocket | null>(null)
@@ -194,6 +197,109 @@ export function GameSession() {
     }
   }, [])
 
+  // Parse DM narration text into combat log entries during combat
+  const extractCombatLogEntries = useCallback((text: string) => {
+    if (gameState?.phase !== 'combat') return
+    const lower = text.toLowerCase()
+    const now = Date.now()
+    const newEntries: CombatLogEntry[] = []
+
+    // Detect defeat
+    if (/defeated|falls\s+(dead|unconscious)|dies|has been slain|killed/.test(lower)) {
+      const match = text.match(/(\w+)\s+(?:has been defeated|falls|dies|has been slain|is killed)/i)
+      newEntries.push({
+        id: crypto.randomUUID(),
+        type: 'defeat',
+        text: match ? `${match[1]} has been defeated!` : 'A creature has been defeated!',
+        timestamp: now,
+      })
+    }
+
+    // Detect spell
+    if (/casts?\s|spell|cantrip/.test(lower)) {
+      const match = text.match(/(\w+)\s+casts?\s+(.+?)(?:\s+at|\s+on|\.|!|,|$)/i)
+      newEntries.push({
+        id: crypto.randomUUID(),
+        type: 'spell',
+        text: match ? `${match[1]} casts ${match[2].trim()}` : 'A spell is cast!',
+        timestamp: now,
+      })
+    }
+
+    // Detect saving throw
+    if (/saving throw|saves?\s+(?:against|vs|DC)/i.test(lower)) {
+      const success = /succeeds|success|makes the save/.test(lower)
+      const fail = /fails|failure|fails the save/.test(lower)
+      const match = text.match(/(\w+)\s+(?:makes?\s+a\s+)?(\w+)\s+sav/i)
+      newEntries.push({
+        id: crypto.randomUUID(),
+        type: 'save',
+        text: match ? `${match[1]} makes a ${match[2].toUpperCase()} save` : 'A saving throw is made',
+        result: success ? 'success' : fail ? 'fail' : undefined,
+        timestamp: now,
+      })
+    }
+
+    // Detect attack
+    if (/attacks?\s|strikes?\s|swings?\s/.test(lower)) {
+      const hit = /hits?!|strikes? true|lands/.test(lower)
+      const miss = /miss(?:es)?!|goes wide|dodges/.test(lower)
+      const crit = /critical|nat(?:ural)?\s*20/.test(lower)
+      const match = text.match(/(\w+)\s+(?:attacks?|strikes?|swings? at)\s+(?:the\s+)?(\w+)/i)
+      newEntries.push({
+        id: crypto.randomUUID(),
+        type: 'attack',
+        text: match ? `${match[1]} attacks ${match[2]}` : 'An attack is made',
+        result: crit ? 'crit' : hit ? 'hit' : miss ? 'miss' : undefined,
+        timestamp: now,
+      })
+    }
+
+    // Detect damage
+    if (/deals?\s.*damage|damage[ds]?\s|takes?\s+\d+\s/.test(lower)) {
+      const match = text.match(/(?:deals?\s+)?(\d+)\s+(\w+)\s+damage/i)
+        || text.match(/takes?\s+(\d+)\s+(?:points?\s+of\s+)?(\w+)?\s*damage/i)
+      newEntries.push({
+        id: crypto.randomUUID(),
+        type: 'damage',
+        text: match ? `${match[1]} ${match[2] || ''} damage dealt`.trim() : 'Damage is dealt',
+        details: match ? `${match[1]} ${match[2] || ''} damage`.trim() : undefined,
+        timestamp: now,
+      })
+    }
+
+    // Detect conditions
+    if (/is now\s+\w+ed|becomes?\s+(?:stunned|frightened|poisoned|paralyzed|restrained|blinded|charmed|prone|incapacitated)/.test(lower)) {
+      const match = text.match(/(\w+)\s+(?:is now|becomes?)\s+(\w+)/i)
+      newEntries.push({
+        id: crypto.randomUUID(),
+        type: 'condition',
+        text: match ? `${match[1]} is now ${match[2]}` : 'A condition is applied',
+        timestamp: now,
+      })
+    }
+
+    if (newEntries.length > 0) {
+      setCombatLogEntries(prev => [...prev, ...newEntries])
+    }
+  }, [gameState?.phase])
+
+  // Track round changes from combat state
+  useEffect(() => {
+    const round = gameState?.combat_state?.round_number
+    if (round != null && round !== combatRound) {
+      setCombatRound(round)
+      if (round > 0) {
+        setCombatLogEntries(prev => [...prev, {
+          id: crypto.randomUUID(),
+          type: 'round',
+          text: `Round ${round}`,
+          timestamp: Date.now(),
+        }])
+      }
+    }
+  }, [gameState?.combat_state?.round_number, combatRound])
+
   // ? key toggles keyboard help, J toggles adventure log
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -318,6 +424,7 @@ export function GameSession() {
           const text = result.narration || result.narrative || 'The DM ponders...'
           setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
           processDMMessage(text)
+          extractCombatLogEntries(text)
           setAvatarState((prev) => ({ ...prev, expression: 'speaking', isSpeaking: true }))
           setTimeout(() => setAvatarState((prev) => ({ ...prev, isSpeaking: false, expression: 'neutral' })), 2000)
           speakText(text)
@@ -359,7 +466,7 @@ export function GameSession() {
       audioWs.close()
       audioWsRef.current = null
     }
-  }, [sessionId, loadGameState, speakText])
+  }, [sessionId, loadGameState, speakText, extractCombatLogEntries])
 
   const handleSubmitAction = useCallback(async (action: string) => {
     if (!sessionId) return
@@ -370,6 +477,7 @@ export function GameSession() {
       const text = result.narration || 'The DM ponders...'
       setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
       processDMMessage(text)
+      extractCombatLogEntries(text)
       setAvatarState((prev) => ({ ...prev, expression: 'speaking', isSpeaking: true }))
       setTimeout(() => setAvatarState((prev) => ({ ...prev, isSpeaking: false, expression: 'neutral' })), 2000)
       speakText(text)
@@ -380,7 +488,7 @@ export function GameSession() {
     } finally {
       setWaitingForDM(false)
     }
-  }, [sessionId, speakText, detectEffect, detectAtmosphere, processDMMessage])
+  }, [sessionId, speakText, detectEffect, detectAtmosphere, processDMMessage, extractCombatLogEntries])
 
   const handleDiceRoll = useCallback((notation: string) => {
     if (wsRef.current) {
@@ -543,6 +651,7 @@ export function GameSession() {
         {/* Right panel */}
         <aside className="game-sidebar-right">
           <InitiativeTracker combatants={combatants} />
+          <CombatLog entries={combatLogEntries} isInCombat={gameState?.phase === 'combat'} />
           <DiceRoller onRoll={handleDiceRoll} lastResult={lastDiceResult ?? undefined} />
         </aside>
       </div>
