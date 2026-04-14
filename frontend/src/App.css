@@ -6598,3 +6598,292 @@
   margin-left: 0.35rem;
   color: var(--gold-dim);
 }
+
+/* ============================================================
+   ITERATIONS 41-50: Final Polish & Cohesion Pass
+   ============================================================ */
+
+/* --- Iteration 41: Subrace/subclass trait descriptions --- */
+.subrace-card .subrace-traits,
+.subclass-card .subclass-feature {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  opacity: 0.7;
+  margin-top: 0.25rem;
+  font-style: italic;
+  transition: opacity 0.2s;
+}
+
+.subrace-card:hover .subrace-traits,
+.subclass-card:hover .subclass-feature {
+  opacity: 1;
+}
+
+/* --- Iteration 42: Ability card hover — shows related skills --- */
+.ability-card {
+  position: relative;
+}
+
+.ability-card:hover .ability-desc {
+  opacity: 1;
+  max-height: 2rem;
+  margin-top: 0.2rem;
+}
+
+.ability-desc {
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  opacity: 0;
+  max-height: 0;
+  overflow: hidden;
+  transition: opacity 0.3s, max-height 0.3s;
+  font-style: italic;
+}
+
+/* --- Iteration 43: Step valid indicators --- */
+.creator-step.valid .step-number {
+  border-color: rgba(78, 205, 196, 0.4);
+}
+
+.creator-step.valid .step-label {
+  color: rgba(78, 205, 196, 0.7);
+}
+
+/* --- Iteration 44: Smooth scroll already in JS (useEffect) --- */
+
+/* --- Iteration 45: Form validation — empty name glow --- */
+.name-input:invalid,
+.name-input[value=""] {
+  border-color: rgba(255, 107, 129, 0.2) !important;
+}
+
+.name-input:valid:not([value=""]) {
+  border-color: rgba(78, 205, 196, 0.3) !important;
+}
+
+/* Create button disabled state enhancement */
+.btn-create:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: grayscale(0.4);
+}
+
+/* --- Iteration 46: Animated Create Character button --- */
+@keyframes swordSwing {
+  0%, 100% { transform: rotate(0deg); }
+  25% { transform: rotate(-8deg); }
+  75% { transform: rotate(8deg); }
+}
+
+.btn-create:not(:disabled) {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(135deg, rgba(212, 168, 70, 0.2) 0%, rgba(196, 163, 90, 0.15) 50%, rgba(212, 168, 70, 0.2) 100%);
+  border: 2px solid var(--gold);
+  text-shadow: 0 0 10px rgba(212, 168, 70, 0.3);
+  transition: all 0.3s ease;
+}
+
+.btn-create:not(:disabled):hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 20px rgba(212, 168, 70, 0.25), 0 0 30px rgba(212, 168, 70, 0.1);
+  border-color: var(--gold-light);
+}
+
+.btn-create:not(:disabled)::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(212, 168, 70, 0.15) 50%,
+    transparent 100%
+  );
+  animation: btn-create-shimmer 3s ease-in-out infinite;
+}
+
+@keyframes btn-create-shimmer {
+  0% { left: -100%; }
+  50% { left: 100%; }
+  100% { left: 100%; }
+}
+
+.btn-create:not(:disabled):active {
+  transform: translateY(0) scale(0.98);
+}
+
+/* --- Iteration 47: Print-friendly character summary --- */
+@media print {
+  .character-creator {
+    background: white !important;
+    color: black !important;
+    border: 2px solid #333 !important;
+    box-shadow: none !important;
+  }
+
+  .creator-steps,
+  .form-actions,
+  .review-note,
+  .creator-header-divider,
+  .creator-mini-preview {
+    display: none !important;
+  }
+
+  .review-layout {
+    background: transparent !important;
+    border: 1px solid #ccc !important;
+  }
+
+  .review-stat {
+    background: transparent !important;
+    border: 1px solid #999 !important;
+    color: black !important;
+  }
+
+  .review-name,
+  .review-summary {
+    color: black !important;
+    text-shadow: none !important;
+  }
+
+  .review-section-header {
+    color: #333 !important;
+    border-bottom-color: #ccc !important;
+  }
+}
+
+/* --- Iteration 48: Loading shimmer placeholders --- */
+@keyframes shimmerLoad {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+
+.skeleton-card {
+  background: linear-gradient(
+    90deg,
+    rgba(212, 168, 70, 0.04) 0%,
+    rgba(212, 168, 70, 0.08) 50%,
+    rgba(212, 168, 70, 0.04) 100%
+  );
+  background-size: 200px 100%;
+  animation: shimmerLoad 1.5s ease-in-out infinite;
+  border-radius: 8px;
+  min-height: 80px;
+}
+
+/* --- Iteration 49: Ornate background texture on creator --- */
+.character-creator {
+  background-image:
+    radial-gradient(ellipse at 50% 0%, rgba(212, 168, 70, 0.04) 0%, transparent 50%),
+    radial-gradient(circle at 15% 85%, rgba(212, 168, 70, 0.02) 0%, transparent 40%),
+    radial-gradient(circle at 85% 85%, rgba(212, 168, 70, 0.02) 0%, transparent 40%),
+    repeating-linear-gradient(
+      0deg,
+      transparent,
+      transparent 100px,
+      rgba(212, 168, 70, 0.01) 100px,
+      rgba(212, 168, 70, 0.01) 101px
+    ),
+    repeating-linear-gradient(
+      90deg,
+      transparent,
+      transparent 100px,
+      rgba(212, 168, 70, 0.01) 100px,
+      rgba(212, 168, 70, 0.01) 101px
+    ),
+    linear-gradient(180deg, rgba(20, 18, 28, 0.98) 0%, rgba(14, 12, 22, 0.99) 100%);
+}
+
+/* --- Iteration 50: Final cohesion pass --- */
+
+/* Consistent section spacing */
+.creator-section {
+  padding: 0.25rem 0;
+}
+
+.creator-section h3 {
+  margin-bottom: 1rem;
+}
+
+/* Form actions consistent spacing */
+.character-creator .form-actions {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid rgba(212, 168, 70, 0.06);
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+/* Consistent card text styling */
+.race-name,
+.class-name,
+.bg-name,
+.subrace-name,
+.subclass-name {
+  font-family: var(--font-display);
+  letter-spacing: 0.02em;
+}
+
+/* Consistent section hint text */
+.skill-hint,
+.array-hint,
+.spell-hint {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 0.75rem;
+}
+
+/* Selection count badges — unified styling */
+.skill-selection-count,
+.spell-count {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  letter-spacing: 0.04em;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--gold-border);
+  border-radius: 20px;
+  display: inline-block;
+  margin-bottom: 0.75rem;
+}
+
+/* Unified hover transition for all interactive cards */
+.race-card,
+.class-card,
+.background-card,
+.subrace-card,
+.subclass-card,
+.skill-card,
+.equipment-option,
+.language-btn,
+.method-btn,
+.trait-suggestion {
+  transition: all 0.2s ease;
+}
+
+/* Review backstory styling */
+.review-backstory {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  font-style: italic;
+  padding: 0.5rem 0.75rem;
+  border-left: 2px solid var(--gold-border);
+  background: rgba(212, 168, 70, 0.03);
+  border-radius: 0 4px 4px 0;
+}
+
+/* Cancel button styling */
+.character-creator .btn-secondary {
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.character-creator .btn-secondary:hover {
+  opacity: 1;
+}

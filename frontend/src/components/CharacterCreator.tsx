@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import type { CharacterCreate, Race, CharacterClass } from '../types'
 import { CharacterPortrait } from './CharacterPortrait'
 import { RACE_SYMBOLS, CLASS_COLORS } from '../data/premadeCharacters'
@@ -58,6 +58,12 @@ const DEFAULT_ABILITIES: AbilityScores = { strength: 8, dexterity: 8, constituti
 
 export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) {
   const [step, setStep] = useState(0)
+  const creatorRef = useRef<HTMLFormElement>(null)
+
+  // Scroll to top of creator on step change
+  useEffect(() => {
+    creatorRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  }, [step])
 
   // Step 0: Race + Subrace
   const [race, setRace] = useState<Race>('human')
@@ -217,6 +223,23 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
     return base
   }, [isSpellcaster, spellcasterInfo])
 
+  // Step validation — green checkmark on completed steps
+  const isStepValid = useCallback((stepIndex: number): boolean => {
+    const stepName = steps[stepIndex]
+    switch (stepName) {
+      case 'Race': return !!race
+      case 'Class': return !!className
+      case 'Background': return !!background
+      case 'Abilities': return abilityMethod === 'point-buy' ? pointBuySpent <= POINT_BUY_BUDGET : true
+      case 'Skills': return selectedSkills.length === classSkillInfo.count
+      case 'Equipment': return true
+      case 'Spells': return true
+      case 'Details': return name.trim().length > 0
+      case 'Review': return name.trim().length > 0
+      default: return false
+    }
+  }, [steps, race, className, background, abilityMethod, pointBuySpent, selectedSkills.length, classSkillInfo.count, name])
+
   // Handle submit
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -276,7 +299,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
   const getStepIndex = (stepName: string) => steps.indexOf(stepName)
 
   return (
-    <form onSubmit={handleSubmit} className="character-creator" aria-label="form" role="form">
+    <form ref={creatorRef} onSubmit={handleSubmit} className="character-creator" aria-label="form" role="form">
       <div className="creator-header">
         <h2>⚔️ Forge Your Hero</h2>
         <div className="creator-header-divider">
@@ -293,7 +316,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
           <button
             key={s}
             type="button"
-            className={`creator-step ${i === step ? 'active' : ''} ${i < step ? 'complete' : ''}`}
+            className={`creator-step ${i === step ? 'active' : ''} ${i < step ? 'complete' : ''} ${isStepValid(i) && i !== step ? 'valid' : ''}`}
             onClick={() => setStep(i)}
           >
             <span className="step-number">{i < step ? '✓' : i + 1}</span>
