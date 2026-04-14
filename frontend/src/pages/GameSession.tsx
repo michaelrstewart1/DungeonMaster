@@ -20,6 +20,7 @@ import { CombatLog, type CombatLogEntry } from '../components/CombatLog'
 import { NPCDialogue, parseNPCDialogue } from '../components/NPCDialogue'
 import type { NPCType } from '../components/NPCDialogue'
 import { SessionRecap } from '../components/SessionRecap'
+import PartyInventory from '../components/PartyInventory'
 import type { GameState, GameMap, DiceResult, Character } from '../types'
 import './GameSession.css'
 
@@ -64,6 +65,7 @@ export function GameSession() {
   const [npcDialogue, setNpcDialogue] = useState<{ npcName: string; npcType: NPCType; dialogue: string } | null>(null)
   const [showRecap, setShowRecap] = useState(false)
   const [recapText, setRecapText] = useState('')
+  const [showInventory, setShowInventory] = useState(false)
   const turnCounterRef = useRef(0)
 
   const wsRef = useRef<GameWebSocket | null>(null)
@@ -320,8 +322,10 @@ export function GameSession() {
       if (e.key === 'Escape') {
         setShowKeyboardHelp(false)
         setAdventureLogOpen(false)
+        setShowInventory(false)
       }
       if (e.key === 'j' || e.key === 'J') setAdventureLogOpen(v => !v)
+      if (e.key === 'i' || e.key === 'I') setShowInventory(v => !v)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -620,6 +624,13 @@ export function GameSession() {
           >
             📜
           </button>
+          <button
+            className="btn-inventory"
+            onClick={() => setShowInventory(v => !v)}
+            title="Party Inventory (I)"
+          >
+            🎒
+          </button>
           <button className="btn-keyboard-help" onClick={() => setShowKeyboardHelp(v => !v)} title="Keyboard shortcuts (?)">
             ⌨
           </button>
@@ -693,6 +704,7 @@ export function GameSession() {
               <div className="shortcut-item"><kbd>Enter</kbd> <span>Send message</span></div>
               <div className="shortcut-item"><kbd>Shift+Enter</kbd> <span>New line in chat</span></div>
               <div className="shortcut-item"><kbd>J</kbd> <span>Toggle adventure log</span></div>
+              <div className="shortcut-item"><kbd>I</kbd> <span>Toggle inventory</span></div>
               <div className="shortcut-item"><kbd>?</kbd> <span>Toggle this help</span></div>
               <div className="shortcut-item"><kbd>Esc</kbd> <span>Close overlay</span></div>
             </div>
@@ -720,6 +732,13 @@ export function GameSession() {
           onClose={() => setNpcDialogue(null)}
         />
       )}
+
+      {/* Party Inventory */}
+      <PartyInventory
+        sessionId={sessionId || ''}
+        isOpen={showInventory}
+        onClose={() => setShowInventory(false)}
+      />
     </div>
   )
 }

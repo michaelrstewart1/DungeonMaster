@@ -22,6 +22,10 @@ vi.mock('../api/client', () => ({
   getCampaign: () => Promise.resolve({ id: 'camp1', name: 'Test Campaign', character_ids: [], created_at: '', updated_at: '' }),
   getSessionGreeting: () => Promise.resolve('Welcome, adventurers!'),
   getCharacters: () => Promise.resolve([]),
+  getSessionRecap: () => Promise.resolve({ has_recap: false, campaign_name: '', recap_text: '' }),
+  getPartyLoot: () => Promise.resolve({ items: [], gold: 0 }),
+  addPartyLoot: () => Promise.resolve({ items: [], gold: 0 }),
+  updatePartyGold: () => Promise.resolve({ gold: 0, transaction: '' }),
 }))
 
 const mockConnect = vi.fn()
@@ -128,6 +132,23 @@ vi.mock('../components/ScreenEffects', () => ({
 
 vi.mock('../components/AdventureLog', () => ({
   AdventureLog: () => <div data-testid="adventure-log" />,
+}))
+
+vi.mock('../components/CombatLog', () => ({
+  CombatLog: () => <div data-testid="combat-log" />,
+}))
+
+vi.mock('../components/NPCDialogue', () => ({
+  NPCDialogue: () => <div data-testid="npc-dialogue" />,
+  parseNPCDialogue: () => null,
+}))
+
+vi.mock('../components/SessionRecap', () => ({
+  SessionRecap: () => <div data-testid="session-recap" />,
+}))
+
+vi.mock('../components/PartyInventory', () => ({
+  default: () => <div data-testid="party-inventory" />,
 }))
 
 describe('GameSession', () => {

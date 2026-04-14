@@ -523,3 +523,62 @@ async def get_session_recap(session_id: str) -> dict:
         "campaign_name": campaign_name,
         "recap_text": last_summary,
     }
+
+
+# --- Party Inventory / Loot endpoints ---
+
+class LootItem(BaseModel):
+    """A single loot item."""
+    name: str = Field(..., description="Item name")
+    description: str = Field(default="", description="Item description")
+    rarity: str = Field(default="common", description="Rarity: common, uncommon, rare, very-rare, legendary")
+    quantity: int = Field(default=1, description="How many")
+    item_type: str = Field(default="misc", description="Type: weapon, armor, potion, scroll, ring, misc")
+
+
+class AddLootRequest(BaseModel):
+    """Request to add loot to the party."""
+    items: List[LootItem]
+
+
+class GoldTransactionRequest(BaseModel):
+    """Request to add/subtract gold."""
+    amount: int = Field(..., description="Gold amount (negative to subtract)")
+    reason: str = Field(default="", description="Reason for transaction")
+
+
+@router.get("/sessions/{session_id}/loot")
+async def get_party_loot(session_id: str) -> dict:
+    """Get the party's loot inventory."""
+    if session_id not in storage.game_sessions:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+    session = storage.game_sessions[session_id]
+    return {
+        "items": session.get("party_loot", []),
+        "gold": session.get("party_gold", 0),
+    }
+
+
+@router.post("/sessions/{session_id}/loot")
+async def add_party_loot(session_id: str, body: AddLootRequest) -> dict:
+    """Add loot items to the party inventory."""
+    if session_id not in storage.game_sessions:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+    session = storage.game_sessions[session_id]
+    if "party_loot" not in session:
+        session["party_loot"] = []
+    for item in body.items:
+        session["party_loot"].append(item.model_dump())
+    return {"items": session["party_loot"], "gold": session.get("party_gold", 0)}
+
+
+@router.post("/sessions/{session_id}/gold")
+async def update_party_gold(session_id: str, body: GoldTransactionRequest) -> dict:
+    """Add or subtract gold from the party."""
+    if session_id not in storage.game_sessions:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+    session = storage.game_sessions[session_id]
+    current = session.get("party_gold", 0)
+    new_total = max(0, current + body.amount)
+    session["party_gold"] = new_total
+    return {"gold": new_total, "transaction": f"{'+' if body.amount >= 0 else ''}{body.amount} GP — {body.reason or 'adjustment'}"}

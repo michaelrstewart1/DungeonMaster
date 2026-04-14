@@ -210,4 +210,36 @@ export async function getSessionRecap(sessionId: string): Promise<SessionRecapDa
   return request<SessionRecapData>(`/game/sessions/${sessionId}/recap`);
 }
 
+// Party Inventory / Loot
+export interface LootItemData {
+  name: string;
+  description: string;
+  rarity: string;
+  quantity: number;
+  item_type: string;
+}
+
+export interface PartyLootResponse {
+  items: LootItemData[];
+  gold: number;
+}
+
+export async function getPartyLoot(sessionId: string): Promise<PartyLootResponse> {
+  return request<PartyLootResponse>(`/game/sessions/${sessionId}/loot`);
+}
+
+export async function addPartyLoot(sessionId: string, items: LootItemData[]): Promise<PartyLootResponse> {
+  return request<PartyLootResponse>(`/game/sessions/${sessionId}/loot`, {
+    method: 'POST',
+    body: JSON.stringify({ items }),
+  });
+}
+
+export async function updatePartyGold(sessionId: string, amount: number, reason: string): Promise<{ gold: number; transaction: string }> {
+  return request<{ gold: number; transaction: string }>(`/game/sessions/${sessionId}/gold`, {
+    method: 'POST',
+    body: JSON.stringify({ amount, reason }),
+  });
+}
+
 export { ApiError };
