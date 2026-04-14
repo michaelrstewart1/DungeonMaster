@@ -22,6 +22,7 @@ export interface CharacterCreate {
   hp: number;
   max_hp: number;
   ac: number;
+  experience_points?: number;
   strength: number;
   dexterity: number;
   constitution: number;
@@ -38,6 +39,7 @@ export interface Character extends CharacterCreate {
   inventory: string[];
   proficiency_bonus: number;
   portrait_url?: string;
+  experience_points: number;
 }
 
 // Campaign
@@ -134,4 +136,25 @@ export interface GameMap {
 export interface HealthResponse {
   status: string;
   version: string;
+}
+
+// XP / Progression
+export interface Milestone {
+  level: number;
+  label: string;
+  reached: boolean;
+}
+
+export interface ProgressionData {
+  level: number;
+  xp: number;
+  xp_to_next: number;
+  xp_progress_pct: number;
+  milestones: Milestone[];
+}
+
+export interface AwardXPResponse {
+  character: Character;
+  leveled_up: boolean;
+  new_level: number | null;
 }

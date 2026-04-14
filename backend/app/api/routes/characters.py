@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, status
+from pydantic import BaseModel, Field
 
 from app.models.schemas import (
     CharacterCreate,
@@ -13,6 +14,12 @@ from app.models.schemas import (
 )
 from app.api import storage
 from app.config import settings
+
+# D&D 5e XP thresholds by level (index 0 = level 1, index 19 = level 20)
+XP_THRESHOLDS: list[int] = [
+    0, 300, 900, 2700, 6500, 14000, 23000, 34000, 48000, 64000,
+    85000, 100000, 120000, 140000, 165000, 195000, 225000, 265000, 305000, 355000,
+]
 
 PORTRAITS_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
@@ -243,3 +250,127 @@ async def generate_portrait(character_id: str) -> CharacterResponse:
 
     character["portrait_url"] = f"/api/portraits/{filename}"
     return CharacterResponse(**character)
+
+
+# ============================================================================
+# XP / Progression
+# ============================================================================
+
+class AwardXPRequest(BaseModel):
+    """Body for the award-xp endpoint."""
+    xp: int = Field(..., gt=0, description="XP to award (must be positive)")
+    reason: str = Field(..., min_length=1, description="Reason for the XP award")
+
+
+class AwardXPResponse(BaseModel):
+    """Response for the award-xp endpoint."""
+    character: CharacterResponse
+    leveled_up: bool
+    new_level: Optional[int] = None
+
+
+class Milestone(BaseModel):
+    """A progression milestone."""
+    level: int
+    label: str
+    reached: bool
+
+
+class ProgressionResponse(BaseModel):
+    """Response for the progression endpoint."""
+    level: int
+    xp: int
+    xp_to_next: int
+    xp_progress_pct: float
+    milestones: List[Milestone]
+
+
+def _level_for_xp(xp: int) -> int:
+    """Return the level a character should be at for a given XP total."""
+    level = 1
+    for i in range(1, len(XP_THRESHOLDS)):
+        if xp >= XP_THRESHOLDS[i]:
+            level = i + 1
+        else:
+            break
+    return min(level, 20)
+
+
+def _xp_to_next_level(level: int, xp: int) -> int:
+    """XP remaining until the next level. Returns 0 at level 20."""
+    if level >= 20:
+        return 0
+    return XP_THRESHOLDS[level] - xp
+
+
+def _xp_progress_pct(level: int, xp: int) -> float:
+    """Percentage progress toward next level (0-100). 100 at level 20."""
+    if level >= 20:
+        return 100.0
+    current_threshold = XP_THRESHOLDS[level - 1]
+    next_threshold = XP_THRESHOLDS[level]
+    span = next_threshold - current_threshold
+    if span <= 0:
+        return 100.0
+    progress = xp - current_threshold
+    return round(min(progress / span * 100, 100.0), 2)
+
+
+# Class feature milestones (simplified – key levels with notable features)
+_MILESTONES = [
+    (4, "Ability Score Improvement"),
+    (5, "Extra Attack / 3rd-level Spells"),
+    (8, "Ability Score Improvement"),
+    (12, "Ability Score Improvement"),
+    (16, "Ability Score Improvement"),
+    (19, "Ability Score Improvement"),
+    (20, "Capstone Feature"),
+]
+
+
+@router.post("/{character_id}/award-xp", response_model=AwardXPResponse)
+async def award_xp(character_id: str, body: AwardXPRequest) -> AwardXPResponse:
+    """Award XP to a character and check for level-up."""
+    if character_id not in storage.characters:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+
+    character = storage.characters[character_id]
+    old_level = character.get("level", 1)
+
+    current_xp = character.get("experience_points", 0)
+    character["experience_points"] = current_xp + body.xp
+
+    new_level = _level_for_xp(character["experience_points"])
+    leveled_up = new_level > old_level
+    if leveled_up:
+        character["level"] = new_level
+
+    return AwardXPResponse(
+        character=CharacterResponse(**character),
+        leveled_up=leveled_up,
+        new_level=new_level if leveled_up else None,
+    )
+
+
+@router.get("/{character_id}/progression", response_model=ProgressionResponse)
+async def get_progression(character_id: str) -> ProgressionResponse:
+    """Get XP progression info for a character."""
+    if character_id not in storage.characters:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+
+    character = storage.characters[character_id]
+    level = character.get("level", 1)
+    xp = character.get("experience_points", 0)
+
+    milestones = [
+        Milestone(level=mlvl, label=mlabel, reached=level >= mlvl)
+        for mlvl, mlabel in _MILESTONES
+    ]
+
+    return ProgressionResponse(
+        level=level,
+        xp=xp,
+        xp_to_next=_xp_to_next_level(level, xp),
+        xp_progress_pct=_xp_progress_pct(level, xp),
+        milestones=milestones,
+    )

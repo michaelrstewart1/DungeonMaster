@@ -29,6 +29,9 @@ class CharacterCreate(BaseModel):
     wisdom: int = Field(default=10, ge=3, le=20, description="Wisdom ability score")
     charisma: int = Field(default=10, ge=3, le=20, description="Charisma ability score")
     
+    # Experience
+    experience_points: int = Field(default=0, ge=0, description="Experience points")
+
     # Other attributes
     hp: int = Field(default=8, gt=0, description="Hit points (must be positive)")
     ac: int = Field(default=10, ge=1, description="Armor class (minimum 1)")
@@ -103,6 +106,7 @@ class CharacterUpdate(BaseModel):
     """Schema for updating an existing character."""
     name: Optional[str] = Field(None, min_length=1)
     level: Optional[int] = Field(None, ge=1, le=20)
+    experience_points: Optional[int] = Field(None, ge=0)
     strength: Optional[int] = Field(None, ge=3, le=20)
     dexterity: Optional[int] = Field(None, ge=3, le=20)
     constitution: Optional[int] = Field(None, ge=3, le=20)

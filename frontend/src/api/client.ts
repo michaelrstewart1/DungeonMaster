@@ -7,6 +7,8 @@ import type {
   GameState,
   HealthResponse,
   PlayerAction,
+  ProgressionData,
+  AwardXPResponse,
   TurnResult,
 } from '../types';
 
@@ -139,6 +141,17 @@ export async function importCharacter(format: string, data: Record<string, unkno
   return request<Character>('/characters/import', {
     method: 'POST',
     body: JSON.stringify({ format, data }),
+  });
+}
+
+export async function getCharacterProgression(characterId: string): Promise<ProgressionData> {
+  return request<ProgressionData>(`/characters/${characterId}/progression`);
+}
+
+export async function awardXP(characterId: string, xp: number, reason: string): Promise<AwardXPResponse> {
+  return request<AwardXPResponse>(`/characters/${characterId}/award-xp`, {
+    method: 'POST',
+    body: JSON.stringify({ xp, reason }),
   });
 }
 

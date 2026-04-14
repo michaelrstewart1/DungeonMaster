@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import type { Character } from '../types'
 import { CharacterPortrait } from './CharacterPortrait'
+import { CharacterProgression } from './CharacterProgression'
 import { generatePortrait } from '../api/client'
 
 const ABILITY_FULL_NAMES: Record<string, string> = {
@@ -116,6 +117,13 @@ export function CharacterSheet({ character, onRemove }: CharacterSheetProps) {
           )
         })}
       </div>
+
+      {/* XP Progression */}
+      <CharacterProgression
+        characterId={character.id}
+        level={character.level}
+        xp={character.experience_points ?? 0}
+      />
 
       {character.conditions.length > 0 && (
         <div className="char-conditions">
