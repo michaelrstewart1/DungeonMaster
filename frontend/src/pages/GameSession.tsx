@@ -13,6 +13,8 @@ import BattleMap from '../components/BattleMap'
 import TokenLayer from '../components/TokenLayer'
 import type { TokenInfo } from '../components/TokenLayer'
 import FogOfWar from '../components/FogOfWar'
+import { AdventureLog } from '../components/AdventureLog'
+import type { Quest, AdventureEntry, LootItem } from '../components/AdventureLog'
 import type { GameState, GameMap, DiceResult, Character } from '../types'
 import './GameSession.css'
 
@@ -47,6 +49,11 @@ export function GameSession() {
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
   const [partyCharacters, setPartyCharacters] = useState<Character[]>([])
   const [activeEffect, setActiveEffect] = useState<EffectType>(null)
+  const [adventureLogOpen, setAdventureLogOpen] = useState(false)
+  const [quests, setQuests] = useState<Quest[]>([])
+  const [adventureEntries, setAdventureEntries] = useState<AdventureEntry[]>([])
+  const [lootItems, setLootItems] = useState<LootItem[]>([])
+  const turnCounterRef = useRef(0)
 
   const wsRef = useRef<GameWebSocket | null>(null)
   const audioWsRef = useRef<WebSocket | null>(null)
@@ -83,12 +90,97 @@ export function GameSession() {
     return () => clearInterval(timer)
   }, [])
 
-  // ? key toggles keyboard help
+  // Categorize DM message and create adventure log entries
+  const processDMMessage = useCallback((text: string) => {
+    const lower = text.toLowerCase()
+    turnCounterRef.current += 1
+    const turn = turnCounterRef.current
+
+    // Detect entry type from keywords
+    let entryType: AdventureEntry['type'] = 'dialogue'
+    if (/attack|combat|damage|fight|strike|slash|stab|arrow|hit|wound|battle|sword/.test(lower)) {
+      entryType = 'combat'
+    } else if (/find|discover|notice|reveal|uncover|spot|detect|hidden|secret/.test(lower)) {
+      entryType = 'discovery'
+    } else if (/quest|mission|task|objective|assignment|duty|charge/.test(lower)) {
+      entryType = 'quest'
+    } else if (/gold|sword|potion|item|treasure|loot|coin|gem|weapon|armor|ring|amulet|scroll/.test(lower)) {
+      entryType = 'loot'
+    } else if (/rest|camp|sleep|recover|heal|long rest|short rest/.test(lower)) {
+      entryType = 'rest'
+    } else if (/talk|says|speaks|ask|tell|reply|respond|greet|whisper|shout/.test(lower)) {
+      entryType = 'dialogue'
+    }
+
+    const summary = text.length > 100 ? text.slice(0, 100) + '...' : text
+
+    const entry: AdventureEntry = {
+      id: crypto.randomUUID(),
+      type: entryType,
+      summary,
+      turnNumber: turn,
+      timestamp: new Date(),
+    }
+    setAdventureEntries(prev => [...prev, entry])
+
+    // Auto-extract quests from messages mentioning quest keywords
+    if (/quest|mission|task/.test(lower)) {
+      const questMatch = text.match(/(?:quest|mission|task)[:\s]+["']?([^"'.!?]+)/i)
+      if (questMatch) {
+        const questTitle = questMatch[1].trim().slice(0, 60)
+        setQuests(prev => {
+          if (prev.some(q => q.title.toLowerCase() === questTitle.toLowerCase())) return prev
+          return [...prev, {
+            id: crypto.randomUUID(),
+            title: questTitle,
+            description: summary,
+            status: 'active' as const,
+            turnAdded: turn,
+          }]
+        })
+      }
+    }
+
+    // Auto-extract loot items from messages
+    const lootPatterns = [
+      /(?:find|discover|receive|obtain|pick up|loot)\s+(?:a\s+|an\s+|the\s+)?(.+?)(?:\.|!|,|$)/i,
+    ]
+    if (entryType === 'loot') {
+      for (const pattern of lootPatterns) {
+        const match = text.match(pattern)
+        if (match) {
+          const itemName = match[1].trim().slice(0, 50)
+          if (itemName.length > 2) {
+            let rarity: LootItem['rarity'] = 'common'
+            if (/legendary|artifact/.test(lower)) rarity = 'legendary'
+            else if (/very rare/.test(lower)) rarity = 'very-rare'
+            else if (/rare/.test(lower)) rarity = 'rare'
+            else if (/uncommon|magic|enchanted/.test(lower)) rarity = 'uncommon'
+
+            setLootItems(prev => [...prev, {
+              id: crypto.randomUUID(),
+              name: itemName,
+              rarity,
+              description: summary,
+              turnFound: turn,
+            }])
+            break
+          }
+        }
+      }
+    }
+  }, [])
+
+  // ? key toggles keyboard help, J toggles adventure log
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
       if (e.key === '?') setShowKeyboardHelp(v => !v)
-      if (e.key === 'Escape') setShowKeyboardHelp(false)
+      if (e.key === 'Escape') {
+        setShowKeyboardHelp(false)
+        setAdventureLogOpen(false)
+      }
+      if (e.key === 'j' || e.key === 'J') setAdventureLogOpen(v => !v)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -134,6 +226,7 @@ export function GameSession() {
         openingText = await getSessionGreeting(sessionId)
       } catch { /* fallback to current_scene */ }
       setMessages([{ role: 'dm', text: openingText, timestamp: Date.now() }])
+      processDMMessage(openingText)
       // Speak the opening after a short delay (let audio WS connect first)
       setTimeout(() => speakText(openingText), 1500)
       if (state.combat_state) {
@@ -153,7 +246,7 @@ export function GameSession() {
     } finally {
       setLoading(false)
     }
-  }, [sessionId, speakText])
+  }, [sessionId, speakText, processDMMessage])
 
   useEffect(() => {
     loadGameState()
@@ -201,9 +294,11 @@ export function GameSession() {
           const result = msg.payload as { narration?: string; narrative?: string; dice_results?: DiceResult[] }
           const text = result.narration || result.narrative || 'The DM ponders...'
           setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
+          processDMMessage(text)
           setAvatarState((prev) => ({ ...prev, expression: 'speaking', isSpeaking: true }))
           setTimeout(() => setAvatarState((prev) => ({ ...prev, isSpeaking: false, expression: 'neutral' })), 2000)
           speakText(text)
+          detectEffect(text)
           if (result.dice_results?.length) {
             setLastDiceResult(result.dice_results[0])
           }
@@ -250,15 +345,17 @@ export function GameSession() {
       const result = await submitAction(sessionId, { type: 'interact', message: action })
       const text = result.narration || 'The DM ponders...'
       setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
+      processDMMessage(text)
       setAvatarState((prev) => ({ ...prev, expression: 'speaking', isSpeaking: true }))
       setTimeout(() => setAvatarState((prev) => ({ ...prev, isSpeaking: false, expression: 'neutral' })), 2000)
       speakText(text)
+      detectEffect(text)
     } catch {
       setMessages((prev) => [...prev, { role: 'dm', text: 'Failed to send action. Try again.', timestamp: Date.now() }])
     } finally {
       setWaitingForDM(false)
     }
-  }, [sessionId, speakText])
+  }, [sessionId, speakText, detectEffect, processDMMessage])
 
   const handleDiceRoll = useCallback((notation: string) => {
     if (wsRef.current) {
@@ -340,6 +437,10 @@ export function GameSession() {
 
   return (
     <div className="game-session">
+      <ScreenEffects
+        activeEffect={activeEffect}
+        onEffectComplete={() => setActiveEffect(null)}
+      />
       {/* Header */}
       <header className="game-header">
         <div className="game-header-left">
@@ -351,6 +452,13 @@ export function GameSession() {
         <div className="session-info">
           {gameState && <span className="phase-badge">{gameState.phase}</span>}
           <span className="session-timer" title="Session duration">⏱ {formatTime(sessionTime)}</span>
+          <button
+            className={`btn-adventure-log ${adventureEntries.length > 0 ? 'has-updates' : ''}`}
+            onClick={() => setAdventureLogOpen(v => !v)}
+            title="Adventure Log (J)"
+          >
+            📜
+          </button>
           <button className="btn-keyboard-help" onClick={() => setShowKeyboardHelp(v => !v)} title="Keyboard shortcuts (?)">
             ⌨
           </button>
@@ -422,6 +530,7 @@ export function GameSession() {
               <div className="shortcut-item"><kbd>1</kbd>–<kbd>6</kbd> <span>Roll dice (d4–d20)</span></div>
               <div className="shortcut-item"><kbd>Enter</kbd> <span>Send message</span></div>
               <div className="shortcut-item"><kbd>Shift+Enter</kbd> <span>New line in chat</span></div>
+              <div className="shortcut-item"><kbd>J</kbd> <span>Toggle adventure log</span></div>
               <div className="shortcut-item"><kbd>?</kbd> <span>Toggle this help</span></div>
               <div className="shortcut-item"><kbd>Esc</kbd> <span>Close overlay</span></div>
             </div>
@@ -429,6 +538,15 @@ export function GameSession() {
           </div>
         </div>
       )}
+
+      {/* Adventure Log panel */}
+      <AdventureLog
+        isOpen={adventureLogOpen}
+        onClose={() => setAdventureLogOpen(false)}
+        quests={quests}
+        entries={adventureEntries}
+        loot={lootItems}
+      />
     </div>
   )
 }
