@@ -3903,6 +3903,392 @@
 }
 
 /* ============================================================
+   Campaign Settings Modal
+   ============================================================ */
+
+/* Header row with gear icon */
+.campaign-detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.campaign-detail-header-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.btn-settings-gear {
+  background: none;
+  border: 1px solid var(--gold-border);
+  border-radius: 8px;
+  font-size: 1.4rem;
+  padding: 0.4rem 0.5rem;
+  cursor: pointer;
+  line-height: 1;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.btn-settings-gear:hover {
+  border-color: var(--gold);
+  box-shadow: 0 0 12px rgba(212, 168, 70, 0.25);
+  transform: rotate(30deg);
+}
+
+/* Settings modal overrides */
+.settings-modal {
+  max-width: 680px;
+  width: 94%;
+  max-height: 85vh;
+}
+
+.settings-body {
+  padding: 0 1.5rem 0.5rem;
+  overflow-y: auto;
+  max-height: calc(85vh - 130px);
+}
+
+.settings-error {
+  margin-bottom: 0.75rem;
+}
+
+/* Collapsible sections */
+.settings-section {
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-section:last-child {
+  border-bottom: none;
+}
+
+.settings-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.85rem 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text);
+}
+
+.settings-section-header:hover .settings-section-title {
+  color: var(--gold-light);
+}
+
+.settings-section-title {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--gold);
+  transition: color 0.15s;
+}
+
+.settings-chevron {
+  font-size: 1.2rem;
+  color: var(--text-dim);
+  transition: transform 0.2s;
+  display: inline-block;
+}
+
+.settings-chevron.open {
+  transform: rotate(90deg);
+}
+
+.settings-section-content {
+  padding: 0 0 1rem;
+  animation: settingsFadeIn 0.2s ease;
+}
+
+@keyframes settingsFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ─── Personality cards ─── */
+
+.personality-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+}
+
+.personality-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 0.25rem;
+  padding: 0.75rem 0.5rem;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text);
+}
+
+.personality-card:hover {
+  border-color: var(--gold-dim);
+  background: var(--gold-bg);
+}
+
+.personality-card.selected {
+  border-color: var(--gold);
+  background: var(--gold-bg);
+  box-shadow: 0 0 16px rgba(212, 168, 70, 0.2), inset 0 0 8px rgba(212, 168, 70, 0.05);
+}
+
+.personality-emoji {
+  font-size: 1.6rem;
+  line-height: 1;
+}
+
+.personality-name {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  color: var(--gold-light);
+  font-weight: 600;
+}
+
+.personality-desc {
+  font-size: 0.65rem;
+  color: var(--text-dim);
+  line-height: 1.3;
+}
+
+/* ─── Difficulty track ─── */
+
+.difficulty-track {
+  position: relative;
+  padding: 0.5rem 0 2.8rem;
+}
+
+.difficulty-track-bar {
+  position: relative;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  margin: 0 1rem;
+}
+
+.difficulty-track-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease, background 0.3s ease;
+}
+
+.difficulty-stop {
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  background: var(--bg-dark);
+  cursor: pointer;
+  transition: all 0.2s;
+  padding: 0;
+}
+
+.difficulty-stop:hover {
+  transform: translate(-50%, -50%) scale(1.2);
+}
+
+.difficulty-stop.active {
+  transform: translate(-50%, -50%) scale(1.3);
+  box-shadow: 0 0 10px currentColor;
+}
+
+.difficulty-labels {
+  position: relative;
+  margin-top: 0.75rem;
+  height: 2rem;
+  margin-left: 1rem;
+  margin-right: 1rem;
+}
+
+.difficulty-label {
+  position: absolute;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.1rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-dim);
+  transition: color 0.2s;
+  padding: 0;
+}
+
+.difficulty-label:hover {
+  color: var(--text);
+}
+
+.difficulty-label-emoji {
+  font-size: 0.75rem;
+}
+
+.difficulty-label-name {
+  font-size: 0.65rem;
+  font-family: var(--font-display);
+  white-space: nowrap;
+}
+
+.difficulty-label.active .difficulty-label-name {
+  font-weight: 700;
+}
+
+.difficulty-desc {
+  text-align: center;
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  font-style: italic;
+  margin-top: 0.25rem;
+}
+
+/* ─── World theme grid ─── */
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.6rem;
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.75rem 0.5rem;
+  background: var(--bg-dark);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: var(--text);
+}
+
+.theme-card:hover {
+  border-color: var(--gold-dim);
+  background: var(--gold-bg);
+}
+
+.theme-card.selected {
+  border-color: var(--gold);
+  background: var(--gold-bg);
+  box-shadow: 0 0 16px rgba(212, 168, 70, 0.2), inset 0 0 8px rgba(212, 168, 70, 0.05);
+}
+
+.theme-emoji {
+  font-size: 1.8rem;
+  line-height: 1;
+}
+
+.theme-name {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  color: var(--gold-light);
+}
+
+/* ─── Toggle switches ─── */
+
+.session-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  cursor: pointer;
+  padding: 0.4rem 0;
+}
+
+.toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.toggle-label {
+  font-size: 0.85rem;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.toggle-sublabel {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.toggle-switch {
+  position: relative;
+  width: 42px;
+  height: 24px;
+  background: var(--border);
+  border-radius: 12px;
+  flex-shrink: 0;
+  cursor: pointer;
+  transition: background 0.2s;
+}
+
+.toggle-switch.on {
+  background: var(--gold-dim);
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 20px;
+  height: 20px;
+  background: var(--text-dim);
+  border-radius: 50%;
+  transition: all 0.2s;
+}
+
+.toggle-switch.on .toggle-knob {
+  left: 20px;
+  background: var(--gold-light);
+  box-shadow: 0 0 6px rgba(212, 168, 70, 0.4);
+}
+
+/* Settings footer */
+.settings-footer {
+  padding: 0.75rem 1.5rem 1.25rem;
+}
+
+/* ─── Settings responsive ─── */
+@media (max-width: 600px) {
+  .personality-grid,
+  .theme-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .settings-modal {
+    max-height: 90vh;
+    width: 98%;
+  }
+
+  .difficulty-label-name {
+    font-size: 0.55rem;
+  }
+}
+
+/* ============================================================
    Responsive — small screens
    ============================================================ */
 @media (max-width: 768px) {

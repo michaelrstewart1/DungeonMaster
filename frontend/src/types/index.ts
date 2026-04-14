@@ -44,6 +44,8 @@ export interface Character extends CharacterCreate {
 export interface CampaignCreate {
   name: string;
   description: string;
+  world_state?: Record<string, unknown>;
+  dm_settings?: Record<string, unknown>;
 }
 
 export interface Campaign extends CampaignCreate {

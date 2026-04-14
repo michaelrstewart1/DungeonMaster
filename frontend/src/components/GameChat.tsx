@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 
 export interface ChatMessage {
   role: 'dm' | 'player'
@@ -88,6 +88,91 @@ function formatMessage(text: string): React.ReactNode[] {
   return parts
 }
 
+/** Typewriter effect for DM narration — types text character by character */
+function TypewriterText({ text, onComplete }: { text: string; onComplete?: () => void }) {
+  const containerRef = useRef<HTMLSpanElement>(null)
+  const cursorRef = useRef<HTMLSpanElement>(null)
+  const [done, setDone] = useState(false)
+  const charIndex = useRef(0)
+  const timeoutId = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const skip = useCallback(() => {
+    if (done) return
+    if (timeoutId.current !== null) {
+      clearTimeout(timeoutId.current)
+      timeoutId.current = null
+    }
+    if (containerRef.current) {
+      containerRef.current.textContent = text
+    }
+    if (cursorRef.current) {
+      cursorRef.current.style.display = 'none'
+    }
+    setDone(true)
+    onComplete?.()
+  }, [done, text, onComplete])
+
+  useEffect(() => {
+    charIndex.current = 0
+    setDone(false)
+    if (containerRef.current) {
+      containerRef.current.textContent = ''
+    }
+    if (cursorRef.current) {
+      cursorRef.current.style.display = 'inline'
+    }
+
+    function typeNext() {
+      if (charIndex.current >= text.length) {
+        if (cursorRef.current) {
+          cursorRef.current.style.display = 'none'
+        }
+        setDone(true)
+        onComplete?.()
+        return
+      }
+
+      const char = text[charIndex.current]
+      if (containerRef.current) {
+        containerRef.current.textContent = text.slice(0, charIndex.current + 1)
+      }
+      charIndex.current++
+
+      // Scroll the message into view as it types
+      cursorRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+
+      // Determine delay for next character
+      let delay = 30
+      if (char === '.' || char === '!' || char === '?') {
+        delay = 200
+      } else if (char === ',' || char === ';' || char === ':') {
+        delay = 100
+      } else if (char === '\n') {
+        delay = 150
+      }
+
+      timeoutId.current = setTimeout(typeNext, delay)
+    }
+
+    timeoutId.current = setTimeout(typeNext, 30)
+
+    return () => {
+      if (timeoutId.current !== null) {
+        clearTimeout(timeoutId.current)
+      }
+    }
+    // Only re-run when text changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text])
+
+  return (
+    <span className="typewriter-message" onClick={skip}>
+      <span ref={containerRef} />
+      <span ref={cursorRef} className="typewriter-cursor">▌</span>
+    </span>
+  )
+}
+
 function getQuickActions(phase: GamePhase): QuickAction[] {
   if (phase === 'combat') return COMBAT_ACTIONS
   return EXPLORATION_ACTIONS
@@ -96,9 +181,38 @@ function getQuickActions(phase: GamePhase): QuickAction[] {
 export function GameChat({ messages, onSubmitAction, disabled = false, isWaitingForDM = false, phase = 'exploration' }: GameChatProps) {
   const [input, setInput] = useState('')
   const [showScrollBtn, setShowScrollBtn] = useState(false)
+  const [typedMessageCount, setTypedMessageCount] = useState(0)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const prevMessageCount = useRef(0)
+
+  // Track how many DM messages have been fully typed out.
+  // Messages at indices < typedMessageCount are "historical" and render instantly.
+  const dmMessageIndices = useMemo(() => {
+    const indices: number[] = []
+    messages.forEach((msg, i) => {
+      if (msg.role === 'dm') indices.push(i)
+    })
+    return indices
+  }, [messages])
+
+  // When a new DM message arrives, it's the one that gets the typewriter effect.
+  // All prior DM messages are considered already typed.
+  useEffect(() => {
+    if (messages.length > prevMessageCount.current) {
+      // Mark all DM messages except the very last one as typed
+      const lastDmIdx = dmMessageIndices.length - 1
+      if (lastDmIdx >= 0 && messages[dmMessageIndices[lastDmIdx]].role === 'dm') {
+        setTypedMessageCount(lastDmIdx)
+      }
+    }
+    prevMessageCount.current = messages.length
+  }, [messages, dmMessageIndices])
+
+  const handleTypewriterComplete = useCallback(() => {
+    setTypedMessageCount(prev => prev + 1)
+  }, [])
 
   const scrollToBottom = useCallback(() => {
     if (messagesEndRef.current && typeof messagesEndRef.current.scrollIntoView === 'function') {
@@ -146,7 +260,13 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
   return (
     <div className="game-chat">
       <div className="chat-messages" ref={chatContainerRef} onScroll={handleScroll}>
-        {messages.map((msg, i) => (
+        {messages.map((msg, i) => {
+          // Determine if this DM message should use the typewriter effect
+          const dmIndex = msg.role === 'dm' ? dmMessageIndices.indexOf(i) : -1
+          const isLatestDm = dmIndex >= 0 && dmIndex >= typedMessageCount
+          const isTyping = isLatestDm && dmIndex === dmMessageIndices.length - 1
+
+          return (
           <div key={i} className={`chat-message message-${msg.role}`}>
             <div className="message-header">
               <span className="message-role">{msg.role === 'dm' ? '🎲 DM' : '⚔️ You'}</span>
@@ -156,9 +276,16 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
                 </span>
               )}
             </div>
-            <p className="message-text">{msg.role === 'dm' ? formatMessage(msg.text) : msg.text}</p>
+            <p className="message-text">
+              {msg.role === 'dm' && isTyping
+                ? <TypewriterText text={msg.text} onComplete={handleTypewriterComplete} />
+                : msg.role === 'dm'
+                  ? formatMessage(msg.text)
+                  : msg.text}
+            </p>
           </div>
-        ))}
+          )
+        })}
         {isWaitingForDM && (
           <div className="chat-message message-dm typing-message">
             <span className="message-role">🎲 DM</span>

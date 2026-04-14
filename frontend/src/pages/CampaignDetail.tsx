@@ -6,6 +6,7 @@ import { CharacterCreator } from '../components/CharacterCreator'
 import { CharacterImport } from '../components/CharacterImport'
 import { CharacterPicker } from '../components/CharacterPicker'
 import { CharacterPortrait } from '../components/CharacterPortrait'
+import { CampaignSettings } from '../components/CampaignSettings'
 import type { Campaign, Character, CharacterCreate } from '../types'
 
 type CharacterMode = 'none' | 'premade' | 'manual' | 'import'
@@ -21,6 +22,7 @@ export function CampaignDetail() {
   const [characterMode, setCharacterMode] = useState<CharacterMode>('none')
   const [startingGame, setStartingGame] = useState(false)
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+  const [showSettings, setShowSettings] = useState(false)
   const partyRef = useRef<HTMLDivElement>(null)
 
   const loadData = useCallback(async () => {
@@ -114,10 +116,32 @@ export function CampaignDetail() {
         <span className="breadcrumb-sep">/</span>
         <span className="breadcrumb-current">{campaign?.name}</span>
       </nav>
-      <header>
-        <h1>{campaign?.name}</h1>
-        <p>{campaign?.description}</p>
+      <header className="campaign-detail-header">
+        <div className="campaign-detail-header-text">
+          <h1>{campaign?.name}</h1>
+          <p>{campaign?.description}</p>
+        </div>
+        <button
+          className="btn-settings-gear"
+          onClick={() => setShowSettings(true)}
+          title="Campaign Settings"
+          aria-label="Campaign Settings"
+          data-testid="btn-settings"
+        >
+          ⚙️
+        </button>
       </header>
+
+      {showSettings && campaign && (
+        <CampaignSettings
+          campaign={campaign}
+          onClose={() => setShowSettings(false)}
+          onSaved={(updated) => {
+            setCampaign(updated)
+            setShowSettings(false)
+          }}
+        />
+      )}
 
       {error && <p className="error-message">{error}</p>}
       {successMessage && (
