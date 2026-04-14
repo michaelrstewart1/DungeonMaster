@@ -1,5 +1,7 @@
 """Game session management endpoints."""
 from typing import List, Optional
+from datetime import datetime, timezone
+import random
 
 from fastapi import APIRouter, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -75,10 +77,31 @@ async def create_game_session(session_create: GameSessionCreate) -> GameStateRes
         "narrative_history": [session_create.current_scene],
         "combat_state": None,
         "active_effects": [],
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "turn_count": 0,
     }
     
     storage.game_sessions[session_id] = session_data
     return GameStateResponse(**session_data)
+
+
+@router.get("/sessions")
+async def list_game_sessions(campaign_id: str | None = None) -> list[dict]:
+    """List game sessions, optionally filtered by campaign_id."""
+    sessions = []
+    for sid, sdata in storage.game_sessions.items():
+        if campaign_id and sdata.get("campaign_id") != campaign_id:
+            continue
+        sessions.append({
+            "id": sid,
+            "campaign_id": sdata.get("campaign_id", ""),
+            "phase": sdata.get("current_phase", "exploration"),
+            "turn_count": sdata.get("turn_count", 0),
+            "created_at": sdata.get("created_at", ""),
+            "scene": sdata.get("current_scene", "")[:120],
+        })
+    sessions.sort(key=lambda s: s.get("created_at", ""), reverse=True)
+    return sessions
 
 
 @router.get("/sessions/{session_id}/state", response_model=GameStateResponse)
@@ -117,6 +140,7 @@ async def submit_player_action(
     # Add to narrative history
     session["narrative_history"].append(f"Player: {player_text}")
     session["narrative_history"].append(f"DM: {narration}")
+    session["turn_count"] = session.get("turn_count", 0) + 1
 
     # Detect effects from narration for frontend
     effects = _detect_effects(narration, player_text)
@@ -525,7 +549,470 @@ async def get_session_recap(session_id: str) -> dict:
     }
 
 
-# --- Party Inventory / Loot endpoints ---
+# --- Encounter Generation ---
+
+class EnemyData(BaseModel):
+    """A single enemy in an encounter."""
+    name: str = Field(..., description="Enemy name")
+    hp: int = Field(..., description="Hit points")
+    ac: int = Field(..., description="Armor class")
+    cr: float = Field(..., description="Challenge rating")
+    count: int = Field(default=1, description="How many of this enemy")
+
+
+class EncounterRequest(BaseModel):
+    """Request to generate a random encounter."""
+    environment: str = Field(..., description="Environment: dungeon, forest, cave, mountain, swamp, urban")
+    difficulty: str = Field(..., description="Difficulty: easy, medium, hard, deadly")
+    party_level: int = Field(default=1, description="Average party level (1-20)")
+
+
+class EncounterResponse(BaseModel):
+    """Response with generated encounter details."""
+    enemies: List[EnemyData] = Field(..., description="List of enemies")
+    total_xp: int = Field(..., description="Total XP for the encounter")
+    difficulty_rating: str = Field(..., description="Actual difficulty: easy, medium, hard, deadly")
+    description: str = Field(..., description="Flavor text for the encounter")
+
+
+# SRD Monster Database grouped by CR and environment
+SRD_MONSTERS = {
+    "dungeon": {
+        0.125: [
+            {"name": "Cultist", "hp": 5, "ac": 12},
+            {"name": "Goblin", "hp": 7, "ac": 15},
+            {"name": "Skeleton", "hp": 13, "ac": 15},
+            {"name": "Zombie", "hp": 22, "ac": 8},
+            {"name": "Commoner", "hp": 4, "ac": 10},
+        ],
+        0.25: [
+            {"name": "Gnoll", "hp": 22, "ac": 15},
+            {"name": "Orc", "hp": 15, "ac": 13},
+            {"name": "Wererat", "hp": 33, "ac": 12},
+            {"name": "Ghoul", "hp": 22, "ac": 12},
+            {"name": "Hobgoblin", "hp": 11, "ac": 18},
+        ],
+        0.5: [
+            {"name": "Wyvern", "hp": 110, "ac": 13},
+            {"name": "Ogre", "hp": 59, "ac": 11},
+            {"name": "Specter", "hp": 22, "ac": 12},
+            {"name": "Troll", "hp": 84, "ac": 15},
+            {"name": "Chimera", "hp": 114, "ac": 14},
+        ],
+        1: [
+            {"name": "Bandit Captain", "hp": 65, "ac": 15},
+            {"name": "Cult Fanatic", "hp": 33, "ac": 13},
+            {"name": "Druid", "hp": 27, "ac": 11},
+            {"name": "Knight", "hp": 52, "ac": 18},
+            {"name": "Veteran", "hp": 52, "ac": 17},
+        ],
+        2: [
+            {"name": "Berserker", "hp": 67, "ac": 13},
+            {"name": "Priest", "hp": 27, "ac": 13},
+            {"name": "Manticore", "hp": 68, "ac": 13},
+            {"name": "Werewolf", "hp": 18, "ac": 12},
+            {"name": "Ghast", "hp": 36, "ac": 13},
+        ],
+        3: [
+            {"name": "Basilisk", "hp": 52, "ac": 15},
+            {"name": "Cockatrice", "hp": 27, "ac": 12},
+            {"name": "Mimic", "hp": 17, "ac": 12},
+            {"name": "Wight", "hp": 45, "ac": 14},
+            {"name": "Treant", "hp": 138, "ac": 16},
+        ],
+        5: [
+            {"name": "Hill Giant", "hp": 105, "ac": 13},
+            {"name": "Mummy", "hp": 97, "ac": 11},
+            {"name": "Troll Regenerating", "hp": 84, "ac": 15},
+            {"name": "Medusa", "hp": 71, "ac": 15},
+            {"name": "Chimera Ancient", "hp": 114, "ac": 14},
+        ],
+    },
+    "forest": {
+        0.125: [
+            {"name": "Deer", "hp": 4, "ac": 13},
+            {"name": "Badger", "hp": 3, "ac": 12},
+            {"name": "Stirge", "hp": 1, "ac": 14},
+            {"name": "Raven", "hp": 1, "ac": 14},
+            {"name": "Lizard", "hp": 1, "ac": 12},
+        ],
+        0.25: [
+            {"name": "Wolf", "hp": 11, "ac": 13},
+            {"name": "Boar", "hp": 11, "ac": 11},
+            {"name": "Aarakocra", "hp": 13, "ac": 13},
+            {"name": "Elk", "hp": 13, "ac": 10},
+            {"name": "Giant Spider", "hp": 26, "ac": 14},
+        ],
+        0.5: [
+            {"name": "Ape", "hp": 19, "ac": 12},
+            {"name": "Black Bear", "hp": 34, "ac": 12},
+            {"name": "Dire Wolf", "hp": 37, "ac": 13},
+            {"name": "Giant Ape", "hp": 157, "ac": 12},
+            {"name": "Tiger", "hp": 37, "ac": 12},
+        ],
+        1: [
+            {"name": "Dryad", "hp": 22, "ac": 14},
+            {"name": "Pixie", "hp": 1, "ac": 15},
+            {"name": "Satyr", "hp": 31, "ac": 14},
+            {"name": "Owlbear", "hp": 59, "ac": 13},
+            {"name": "Giant Constrictor Snake", "hp": 60, "ac": 12},
+        ],
+        2: [
+            {"name": "Allosaurus", "hp": 51, "ac": 12},
+            {"name": "Ankheg", "hp": 39, "ac": 14},
+            {"name": "Couatl", "hp": 97, "ac": 19},
+            {"name": "Gnoll Pack Lord", "hp": 49, "ac": 16},
+            {"name": "Giant Hyena", "hp": 45, "ac": 12},
+        ],
+        3: [
+            {"name": "Cyclops", "hp": 138, "ac": 14},
+            {"name": "Hydra", "hp": 172, "ac": 15},
+            {"name": "Manticores", "hp": 68, "ac": 13},
+            {"name": "Phoenix", "hp": 175, "ac": 15},
+            {"name": "Wyvern", "hp": 110, "ac": 13},
+        ],
+    },
+    "cave": {
+        0.125: [
+            {"name": "Giant Centipede", "hp": 4, "ac": 14},
+            {"name": "Bat", "hp": 1, "ac": 12},
+            {"name": "Giant Rat", "hp": 7, "ac": 15},
+            {"name": "Dwarf", "hp": 27, "ac": 15},
+            {"name": "Goblin", "hp": 7, "ac": 15},
+        ],
+        0.25: [
+            {"name": "Giant Scorpion", "hp": 32, "ac": 15},
+            {"name": "Giant Spider Web", "hp": 26, "ac": 14},
+            {"name": "Troglodyte", "hp": 13, "ac": 11},
+            {"name": "Duergar", "hp": 26, "ac": 16},
+            {"name": "Drow", "hp": 13, "ac": 15},
+        ],
+        0.5: [
+            {"name": "Troll", "hp": 84, "ac": 15},
+            {"name": "Wyvern", "hp": 110, "ac": 13},
+            {"name": "Chimera", "hp": 114, "ac": 14},
+            {"name": "Behir", "hp": 168, "ac": 17},
+            {"name": "Purple Worm", "hp": 248, "ac": 19},
+        ],
+        1: [
+            {"name": "Cloaker", "hp": 78, "ac": 14},
+            {"name": "Duergar Mage", "hp": 26, "ac": 15},
+            {"name": "Drow Elite Warrior", "hp": 71, "ac": 18},
+            {"name": "Invisible Stalker", "hp": 22, "ac": 15},
+            {"name": "Will-o'-the-Wisp", "hp": 22, "ac": 19},
+        ],
+        2: [
+            {"name": "Basilisk", "hp": 52, "ac": 15},
+            {"name": "Beholder", "hp": 180, "ac": 17},
+            {"name": "Medusa", "hp": 71, "ac": 15},
+            {"name": "Otyugh", "hp": 114, "ac": 14},
+            {"name": "Chimera Ancient", "hp": 114, "ac": 14},
+        ],
+    },
+    "mountain": {
+        0.125: [
+            {"name": "Eagle", "hp": 26, "ac": 13},
+            {"name": "Goat", "hp": 22, "ac": 12},
+            {"name": "Hawk", "hp": 1, "ac": 13},
+            {"name": "Pony", "hp": 11, "ac": 12},
+            {"name": "Snow Hare", "hp": 1, "ac": 14},
+        ],
+        0.25: [
+            {"name": "Aarakocra", "hp": 13, "ac": 13},
+            {"name": "Giant Eagle", "hp": 26, "ac": 13},
+            {"name": "Giant Goat", "hp": 19, "ac": 12},
+            {"name": "Manticore Adolescent", "hp": 34, "ac": 12},
+            {"name": "Wyvern Juvenile", "hp": 55, "ac": 12},
+        ],
+        0.5: [
+            {"name": "Chimera", "hp": 114, "ac": 14},
+            {"name": "Hydra", "hp": 172, "ac": 15},
+            {"name": "Wyvern", "hp": 110, "ac": 13},
+            {"name": "Roc", "hp": 195, "ac": 15},
+            {"name": "Giant Eagle Massive", "hp": 26, "ac": 13},
+        ],
+        1: [
+            {"name": "Air Elemental", "hp": 90, "ac": 15},
+            {"name": "Cloud Giant Scout", "hp": 142, "ac": 15},
+            {"name": "Frost Giant Scout", "hp": 65, "ac": 15},
+            {"name": "Phoenix", "hp": 175, "ac": 15},
+            {"name": "Storm Giant Scout", "hp": 178, "ac": 16},
+        ],
+        2: [
+            {"name": "Chimera", "hp": 114, "ac": 14},
+            {"name": "Fire Giant", "hp": 162, "ac": 17},
+            {"name": "Frost Giant", "hp": 150, "ac": 15},
+            {"name": "Hill Giant", "hp": 105, "ac": 13},
+            {"name": "Remorhaz", "hp": 195, "ac": 17},
+        ],
+    },
+    "swamp": {
+        0.125: [
+            {"name": "Frog", "hp": 1, "ac": 11},
+            {"name": "Snake", "hp": 1, "ac": 11},
+            {"name": "Giant Frog", "hp": 7, "ac": 11},
+            {"name": "Lizard Swamp", "hp": 1, "ac": 12},
+            {"name": "Stirge Swarm", "hp": 22, "ac": 14},
+        ],
+        0.25: [
+            {"name": "Giant Constrictor Snake", "hp": 30, "ac": 12},
+            {"name": "Giant Poisonous Snake", "hp": 11, "ac": 13},
+            {"name": "Giant Spider Swamp", "hp": 26, "ac": 14},
+            {"name": "Giant Toad", "hp": 39, "ac": 11},
+            {"name": "Will-o'-the-Wisp", "hp": 22, "ac": 19},
+        ],
+        0.5: [
+            {"name": "Giant Ape", "hp": 157, "ac": 12},
+            {"name": "Giant Constrictor Huge", "hp": 60, "ac": 12},
+            {"name": "Shambling Mound", "hp": 52, "ac": 15},
+            {"name": "Troll", "hp": 84, "ac": 15},
+            {"name": "Wyvern", "hp": 110, "ac": 13},
+        ],
+        1: [
+            {"name": "Drowned Assassin", "hp": 45, "ac": 16},
+            {"name": "Hydra Swamp", "hp": 172, "ac": 15},
+            {"name": "Lizardfolk Shaman", "hp": 27, "ac": 15},
+            {"name": "Shambling Mound Overgrown", "hp": 52, "ac": 15},
+            {"name": "Will-o'-the-Wisp Grave", "hp": 22, "ac": 19},
+        ],
+        2: [
+            {"name": "Behir", "hp": 168, "ac": 17},
+            {"name": "Hydra Ancient", "hp": 172, "ac": 15},
+            {"name": "Shambling Mound Ancient", "hp": 52, "ac": 15},
+            {"name": "Troll Regenerating", "hp": 84, "ac": 15},
+            {"name": "Will-o'-the-Wisp Devouring", "hp": 22, "ac": 19},
+        ],
+    },
+    "urban": {
+        0.125: [
+            {"name": "Commoner", "hp": 4, "ac": 10},
+            {"name": "Guard", "hp": 11, "ac": 16},
+            {"name": "Thug", "hp": 32, "ac": 12},
+            {"name": "Cultist", "hp": 5, "ac": 12},
+            {"name": "Noble", "hp": 9, "ac": 15},
+        ],
+        0.25: [
+            {"name": "Assassin", "hp": 78, "ac": 16},
+            {"name": "Bandit Captain", "hp": 65, "ac": 15},
+            {"name": "Gladiator", "hp": 112, "ac": 15},
+            {"name": "Knight", "hp": 52, "ac": 18},
+            {"name": "Warlord", "hp": 229, "ac": 18},
+        ],
+        0.5: [
+            {"name": "Champion", "hp": 143, "ac": 18},
+            {"name": "Demon Imp", "hp": 10, "ac": 12},
+            {"name": "Devil Imp", "hp": 10, "ac": 12},
+            {"name": "Shambling Mound", "hp": 52, "ac": 15},
+            {"name": "Water Elemental", "hp": 90, "ac": 15},
+        ],
+        1: [
+            {"name": "Cult Fanatic Leader", "hp": 33, "ac": 14},
+            {"name": "Djinn", "hp": 161, "ac": 17},
+            {"name": "Eladrin Mage", "hp": 127, "ac": 15},
+            {"name": "Priest High", "hp": 27, "ac": 13},
+            {"name": "Troll Underground", "hp": 84, "ac": 15},
+        ],
+        2: [
+            {"name": "Beholder Newborn", "hp": 90, "ac": 15},
+            {"name": "Chimera Urban", "hp": 114, "ac": 14},
+            {"name": "Marid", "hp": 229, "ac": 17},
+            {"name": "Medusa Cursed", "hp": 71, "ac": 15},
+            {"name": "Naga Guardian", "hp": 75, "ac": 16},
+        ],
+    },
+}
+
+# XP thresholds for party difficulty (per player, combined for party)
+XP_THRESHOLDS = {
+    1: {"easy": 25, "medium": 50, "hard": 75, "deadly": 100},
+    2: {"easy": 50, "medium": 100, "hard": 150, "deadly": 200},
+    3: {"easy": 75, "medium": 150, "hard": 225, "deadly": 400},
+    4: {"easy": 125, "medium": 250, "hard": 375, "deadly": 500},
+    5: {"easy": 250, "medium": 500, "hard": 750, "deadly": 1100},
+    6: {"easy": 300, "medium": 600, "hard": 900, "deadly": 1400},
+    7: {"easy": 350, "medium": 750, "hard": 1100, "deadly": 1700},
+    8: {"easy": 450, "medium": 1000, "hard": 1400, "deadly": 2100},
+    9: {"easy": 550, "medium": 1200, "hard": 1600, "deadly": 2400},
+    10: {"easy": 600, "medium": 1500, "hard": 1900, "deadly": 2800},
+}
+
+ENVIRONMENT_DESCRIPTIONS = {
+    "dungeon": [
+        "You enter a crumbling stone chamber filled with the stench of decay. Torchlight flickers across ancient carvings.",
+        "The underground passage echoes with unsettling sounds. Moisture drips from the vaulted ceiling above.",
+        "A vast dungeon complex sprawls before you, its corridors twisting into shadow and mystery.",
+        "Chains hang from the walls of this forsaken keep. Something stirs in the darkness.",
+        "Ancient stonework bears signs of arcane magic. The air crackles with residual power.",
+    ],
+    "forest": [
+        "Ancient trees tower overhead, their canopy blocking out the sun. Danger lurks between every trunk.",
+        "The forest path ahead is overgrown with twisted vines and gnarled roots.",
+        "Dappled moonlight filters through the dense foliage. Strange sounds echo through the trees.",
+        "You push through thick undergrowth into a clearing—but it's not empty.",
+        "The forest grows darker and more primal the deeper you venture.",
+    ],
+    "cave": [
+        "The cavern walls glisten with moisture and strange mineral formations.",
+        "Echoing drips and distant howls fill the darkness ahead.",
+        "You enter a massive underground cavern filled with bioluminescent flora.",
+        "The air grows colder as you descend deeper into the earth.",
+        "Stalactites hang like weapons above a cavern floor littered with bone.",
+    ],
+    "mountain": [
+        "The mountain pass narrows ahead, winds howling between jagged peaks.",
+        "You spot movement on the rocky slopes above—silhouetted against the sky.",
+        "The air thins as you climb higher, the world sprawling below you.",
+        "Storm clouds gather over the mountain peaks, bringing an ominous chill.",
+        "Ancient ruins cling to the mountainside, weathered by countless ages.",
+    ],
+    "swamp": [
+        "Murky water stretches before you, fog rising from its depths.",
+        "The air is thick and suffocating, filled with the sounds of unseen creatures.",
+        "Twisted trees emerge from stagnant water, their roots tangled and menacing.",
+        "Will-o'-the-wisps flicker in the darkness ahead—or perhaps something worse.",
+        "The swamp reeks of decay and ancient magic.",
+    ],
+    "urban": [
+        "The city streets are darker than you expected. Shadows seem to move of their own accord.",
+        "You turn a corner into an alley—and find yourselves face to face with trouble.",
+        "The tavern goes quiet as you enter. Something feels very wrong.",
+        "City guards or hired assassins? It's hard to tell in the dim torchlight.",
+        "A masked figure emerges from the crowd, hand on their weapon.",
+    ],
+}
+
+
+def _calculate_encounter_difficulty(total_xp: int, party_size: int, party_level: int) -> str:
+    """Determine if encounter is easy, medium, hard, or deadly."""
+    target_threshold = XP_THRESHOLDS.get(party_level, XP_THRESHOLDS[10])
+    
+    if total_xp <= target_threshold["easy"] * party_size:
+        return "easy"
+    elif total_xp <= target_threshold["medium"] * party_size:
+        return "medium"
+    elif total_xp <= target_threshold["hard"] * party_size:
+        return "hard"
+    else:
+        return "deadly"
+
+
+def _get_cr_value(difficulty: str, party_level: int) -> tuple[float, float]:
+    """Get the CR range for the requested difficulty."""
+    # Suggested CR is roughly party_level - 1 to party_level + 2
+    base_cr = max(0.125, party_level - 1)
+    
+    difficulty_adjustments = {
+        "easy": (-0.5, 0.5),
+        "medium": (0, 1),
+        "hard": (0.5, 1.5),
+        "deadly": (1, 2),
+    }
+    
+    adj_low, adj_high = difficulty_adjustments.get(difficulty, (0, 1))
+    return (max(0.125, base_cr + adj_low), base_cr + adj_high)
+
+
+@router.post("/sessions/{session_id}/encounter", response_model=EncounterResponse)
+async def generate_encounter(session_id: str, body: EncounterRequest) -> EncounterResponse:
+    """Generate a random encounter based on party level and environment.
+    
+    Uses D&D 5e encounter building rules with CR-based enemy selection
+    and XP threshold balancing.
+    """
+    if session_id not in storage.game_sessions:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Game session not found"
+        )
+    
+    # Validate inputs
+    valid_envs = set(SRD_MONSTERS.keys())
+    if body.environment not in valid_envs:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Environment must be one of: {', '.join(sorted(valid_envs))}"
+        )
+    
+    valid_difficulties = {"easy", "medium", "hard", "deadly"}
+    if body.difficulty not in valid_difficulties:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"Difficulty must be one of: {', '.join(sorted(valid_difficulties))}"
+        )
+    
+    party_level = max(1, min(20, body.party_level))
+    
+    # Get monsters for this environment
+    environment_monsters = SRD_MONSTERS[body.environment]
+    
+    # Get target CR range
+    cr_low, cr_high = _get_cr_value(body.difficulty, party_level)
+    
+    # Find available CRs in range
+    available_crs = [cr for cr in environment_monsters.keys() if cr_low <= cr <= cr_high]
+    
+    if not available_crs:
+        # Fallback: use closest CR
+        all_crs = sorted(environment_monsters.keys())
+        closest_cr = min(all_crs, key=lambda x: abs(x - (cr_low + cr_high) / 2))
+        available_crs = [closest_cr]
+    
+    # Generate encounter
+    enemies: List[EnemyData] = []
+    total_xp = 0
+    target_xp = XP_THRESHOLDS.get(party_level, XP_THRESHOLDS[10]).get(body.difficulty, 100) * 4  # 4 party members baseline
+    
+    # Randomly select 1-3 enemy types
+    num_types = random.randint(1, 3)
+    for _ in range(num_types):
+        selected_cr = random.choice(available_crs)
+        monster_template = random.choice(environment_monsters[selected_cr])
+        
+        # Determine count based on difficulty and XP budget
+        cr_xp = selected_cr * 100  # Approximate XP per CR
+        count = max(1, min(8, int((target_xp - total_xp) / (cr_xp * 0.7))))
+        
+        if total_xp >= target_xp * 0.8:
+            count = max(1, count // 2)
+        
+        enemy = EnemyData(
+            name=monster_template["name"],
+            hp=monster_template["hp"],
+            ac=monster_template["ac"],
+            cr=selected_cr,
+            count=count
+        )
+        enemies.append(enemy)
+        total_xp += int(cr_xp * count)
+    
+    # Ensure we have at least one enemy
+    if not enemies:
+        selected_cr = random.choice(available_crs)
+        monster_template = random.choice(environment_monsters[selected_cr])
+        enemies = [EnemyData(
+            name=monster_template["name"],
+            hp=monster_template["hp"],
+            ac=monster_template["ac"],
+            cr=selected_cr,
+            count=1
+        )]
+        total_xp = int(selected_cr * 100)
+    
+    # Recalculate actual difficulty
+    actual_difficulty = _calculate_encounter_difficulty(total_xp, 4, party_level)
+    
+    # Get flavor text
+    description = random.choice(ENVIRONMENT_DESCRIPTIONS[body.environment])
+    
+    return EncounterResponse(
+        enemies=enemies,
+        total_xp=total_xp,
+        difficulty_rating=actual_difficulty,
+        description=description
+    )
+
+
+
 
 class LootItem(BaseModel):
     """A single loot item."""

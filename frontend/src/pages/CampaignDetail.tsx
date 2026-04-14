@@ -7,6 +7,7 @@ import { CharacterImport } from '../components/CharacterImport'
 import { CharacterPicker } from '../components/CharacterPicker'
 import { CharacterPortrait } from '../components/CharacterPortrait'
 import { CampaignSettings } from '../components/CampaignSettings'
+import { SessionHistory } from '../components/SessionHistory'
 import type { Campaign, Character, CharacterCreate } from '../types'
 
 type CharacterMode = 'none' | 'premade' | 'manual' | 'import'
@@ -268,6 +269,9 @@ export function CampaignDetail() {
           {startingGame ? 'Starting...' : 'Begin Adventure'}
         </button>
       </section>
+
+      {/* Session History */}
+      {campaignId && <SessionHistory campaignId={campaignId} />}
     </div>
   )
 }

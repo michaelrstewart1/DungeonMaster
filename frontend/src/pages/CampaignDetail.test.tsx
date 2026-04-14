@@ -10,6 +10,7 @@ vi.mock('../api/client', () => ({
   getCharacters: vi.fn(),
   createCharacter: vi.fn(),
   createGameSession: vi.fn(),
+  listGameSessions: vi.fn().mockResolvedValue([]),
 }))
 
 vi.mock('../components/CharacterSheet', () => ({
@@ -116,6 +117,18 @@ vi.mock('../components/CharacterPicker', () => ({
       </button>
     </div>
   ),
+}))
+
+vi.mock('../components/CharacterPortrait', () => ({
+  CharacterPortrait: () => <div data-testid="character-portrait" />,
+}))
+
+vi.mock('../components/CampaignSettings', () => ({
+  CampaignSettings: () => <div data-testid="campaign-settings" />,
+}))
+
+vi.mock('../components/SessionHistory', () => ({
+  SessionHistory: () => <div data-testid="session-history" />,
 }))
 
 const mockNavigate = vi.fn()

@@ -3891,6 +3891,119 @@
 }
 
 /* ============================================================
+   Session History Timeline
+   ============================================================ */
+
+.session-history {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--gold-dim);
+}
+
+.session-history-title {
+  font-family: 'Cinzel', serif;
+  color: var(--gold);
+  font-size: 1.2rem;
+  margin: 0 0 1rem 0;
+}
+
+.session-history-timeline {
+  position: relative;
+  padding-left: 1.5rem;
+}
+
+.session-history-timeline::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--gold-dim) 0%, rgba(154, 122, 50, 0.1) 100%);
+}
+
+.session-history-item {
+  position: relative;
+  padding: 0.75rem 1rem;
+  margin-bottom: 0.5rem;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(212, 175, 55, 0.1);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.session-history-item:hover {
+  background: rgba(212, 175, 55, 0.05);
+  border-color: var(--gold-dim);
+  transform: translateX(4px);
+}
+
+.session-history-item.latest {
+  border-color: var(--gold-dim);
+  background: rgba(212, 175, 55, 0.04);
+}
+
+.session-timeline-dot {
+  position: absolute;
+  left: -1.5rem;
+  top: 1rem;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--gold-dim);
+  border: 2px solid #0d0a05;
+  transform: translateX(-1px);
+}
+
+.session-history-item.latest .session-timeline-dot {
+  background: var(--gold);
+  box-shadow: 0 0 6px rgba(212, 175, 55, 0.4);
+}
+
+.session-history-meta {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.session-phase-icon {
+  font-size: 1rem;
+}
+
+.session-phase {
+  font-family: 'Cinzel', serif;
+  color: var(--gold-light);
+  font-size: 0.85rem;
+  text-transform: capitalize;
+}
+
+.session-turns {
+  font-size: 0.75rem;
+  color: var(--gold-dim);
+  background: rgba(212, 175, 55, 0.08);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+}
+
+.session-time {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.35);
+  margin-left: auto;
+}
+
+.session-scene-preview {
+  margin: 0.3rem 0 0 0;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.45);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ============================================================
    Chat Textarea Styling
    ============================================================ */
 

@@ -242,4 +242,47 @@ export async function updatePartyGold(sessionId: string, amount: number, reason:
   });
 }
 
+// Encounters
+export interface EncounterOptions {
+  environment: string;
+  difficulty: string;
+  party_level: number;
+}
+
+export interface EncounterEnemy {
+  name: string;
+  hp: number;
+  ac: number;
+  cr: number;
+  count: number;
+}
+
+export interface EncounterResponse {
+  enemies: EncounterEnemy[];
+  total_xp: number;
+  difficulty_rating: string;
+  description: string;
+}
+
+export async function generateEncounter(sessionId: string, options: EncounterOptions): Promise<EncounterResponse> {
+  return request<EncounterResponse>(`/game/sessions/${sessionId}/encounter`, {
+    method: 'POST',
+    body: JSON.stringify(options),
+  });
+}
+
+// Session history
+export interface SessionSummary {
+  id: string;
+  campaign_id: string;
+  phase: string;
+  turn_count: number;
+  created_at: string;
+  scene: string;
+}
+
+export async function listGameSessions(campaignId: string): Promise<SessionSummary[]> {
+  return request<SessionSummary[]>(`/game/sessions?campaign_id=${campaignId}`);
+}
+
 export { ApiError };
