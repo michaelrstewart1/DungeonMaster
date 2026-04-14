@@ -45,20 +45,20 @@ export function Home() {
 
   useEffect(() => {
     // Fade in the current scene
-    const fadeInTimer = setTimeout(() => setSceneOpacity(1), 100)
+    const fadeInTimer = setTimeout(() => setSceneOpacity(1), 200)
 
-    // Start fading in the next scene (crossfade)
+    // Hold the scene, then begin slow crossfade to next
     const crossfadeTimer = setTimeout(() => {
       setNextOpacity(1)
-    }, 7000)
+    }, 12000)
 
-    // After crossfade completes, swap scenes
+    // After crossfade completes (~5s CSS transition), swap scenes
     const swapTimer = setTimeout(() => {
       setSceneIndex(nextSceneIndex)
       setSceneOpacity(1)
       setNextOpacity(0)
       setNextSceneIndex((nextSceneIndex + 1) % LANDSCAPE_SCENES.length)
-    }, 10000)
+    }, 18000)
 
     return () => {
       clearTimeout(fadeInTimer)
