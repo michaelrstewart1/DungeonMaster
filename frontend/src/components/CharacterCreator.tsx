@@ -138,6 +138,13 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
     return mod >= 0 ? `+${mod}` : `${mod}`
   }
 
+  const modClass = (score: number) => {
+    const mod = Math.floor((score - 10) / 2)
+    if (mod > 0) return 'mod-positive'
+    if (mod < 0) return 'mod-negative'
+    return 'mod-zero'
+  }
+
   // Calculate final ability scores (base + racial)
   const finalAbilities = useMemo(() => {
     const result = { ...abilities }
@@ -503,9 +510,17 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
           {/* Point Buy */}
           {abilityMethod === 'point-buy' && (
             <>
-              <p className="points-budget">
-                Points spent: <strong className={pointBuySpent > POINT_BUY_BUDGET ? 'over-budget' : ''}>{pointBuySpent}</strong> / {POINT_BUY_BUDGET}
-              </p>
+              <div className="points-budget">
+                <div className="budget-label">
+                  Points spent: <strong className={pointBuySpent > POINT_BUY_BUDGET ? 'over-budget' : ''}>{pointBuySpent}</strong> / {POINT_BUY_BUDGET}
+                </div>
+                <div className="budget-bar">
+                  <div
+                    className={`budget-fill ${pointBuySpent > POINT_BUY_BUDGET ? 'over-budget' : pointBuySpent === POINT_BUY_BUDGET ? 'at-budget' : ''}`}
+                    style={{ width: `${Math.min(100, (pointBuySpent / POINT_BUY_BUDGET) * 100)}%` }}
+                  />
+                </div>
+              </div>
               <div className="ability-grid">
                 {ABILITY_INFO.map(({ key, label, short, desc }) => {
                   const val = abilities[key as keyof AbilityScores]
@@ -548,7 +563,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                       </div>
                       {bonus !== 0 && <span className="ability-racial-bonus">+{bonus} racial</span>}
                       <span className="ability-final">Final: {finalVal}</span>
-                      <span className="ability-modifier">{abilityMod(finalVal)}</span>
+                      <span className={`ability-modifier ${modClass(finalVal)}`}>{abilityMod(finalVal)}</span>
                     </div>
                   )
                 })}
@@ -593,7 +608,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                       </select>
                       {bonus !== 0 && <span className="ability-racial-bonus">+{bonus} racial</span>}
                       <span className="ability-final">Final: {finalVal}</span>
-                      <span className="ability-modifier">{abilityMod(finalVal)}</span>
+                      <span className={`ability-modifier ${modClass(finalVal)}`}>{abilityMod(finalVal)}</span>
                     </div>
                   )
                 })}
@@ -601,7 +616,6 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
             </div>
           )}
 
-          {/* Roll */}
           {abilityMethod === 'roll' && (
             <div className="roll-section">
               <button type="button" className="btn-roll" onClick={rollAbilities} data-testid="reroll-btn">
@@ -621,7 +635,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                       <div className="ability-rolled-value">{val}</div>
                       {bonus !== 0 && <span className="ability-racial-bonus">+{bonus} racial</span>}
                       <span className="ability-final">Final: {finalVal}</span>
-                      <span className="ability-modifier">{abilityMod(finalVal)}</span>
+                      <span className={`ability-modifier ${modClass(finalVal)}`}>{abilityMod(finalVal)}</span>
                     </div>
                   )
                 })}
@@ -653,34 +667,49 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
             Selected: {selectedSkills.length} / {classSkillInfo.count}
           </div>
 
-          <div className="skill-grid">
-            {SKILLS.map(skill => {
-              const isClassOption = classSkillInfo.options.includes(skill.value)
-              const isBackgroundSkill = selectedBackground?.skillProficiencies.includes(skill.label) ?? false
-              const isSelected = selectedSkills.includes(skill.value) || isBackgroundSkill
-              const canSelect = isClassOption && !isBackgroundSkill && selectedSkills.length < classSkillInfo.count
-
+          <div className="skill-groups">
+            {(['STR', 'DEX', 'INT', 'WIS', 'CHA'] as const).map(ability => {
+              const groupSkills = SKILLS.filter(s => s.abilityShort === ability)
+              if (groupSkills.length === 0) return null
+              const abilityLabel = { STR: 'Strength', DEX: 'Dexterity', INT: 'Intelligence', WIS: 'Wisdom', CHA: 'Charisma' }[ability]
               return (
-                <button
-                  key={skill.value}
-                  type="button"
-                  className={`skill-card ${isSelected ? 'selected' : ''} ${isBackgroundSkill ? 'background-skill' : ''} ${!isClassOption && !isBackgroundSkill ? 'unavailable' : ''}`}
-                  onClick={() => {
-                    if (isBackgroundSkill) return
-                    if (!isClassOption) return
-                    if (selectedSkills.includes(skill.value)) {
-                      setSelectedSkills(prev => prev.filter(s => s !== skill.value))
-                    } else if (canSelect) {
-                      setSelectedSkills(prev => [...prev, skill.value])
-                    }
-                  }}
-                  disabled={isBackgroundSkill || (!isClassOption && !isBackgroundSkill)}
-                  data-testid={`skill-${skill.value}`}
-                >
-                  <span className="skill-name">{skill.label}</span>
-                  <span className="skill-ability">({skill.abilityShort})</span>
-                  {isBackgroundSkill && <span className="skill-source">Background</span>}
-                </button>
+                <div key={ability} className="skill-group">
+                  <div className="skill-group-header">
+                    <span className="skill-group-ability">{ability}</span>
+                    <span className="skill-group-label">{abilityLabel}</span>
+                  </div>
+                  <div className="skill-group-grid">
+                    {groupSkills.map(skill => {
+                      const isClassOption = classSkillInfo.options.includes(skill.value)
+                      const isBackgroundSkill = selectedBackground?.skillProficiencies.includes(skill.label) ?? false
+                      const isSelected = selectedSkills.includes(skill.value) || isBackgroundSkill
+                      const canSelect = isClassOption && !isBackgroundSkill && selectedSkills.length < classSkillInfo.count
+
+                      return (
+                        <button
+                          key={skill.value}
+                          type="button"
+                          className={`skill-card ${isSelected ? 'selected' : ''} ${isBackgroundSkill ? 'background-skill' : ''} ${!isClassOption && !isBackgroundSkill ? 'unavailable' : ''}`}
+                          onClick={() => {
+                            if (isBackgroundSkill) return
+                            if (!isClassOption) return
+                            if (selectedSkills.includes(skill.value)) {
+                              setSelectedSkills(prev => prev.filter(s => s !== skill.value))
+                            } else if (canSelect) {
+                              setSelectedSkills(prev => [...prev, skill.value])
+                            }
+                          }}
+                          disabled={isBackgroundSkill || (!isClassOption && !isBackgroundSkill)}
+                          data-testid={`skill-${skill.value}`}
+                        >
+                          <span className="skill-check">{isSelected ? '◆' : '◇'}</span>
+                          <span className="skill-name">{skill.label}</span>
+                          {isBackgroundSkill && <span className="skill-source">Background</span>}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
               )
             })}
           </div>
@@ -701,7 +730,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
 
           {(STARTING_EQUIPMENT[className] || []).map((choice, idx) => (
             <div key={idx} className="equipment-choice">
-              <h4>{choice.label}</h4>
+              <h4><span className="choice-number">Choice {idx + 1}</span> {choice.label}</h4>
               <div className="equipment-options" role="radiogroup" aria-label={choice.label}>
                 {choice.options.map((option, optIdx) => (
                   <button
@@ -958,7 +987,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                     <span key={key} className="review-stat">
                       <span className="stat-label">{short}</span>
                       <span className="stat-value">{final_}</span>
-                      <span className="stat-mod">{abilityMod(final_)}</span>
+                      <span className={`stat-mod ${modClass(final_)}`}>{abilityMod(final_)}</span>
                     </span>
                   )
                 })}
