@@ -2,7 +2,9 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { CampaignList } from '../components/CampaignList'
 import { getCampaigns, createCampaign, deleteCampaign, randomizeCampaign } from '../api/client'
+import { PREMADE_CAMPAIGNS } from '../data/premadeCampaigns'
 import type { Campaign } from '../types'
+import type { PremadeCampaign } from '../data/premadeCampaigns'
 
 export function Home() {
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -13,6 +15,7 @@ export function Home() {
   const [formDescription, setFormDescription] = useState('')
   const [creating, setCreating] = useState(false)
   const [randomizing, setRandomizing] = useState(false)
+  const [launchingCampaign, setLaunchingCampaign] = useState<string | null>(null)
   const navigate = useNavigate()
 
   // Escape key closes the form
@@ -79,6 +82,23 @@ export function Home() {
     }
   }
 
+  const handleLaunchPremade = async (premade: PremadeCampaign) => {
+    setLaunchingCampaign(premade.id)
+    setError(null)
+    try {
+      const campaign = await createCampaign({
+        name: premade.name,
+        description: premade.description,
+        world_state: premade.world_state,
+        dm_settings: premade.dm_settings,
+      })
+      navigate(`/campaign/${campaign.id}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to launch campaign')
+      setLaunchingCampaign(null)
+    }
+  }
+
   if (loading) return (
     <div className="page-home">
       <header className="hero">
@@ -121,6 +141,41 @@ export function Home() {
 
       <div className="home-content">
         {error && <p className="error-message">{error}</p>}
+
+        <section className="featured-campaigns">
+          <h2 className="featured-title">⚔️ Featured Campaigns</h2>
+          <p className="featured-subtitle">Jump into a handcrafted adventure — ready to play</p>
+          <div className="featured-grid">
+            {PREMADE_CAMPAIGNS.map((c) => (
+              <button
+                key={c.id}
+                className="featured-card"
+                onClick={() => handleLaunchPremade(c)}
+                disabled={launchingCampaign !== null}
+                aria-label={`Launch ${c.name}`}
+              >
+                <div className="featured-card-art" style={{ backgroundImage: `url(${c.thumbnail})` }}>
+                  <div className="featured-card-overlay" />
+                </div>
+                <div className="featured-card-body">
+                  <div className="featured-card-header">
+                    <span className="featured-card-icon">{c.icon}</span>
+                    <h3 className="featured-card-name">{c.name}</h3>
+                  </div>
+                  <p className="featured-card-theme">{c.theme}</p>
+                  <p className="featured-card-desc">{c.description.slice(0, 120)}…</p>
+                  <div className="featured-card-meta">
+                    <span className="featured-badge">{c.levelRange}</span>
+                    <span className="featured-badge">{c.playerCount}</span>
+                  </div>
+                </div>
+                {launchingCampaign === c.id && (
+                  <div className="featured-card-loading">Launching…</div>
+                )}
+              </button>
+            ))}
+          </div>
+        </section>
 
         {showForm && (
           <form onSubmit={handleCreate} className="campaign-form" aria-label="Create campaign" role="form">
