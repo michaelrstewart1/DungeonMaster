@@ -70,7 +70,6 @@ export function GameSession() {
   const [recapText, setRecapText] = useState('')
   const [showInventory, setShowInventory] = useState(false)
   const [currentScene, setCurrentScene] = useState<SceneType>('tavern')
-  const [showEncounters, setShowEncounters] = useState(false)
   const turnCounterRef = useRef(0)
 
   const wsRef = useRef<GameWebSocket | null>(null)
