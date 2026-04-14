@@ -1,17 +1,19 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getGameState, submitAction, getCampaign, getSessionGreeting } from '../api/client'
+import { getGameState, submitAction, getCampaign, getSessionGreeting, getCharacters } from '../api/client'
 import { GameWebSocket } from '../api/websocket'
 import { GameChat, type ChatMessage } from '../components/GameChat'
 import { DiceRoller } from '../components/DiceRoller'
 import { InitiativeTracker, type CombatantDisplay } from '../components/InitiativeTracker'
 import { DMAvatar } from '../components/DMAvatar'
 import { AudioControls } from '../components/AudioControls'
+import { PartyStatus } from '../components/PartyStatus'
+import { ScreenEffects, type EffectType } from '../components/ScreenEffects'
 import BattleMap from '../components/BattleMap'
 import TokenLayer from '../components/TokenLayer'
 import type { TokenInfo } from '../components/TokenLayer'
 import FogOfWar from '../components/FogOfWar'
-import type { GameState, GameMap, DiceResult } from '../types'
+import type { GameState, GameMap, DiceResult, Character } from '../types'
 import './GameSession.css'
 
 function formatTime(seconds: number): string {
@@ -43,11 +45,27 @@ export function GameSession() {
   const [waitingForDM, setWaitingForDM] = useState(false)
   const [sessionTime, setSessionTime] = useState(0)
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
+  const [partyCharacters, setPartyCharacters] = useState<Character[]>([])
+  const [activeEffect, setActiveEffect] = useState<EffectType>(null)
 
   const wsRef = useRef<GameWebSocket | null>(null)
   const audioWsRef = useRef<WebSocket | null>(null)
   const audioChunksRef = useRef<Uint8Array[]>([])
   const isMutedRef = useRef(false)
+
+  // Detect screen effect from DM narration text
+  const detectEffect = useCallback((text: string) => {
+    const lower = text.toLowerCase()
+    if (/natural 20|critical hit|critical strike/.test(lower)) {
+      setActiveEffect('nat20')
+    } else if (/level up|leveled up|gained a level/.test(lower)) {
+      setActiveEffect('levelup')
+    } else if (/takes? \d+ damage|hits you|struck|you take damage/.test(lower)) {
+      setActiveEffect('damage')
+    } else if (/casts? |spell|magical|arcane|conjure|invoke/.test(lower)) {
+      setActiveEffect('spell')
+    }
+  }, [])
 
   // Play DM text via TTS audio websocket
   const speakText = useCallback((text: string) => {
@@ -105,6 +123,10 @@ export function GameSession() {
           const campaign = await getCampaign(state.campaign_id)
           setCampaignName(campaign.name)
         } catch { /* fallback to default */ }
+        try {
+          const chars = await getCharacters(state.campaign_id)
+          setPartyCharacters(chars)
+        } catch { /* party status will just be empty */ }
       }
       // Fetch the real AI greeting + scene set
       let openingText = state.current_scene || 'Welcome, adventurers. Your legend begins tonight.'
@@ -354,6 +376,7 @@ export function GameSession() {
             onMicToggle={handleMicToggle}
             onMuteToggle={handleMuteToggle}
           />
+          <PartyStatus characters={partyCharacters} />
         </aside>
 
         {/* Main content */}
@@ -379,7 +402,7 @@ export function GameSession() {
             </div>
           )}
           <div className={`chat-area ${!mapData ? 'chat-area-full' : ''}`}>
-            <GameChat messages={messages} onSubmitAction={handleSubmitAction} isWaitingForDM={waitingForDM} />
+            <GameChat messages={messages} onSubmitAction={handleSubmitAction} isWaitingForDM={waitingForDM} phase={gameState?.phase === 'combat' ? 'combat' : 'exploration'} />
           </div>
         </div>
 

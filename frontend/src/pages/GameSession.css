@@ -2137,3 +2137,882 @@
   border-color: var(--gold-border);
   color: var(--gold);
 }
+
+/* ============================================================
+   Adventure Log / Quest Journal
+   ============================================================ */
+
+.btn-adventure-log {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  padding: 0.3rem 0.6rem;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.2s;
+  line-height: 1;
+}
+
+.btn-adventure-log:hover {
+  color: var(--gold);
+  border-color: var(--gold-dim);
+  background: rgba(212, 168, 70, 0.05);
+}
+
+.btn-adventure-log.has-updates {
+  border-color: var(--gold-dim);
+  color: var(--gold);
+  animation: logPulse 2s ease-in-out infinite;
+}
+
+@keyframes logPulse {
+  0%, 100% { box-shadow: 0 0 0 rgba(212, 168, 70, 0); }
+  50% { box-shadow: 0 0 8px rgba(212, 168, 70, 0.3); }
+}
+
+/* Backdrop */
+.adventure-log-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 90;
+  animation: fadeIn 0.25s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* Slide-in panel */
+.adventure-log-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 380px;
+  max-width: 90vw;
+  height: 100vh;
+  z-index: 100;
+  transform: translateX(100%);
+  transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  flex-direction: column;
+  background:
+    linear-gradient(135deg, rgba(30, 20, 10, 0.97), rgba(40, 30, 15, 0.97)),
+    var(--bg-darkest);
+  border-left: 2px solid var(--gold-border);
+  box-shadow: -4px 0 30px rgba(0, 0, 0, 0.6);
+}
+
+.adventure-log-panel.adventure-log-open {
+  transform: translateX(0);
+}
+
+/* Header */
+.adventure-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--gold-border);
+  background: linear-gradient(180deg, rgba(212, 168, 70, 0.06) 0%, transparent 100%);
+  flex-shrink: 0;
+}
+
+.adventure-log-header h2 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 1.25rem;
+  color: var(--gold);
+  letter-spacing: 0.05em;
+}
+
+.adventure-log-close {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+  width: 30px;
+  height: 30px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.adventure-log-close:hover {
+  color: var(--red-light);
+  border-color: var(--red);
+  background: var(--red-bg);
+}
+
+/* Scrollable content */
+.adventure-log-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.75rem;
+}
+
+.adventure-log-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.adventure-log-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.adventure-log-content::-webkit-scrollbar-thumb {
+  background: var(--gold-dim);
+  border-radius: 3px;
+}
+
+/* Section accordion */
+.adventure-log-section {
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: rgba(20, 20, 32, 0.6);
+}
+
+.adventure-log-section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(180deg, rgba(212, 168, 70, 0.04) 0%, transparent 100%);
+  border: none;
+  color: var(--gold-light);
+  cursor: pointer;
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  text-align: left;
+  transition: background 0.2s;
+}
+
+.adventure-log-section-toggle:hover {
+  background: rgba(212, 168, 70, 0.08);
+}
+
+.section-chevron {
+  font-size: 0.65rem;
+  transition: transform 0.3s ease;
+  color: var(--gold-dim);
+}
+
+.adventure-log-section-toggle.expanded .section-chevron {
+  transform: rotate(90deg);
+}
+
+.section-title {
+  flex: 1;
+  letter-spacing: 0.04em;
+}
+
+.section-count {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  padding: 0.15rem 0.5rem;
+  background: var(--bg-light);
+  border-radius: 10px;
+}
+
+/* Section body — collapsible */
+.adventure-log-section-body {
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height 0.35s ease, padding 0.35s ease;
+  padding: 0 0.75rem;
+}
+
+.adventure-log-section-body.section-expanded {
+  max-height: 600px;
+  overflow-y: auto;
+  padding: 0.5rem 0.75rem 0.75rem;
+}
+
+.adventure-log-section-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.adventure-log-section-body::-webkit-scrollbar-thumb {
+  background: var(--gold-dim);
+  border-radius: 2px;
+}
+
+.adventure-log-empty {
+  color: var(--text-dim);
+  font-family: var(--font-body);
+  font-style: italic;
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 0.75rem 0;
+  margin: 0;
+}
+
+/* Quest items */
+.quest-item {
+  display: flex;
+  gap: 0.6rem;
+  padding: 0.6rem;
+  margin-bottom: 0.4rem;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-dark);
+  transition: all 0.2s;
+}
+
+.quest-active {
+  border-color: var(--gold-border);
+  box-shadow: 0 0 8px rgba(212, 168, 70, 0.1), inset 0 0 12px rgba(212, 168, 70, 0.03);
+}
+
+.quest-completed {
+  opacity: 0.6;
+  border-color: var(--border);
+}
+
+.quest-failed {
+  border-color: rgba(201, 68, 68, 0.3);
+  background: rgba(201, 68, 68, 0.05);
+}
+
+.quest-status-icon {
+  font-size: 1.1rem;
+  flex-shrink: 0;
+  padding-top: 0.1rem;
+}
+
+.quest-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.quest-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: var(--text-bright);
+  letter-spacing: 0.03em;
+}
+
+.quest-active .quest-title {
+  color: var(--gold-light);
+}
+
+.quest-failed .quest-title {
+  color: var(--red-light);
+}
+
+.quest-description {
+  margin: 0.2rem 0 0;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.quest-turn {
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+/* Timeline entries */
+.timeline-entry {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem;
+  margin-bottom: 0.3rem;
+  border-radius: 5px;
+  border-left: 3px solid var(--border);
+  background: rgba(20, 20, 32, 0.4);
+  transition: background 0.2s;
+}
+
+.timeline-entry:hover {
+  background: rgba(20, 20, 32, 0.7);
+}
+
+.timeline-combat { border-left-color: var(--red); }
+.timeline-dialogue { border-left-color: var(--blue); }
+.timeline-discovery { border-left-color: var(--gold); }
+.timeline-quest { border-left-color: var(--green); }
+.timeline-loot { border-left-color: #e8a820; }
+.timeline-rest { border-left-color: var(--text-dim); }
+
+.timeline-icon {
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.timeline-details {
+  flex: 1;
+  min-width: 0;
+}
+
+.timeline-summary {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: 0.82rem;
+  color: var(--text);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.timeline-turn {
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+/* Loot items */
+.loot-item {
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.3rem;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--bg-dark);
+}
+
+.loot-details {
+  min-width: 0;
+}
+
+.loot-name {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: var(--text-bright);
+  display: inline;
+  margin-right: 0.5rem;
+}
+
+.loot-rarity {
+  font-family: var(--font-ui);
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  vertical-align: middle;
+}
+
+.rarity-common { color: #ccc; background: rgba(204, 204, 204, 0.1); }
+.rarity-uncommon { color: #4caf50; background: rgba(76, 175, 80, 0.12); }
+.rarity-rare { color: #5b8dd9; background: rgba(91, 141, 217, 0.12); }
+.rarity-very-rare { color: #ab47bc; background: rgba(171, 71, 188, 0.12); }
+.rarity-legendary { color: #ff9800; background: rgba(255, 152, 0, 0.12); }
+
+.loot-common { border-color: rgba(204, 204, 204, 0.15); }
+.loot-uncommon { border-color: rgba(76, 175, 80, 0.2); }
+.loot-rare { border-color: rgba(91, 141, 217, 0.2); }
+.loot-very-rare { border-color: rgba(171, 71, 188, 0.2); }
+.loot-legendary { border-color: rgba(255, 152, 0, 0.25); box-shadow: 0 0 6px rgba(255, 152, 0, 0.08); }
+
+.loot-description {
+  margin: 0.2rem 0 0;
+  font-family: var(--font-body);
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  line-height: 1.3;
+}
+
+.loot-turn {
+  font-family: var(--font-ui);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+/* ============================================================
+   Quick Action Buttons
+   ============================================================ */
+
+.quick-actions {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--gold-dim) transparent;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(18, 18, 26, 0.6) 0%, rgba(18, 18, 26, 0.9) 100%);
+}
+
+.quick-actions::-webkit-scrollbar {
+  height: 4px;
+}
+
+.quick-actions::-webkit-scrollbar-thumb {
+  background: var(--gold-dim);
+  border-radius: 2px;
+}
+
+.quick-action-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border: 1px solid var(--gold-border);
+  border-radius: 999px;
+  background: rgba(18, 18, 26, 0.8);
+  color: var(--gold-light);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.25s ease;
+  flex-shrink: 0;
+}
+
+.quick-action-btn:hover:not(:disabled) {
+  border-color: var(--gold);
+  color: var(--gold);
+  background: rgba(212, 168, 70, 0.1);
+  box-shadow: 0 0 12px rgba(212, 168, 70, 0.2), inset 0 0 8px rgba(212, 168, 70, 0.05);
+}
+
+.quick-action-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.quick-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.quick-action-emoji {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.quick-action-label {
+  line-height: 1;
+}
+
+/* ============================================================
+   Party Status Sidebar
+   ============================================================ */
+
+.party-status {
+  padding: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.party-status-title {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: var(--gold);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  margin: 0 0 0.5rem 0;
+  text-align: center;
+}
+
+.party-member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.party-member-card {
+  display: flex;
+  gap: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgba(26, 26, 38, 0.8) 0%, rgba(18, 18, 26, 0.9) 100%);
+  transition: border-color 0.2s;
+}
+
+.party-member-card:hover {
+  border-color: var(--gold-border);
+}
+
+.party-member-portrait {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 2px solid var(--gold-border);
+  overflow: hidden;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-light);
+}
+
+.party-member-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.party-member-placeholder {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  color: var(--gold-dim);
+}
+
+.party-member-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.2rem;
+}
+
+.party-member-name-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.25rem;
+}
+
+.party-member-name {
+  font-family: var(--font-display);
+  font-size: 0.75rem;
+  color: var(--gold-light);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.party-member-class {
+  font-size: 0.85rem;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.party-member-hp-bar {
+  width: 100%;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.party-member-hp-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.6s ease, background-color 0.6s ease;
+}
+
+.party-member-conditions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  margin-top: 0.1rem;
+}
+
+.condition-badge {
+  font-size: 0.55rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  color: #fff;
+  font-family: var(--font-body);
+  text-transform: capitalize;
+  line-height: 1.2;
+  opacity: 0.85;
+}
+
+/* ============================================================
+   Screen Effects — Immersive overlays & ambient particles
+   ============================================================ */
+
+/* --- Screen Shake (applied via JS class toggle) --- */
+@keyframes screen-shake {
+  0%, 100% { transform: translate(0, 0); }
+  10% { transform: translate(-4px, 2px); }
+  20% { transform: translate(3px, -3px); }
+  30% { transform: translate(-3px, -2px); }
+  40% { transform: translate(4px, 3px); }
+  50% { transform: translate(-2px, -4px); }
+  60% { transform: translate(3px, 2px); }
+  70% { transform: translate(-4px, 3px); }
+  80% { transform: translate(2px, -3px); }
+  90% { transform: translate(-3px, 4px); }
+}
+
+.game-session.screen-shake-active {
+  animation: screen-shake 0.5s ease-in-out;
+}
+
+/* --- Shared Overlay Base --- */
+.sfx-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+/* --- Gold Flash — Natural 20 --- */
+@keyframes nat20-flash {
+  0% { opacity: 0; }
+  15% { opacity: 0.85; }
+  40% { opacity: 0.5; }
+  100% { opacity: 0; }
+}
+
+.sfx-nat20 {
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(232, 195, 106, 0.55) 0%,
+    rgba(212, 168, 70, 0.35) 35%,
+    rgba(154, 122, 50, 0.15) 65%,
+    transparent 100%
+  );
+  animation: nat20-flash 0.8s ease-out forwards;
+}
+
+/* --- Red Damage Pulse --- */
+@keyframes damage-pulse {
+  0% { opacity: 0; }
+  20% { opacity: 0.7; }
+  50% { opacity: 0.4; }
+  100% { opacity: 0; }
+}
+
+.sfx-damage {
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    transparent 30%,
+    rgba(180, 30, 30, 0.35) 65%,
+    rgba(120, 10, 10, 0.55) 100%
+  );
+  animation: damage-pulse 0.6s ease-out forwards;
+}
+
+/* --- Magical Sparkle --- */
+@keyframes sparkle-rise {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-120px) scale(0.3);
+    opacity: 0;
+  }
+}
+
+.sfx-spell {
+  overflow: hidden;
+}
+
+.sfx-sparkle-dot {
+  position: absolute;
+  bottom: 20%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #b48efa;
+  box-shadow: 0 0 6px 2px rgba(140, 100, 240, 0.6), 0 0 12px 4px rgba(80, 140, 255, 0.3);
+  animation: sparkle-rise 1s ease-out forwards;
+}
+
+/* --- Level Up Celebration --- */
+@keyframes levelup-glow {
+  0% { opacity: 0; }
+  20% { opacity: 0.6; }
+  70% { opacity: 0.4; }
+  100% { opacity: 0; }
+}
+
+@keyframes levelup-text-pop {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(0.5); }
+  20% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+  40% { transform: translate(-50%, -50%) scale(1); }
+  75% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(1.05); }
+}
+
+@keyframes levelup-rise {
+  0% {
+    transform: translateY(0) scale(1);
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-200px) scale(0);
+    opacity: 0;
+  }
+}
+
+.sfx-levelup {
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(232, 195, 106, 0.3) 0%,
+    rgba(255, 255, 255, 0.08) 40%,
+    transparent 70%
+  );
+  animation: levelup-glow 2s ease-out forwards;
+}
+
+.sfx-levelup-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) scale(0.5);
+  font-family: 'Cinzel', serif;
+  font-size: 3.5rem;
+  font-weight: 700;
+  color: var(--gold-light);
+  text-shadow:
+    0 0 20px rgba(212, 168, 70, 0.8),
+    0 0 40px rgba(212, 168, 70, 0.4),
+    0 2px 4px rgba(0, 0, 0, 0.6);
+  letter-spacing: 0.15em;
+  white-space: nowrap;
+  animation: levelup-text-pop 2s ease-out forwards;
+}
+
+.sfx-levelup-particle {
+  position: absolute;
+  bottom: 30%;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--gold-light);
+  box-shadow: 0 0 8px 2px rgba(232, 195, 106, 0.6);
+  animation: levelup-rise 1.6s ease-out forwards;
+}
+
+/* --- Boss Encounter --- */
+@keyframes boss-dim {
+  0% { opacity: 0; }
+  20% { opacity: 0.85; }
+  75% { opacity: 0.85; }
+  100% { opacity: 0; }
+}
+
+@keyframes boss-text-reveal {
+  0% { opacity: 0; letter-spacing: 0.5em; }
+  25% { opacity: 1; letter-spacing: 0.2em; }
+  70% { opacity: 1; }
+  100% { opacity: 0; letter-spacing: 0.15em; }
+}
+
+@keyframes boss-crack-left {
+  0% { opacity: 0; transform: scaleY(0) translateX(-30px); }
+  15% { opacity: 1; transform: scaleY(1) translateX(0); }
+  30% { opacity: 0.3; }
+  45% { opacity: 0.9; }
+  60% { opacity: 0.2; }
+  75% { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+@keyframes boss-crack-right {
+  0% { opacity: 0; transform: scaleY(0) translateX(30px); }
+  20% { opacity: 1; transform: scaleY(1) translateX(0); }
+  35% { opacity: 0.3; }
+  50% { opacity: 0.9; }
+  65% { opacity: 0.2; }
+  80% { opacity: 0; }
+  100% { opacity: 0; }
+}
+
+.sfx-boss {
+  background: radial-gradient(
+    ellipse at 50% 50%,
+    rgba(10, 5, 5, 0.7) 0%,
+    rgba(0, 0, 0, 0.88) 100%
+  );
+  animation: boss-dim 3s ease-in-out forwards;
+}
+
+.sfx-boss-crack {
+  position: absolute;
+  top: 10%;
+  width: 3px;
+  height: 80%;
+  background: linear-gradient(
+    180deg,
+    transparent 0%,
+    rgba(255, 40, 40, 0.9) 20%,
+    rgba(255, 80, 40, 0.6) 50%,
+    rgba(255, 40, 40, 0.9) 80%,
+    transparent 100%
+  );
+  filter: blur(1px);
+  box-shadow: 0 0 15px 4px rgba(255, 30, 30, 0.4);
+}
+
+.sfx-boss-crack-left {
+  left: 15%;
+  transform-origin: top center;
+  animation: boss-crack-left 3s ease-out forwards;
+}
+
+.sfx-boss-crack-right {
+  right: 15%;
+  transform-origin: bottom center;
+  animation: boss-crack-right 3s ease-out forwards;
+}
+
+.sfx-boss-text {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-family: 'Cinzel', serif;
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: #cc3333;
+  text-shadow:
+    0 0 20px rgba(200, 30, 30, 0.8),
+    0 0 40px rgba(200, 30, 30, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.8);
+  letter-spacing: 0.5em;
+  white-space: nowrap;
+  animation: boss-text-reveal 3s ease-out forwards;
+}
+
+/* --- Ambient Particles — subtle gold dust --- */
+@keyframes ambient-float {
+  0% {
+    transform: translateY(0) translateX(0);
+    opacity: var(--mote-opacity, 0.2);
+  }
+  25% {
+    transform: translateY(-25vh) translateX(8px);
+  }
+  50% {
+    transform: translateY(-50vh) translateX(-5px);
+    opacity: var(--mote-opacity, 0.2);
+  }
+  75% {
+    transform: translateY(-75vh) translateX(6px);
+  }
+  100% {
+    transform: translateY(-100vh) translateX(0);
+    opacity: 0;
+  }
+}
+
+.sfx-ambient {
+  position: fixed;
+  inset: 0;
+  z-index: 999;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.sfx-ambient-mote {
+  position: absolute;
+  bottom: -5px;
+  border-radius: 50%;
+  background: var(--gold);
+  box-shadow: 0 0 3px 1px rgba(212, 168, 70, 0.3);
+  animation: ambient-float linear infinite;
+  will-change: transform, opacity;
+}

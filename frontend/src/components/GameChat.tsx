@@ -6,11 +6,37 @@ export interface ChatMessage {
   timestamp?: number
 }
 
+type GamePhase = 'exploration' | 'combat' | 'lobby' | 'rest' | 'shopping' | 'dialogue'
+
+interface QuickAction {
+  emoji: string
+  label: string
+}
+
+const EXPLORATION_ACTIONS: QuickAction[] = [
+  { emoji: '🔍', label: 'Look Around' },
+  { emoji: '🚪', label: 'Open Door' },
+  { emoji: '💬', label: 'Talk to NPC' },
+  { emoji: '🎒', label: 'Check Inventory' },
+  { emoji: '⚔️', label: 'Draw Weapon' },
+  { emoji: '🏕️', label: 'Set Up Camp' },
+]
+
+const COMBAT_ACTIONS: QuickAction[] = [
+  { emoji: '⚔️', label: 'Attack' },
+  { emoji: '🛡️', label: 'Defend' },
+  { emoji: '🔮', label: 'Cast Spell' },
+  { emoji: '🏃', label: 'Dodge' },
+  { emoji: '💊', label: 'Use Potion' },
+  { emoji: '🏳️', label: 'Retreat' },
+]
+
 interface GameChatProps {
   messages: ChatMessage[]
   onSubmitAction: (action: string) => void
   disabled?: boolean
   isWaitingForDM?: boolean
+  phase?: GamePhase
 }
 
 /** Simple markdown-like formatting for DM narration */
@@ -62,7 +88,12 @@ function formatMessage(text: string): React.ReactNode[] {
   return parts
 }
 
-export function GameChat({ messages, onSubmitAction, disabled = false, isWaitingForDM = false }: GameChatProps) {
+function getQuickActions(phase: GamePhase): QuickAction[] {
+  if (phase === 'combat') return COMBAT_ACTIONS
+  return EXPLORATION_ACTIONS
+}
+
+export function GameChat({ messages, onSubmitAction, disabled = false, isWaitingForDM = false, phase = 'exploration' }: GameChatProps) {
   const [input, setInput] = useState('')
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
@@ -142,6 +173,23 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
         <button className="scroll-to-bottom" onClick={scrollToBottom} title="Scroll to latest">
           ↓
         </button>
+      )}
+
+      {!isWaitingForDM && (
+        <div className="quick-actions">
+          {getQuickActions(phase).map((action) => (
+            <button
+              key={action.label}
+              type="button"
+              className="quick-action-btn"
+              disabled={disabled}
+              onClick={() => onSubmitAction(`${action.emoji} ${action.label}`)}
+            >
+              <span className="quick-action-emoji">{action.emoji}</span>
+              <span className="quick-action-label">{action.label}</span>
+            </button>
+          ))}
+        </div>
       )}
 
       <form onSubmit={handleSubmit} className="chat-input-form">
