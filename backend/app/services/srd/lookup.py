@@ -1,6 +1,7 @@
 """
 SRD lookup service for D&D 5e reference data.
 """
+from dataclasses import asdict
 from typing import Optional
 from app.services.srd.models import (
     SRDSpell, SRDMonster, SRDEquipment, SRDClass, SRDRace,
@@ -233,7 +234,7 @@ class SRDLookupService:
         """Get subraces, optionally filtered by parent race."""
         try:
             from app.services.srd.chargen_data import SUBRACES
-            results = SUBRACES
+            results = [asdict(s) for s in SUBRACES]
             if race:
                 race_lower = race.lower()
                 results = [s for s in results if s.get("parent_race", "").lower() == race_lower]
@@ -245,7 +246,7 @@ class SRDLookupService:
         """Get subclasses, optionally filtered by parent class."""
         try:
             from app.services.srd.chargen_data import SUBCLASSES
-            results = SUBCLASSES
+            results = [asdict(s) for s in SUBCLASSES]
             if class_name:
                 class_lower = class_name.lower()
                 results = [s for s in results if s.get("parent_class", "").lower() == class_lower]
@@ -257,7 +258,7 @@ class SRDLookupService:
         """Get all available backgrounds."""
         try:
             from app.services.srd.chargen_data import BACKGROUNDS
-            return [SRDBackground(**b) for b in BACKGROUNDS]
+            return [SRDBackground(**asdict(b)) for b in BACKGROUNDS]
         except (ImportError, Exception):
             return []
 
@@ -265,7 +266,7 @@ class SRDLookupService:
         """Get all 18 D&D 5e skills."""
         try:
             from app.services.srd.chargen_data import SKILLS
-            return [SRDSkill(**s) for s in SKILLS]
+            return [SRDSkill(**asdict(s)) for s in SKILLS]
         except (ImportError, Exception):
             return []
 
@@ -273,6 +274,6 @@ class SRDLookupService:
         """Get all available feats."""
         try:
             from app.services.srd.chargen_data import FEATS
-            return [SRDFeat(**f) for f in FEATS]
+            return [SRDFeat(**asdict(f)) for f in FEATS]
         except (ImportError, Exception):
             return []

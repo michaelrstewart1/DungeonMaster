@@ -1,7 +1,7 @@
 """
 Pydantic models for D&D 5e SRD data types.
 """
-from typing import List, Dict, Optional
+from typing import Any, List, Dict, Optional
 from pydantic import BaseModel, Field
 
 
@@ -90,7 +90,7 @@ class SRDSubclass(BaseModel):
     parent_class: str = Field(..., description="Parent class name")
     subclass_level: int = Field(..., description="Level at which subclass is chosen")
     description: str = Field("", description="Subclass description")
-    features: List[Dict[str, str]] = Field(default_factory=list, description="Subclass features by level")
+    features: List[Dict[str, Any]] = Field(default_factory=list, description="Subclass features by level")
 
 
 class SRDBackground(BaseModel):

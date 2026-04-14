@@ -326,3 +326,279 @@ class TestCharacterDelete:
         """Deleting a non-existent character should return 404."""
         response = await client.delete("/api/characters/nonexistent-id")
         assert response.status_code == 404
+
+
+class TestCharacterCreateExpanded:
+    """Tests for POST /api/characters with expanded chargen fields."""
+
+    async def test_create_character_with_all_new_fields(self, client: AsyncClient):
+        """Creating a character with all new 5e fields should work."""
+        response = await client.post(
+            "/api/characters",
+            json={
+                "name": "Thorin",
+                "race": "dwarf",
+                "class_name": "fighter",
+                "level": 5,
+                "subrace": "hill-dwarf",
+                "subclass": "champion",
+                "background": "soldier",
+                "alignment": "lawful-good",
+                "strength": 16,
+                "dexterity": 12,
+                "constitution": 15,
+                "intelligence": 10,
+                "wisdom": 13,
+                "charisma": 8,
+                "hp": 44,
+                "max_hp": 44,
+                "ac": 18,
+                "speed": 25,
+                "hit_dice": "5d10",
+                "skills": ["athletics", "intimidation"],
+                "saving_throws": ["strength", "constitution"],
+                "languages": ["common", "dwarvish"],
+                "tool_proficiencies": ["smith's tools"],
+                "armor_proficiencies": ["light", "medium", "heavy", "shields"],
+                "weapon_proficiencies": ["simple", "martial"],
+                "features": ["second wind", "action surge", "improved critical"],
+                "equipment": ["chain mail", "shield", "longsword"],
+                "inventory": ["backpack", "torch", "rations"],
+                "personality_traits": "I face problems head-on.",
+                "ideals": "Honor above all.",
+                "bonds": "I fight for my clan.",
+                "flaws": "I have a weakness for ale.",
+                "backstory": "A veteran of many battles.",
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "Thorin"
+        assert data["subrace"] == "hill-dwarf"
+        assert data["subclass"] == "champion"
+        assert data["background"] == "soldier"
+        assert data["alignment"] == "lawful-good"
+        assert data["skills"] == ["athletics", "intimidation"]
+        assert data["saving_throws"] == ["strength", "constitution"]
+        assert data["languages"] == ["common", "dwarvish"]
+        assert data["tool_proficiencies"] == ["smith's tools"]
+        assert data["armor_proficiencies"] == ["light", "medium", "heavy", "shields"]
+        assert data["weapon_proficiencies"] == ["simple", "martial"]
+        assert data["features"] == ["second wind", "action surge", "improved critical"]
+        assert data["equipment"] == ["chain mail", "shield", "longsword"]
+        assert data["personality_traits"] == "I face problems head-on."
+        assert data["ideals"] == "Honor above all."
+        assert data["bonds"] == "I fight for my clan."
+        assert data["flaws"] == "I have a weakness for ale."
+        assert data["backstory"] == "A veteran of many battles."
+        assert data["max_hp"] == 44
+        assert data["speed"] == 25
+        assert data["hit_dice"] == "5d10"
+
+    async def test_backward_compat_minimal_create(self, client: AsyncClient):
+        """Old-style create without new fields should still work."""
+        response = await client.post(
+            "/api/characters",
+            json={
+                "name": "Simple",
+                "race": "human",
+                "class_name": "fighter",
+                "level": 1,
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["name"] == "Simple"
+        # New fields should have defaults
+        assert data["subrace"] is None
+        assert data["subclass"] is None
+        assert data["background"] is None
+        assert data["alignment"] is None
+        assert data["skills"] == []
+        assert data["saving_throws"] == []
+        assert data["languages"] == []
+        assert data["features"] == []
+        assert data["equipment"] == []
+        assert data["personality_traits"] is None
+
+    async def test_create_with_spellcaster_fields(self, client: AsyncClient):
+        """Creating a spellcaster with spells should work."""
+        response = await client.post(
+            "/api/characters",
+            json={
+                "name": "Gandalf",
+                "race": "human",
+                "class_name": "wizard",
+                "level": 5,
+                "intelligence": 18,
+                "spells_known": ["fireball", "shield", "magic missile"],
+                "cantrips_known": ["fire bolt", "mage hand", "prestidigitation"],
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["spells_known"] == ["fireball", "shield", "magic missile"]
+        assert data["cantrips_known"] == ["fire bolt", "mage hand", "prestidigitation"]
+
+    async def test_new_fields_persist_on_get(self, client: AsyncClient):
+        """New fields should be returned when fetching the character."""
+        create_resp = await client.post(
+            "/api/characters",
+            json={
+                "name": "Persisted",
+                "race": "elf",
+                "class_name": "ranger",
+                "level": 3,
+                "subrace": "wood-elf",
+                "background": "outlander",
+                "skills": ["survival", "nature", "stealth"],
+                "languages": ["common", "elvish", "sylvan"],
+            },
+        )
+        char_id = create_resp.json()["id"]
+
+        get_resp = await client.get(f"/api/characters/{char_id}")
+        assert get_resp.status_code == 200
+        data = get_resp.json()
+        assert data["subrace"] == "wood-elf"
+        assert data["background"] == "outlander"
+        assert data["skills"] == ["survival", "nature", "stealth"]
+        assert data["languages"] == ["common", "elvish", "sylvan"]
+
+    async def test_update_new_fields(self, client: AsyncClient):
+        """New fields should be updatable via PUT."""
+        create_resp = await client.post(
+            "/api/characters",
+            json={
+                "name": "Updatable",
+                "race": "human",
+                "class_name": "fighter",
+                "level": 1,
+            },
+        )
+        char_id = create_resp.json()["id"]
+
+        update_resp = await client.put(
+            f"/api/characters/{char_id}",
+            json={
+                "subclass": "champion",
+                "background": "soldier",
+                "skills": ["athletics", "intimidation"],
+                "alignment": "neutral-good",
+            },
+        )
+        assert update_resp.status_code == 200
+        data = update_resp.json()
+        assert data["subclass"] == "champion"
+        assert data["background"] == "soldier"
+        assert data["skills"] == ["athletics", "intimidation"]
+        assert data["alignment"] == "neutral-good"
+
+    async def test_create_with_experience_points(self, client: AsyncClient):
+        """Creating a character with XP should work."""
+        response = await client.post(
+            "/api/characters",
+            json={
+                "name": "Experienced",
+                "race": "human",
+                "class_name": "fighter",
+                "level": 5,
+                "experience_points": 6500,
+            },
+        )
+        assert response.status_code == 201
+        data = response.json()
+        assert data["experience_points"] == 6500
+
+
+class TestCharacterExport:
+    """Tests for GET /api/characters/{id}/export"""
+
+    async def test_export_character_returns_json(self, client: AsyncClient):
+        """Exporting a character should return JSON with Content-Disposition header."""
+        create_resp = await client.post(
+            "/api/characters",
+            json={
+                "name": "Exportable",
+                "race": "human",
+                "class_name": "fighter",
+                "level": 5,
+                "hp": 40,
+                "ac": 16,
+            },
+        )
+        char_id = create_resp.json()["id"]
+
+        export_resp = await client.get(f"/api/characters/{char_id}/export")
+        assert export_resp.status_code == 200
+        assert "application/json" in export_resp.headers["content-type"]
+        assert "attachment" in export_resp.headers.get("content-disposition", "")
+        assert "exportable.json" in export_resp.headers["content-disposition"]
+
+        data = export_resp.json()
+        assert data["name"] == "Exportable"
+        assert data["id"] == char_id
+        assert data["hp"] == 40
+        assert data["ac"] == 16
+
+    async def test_export_character_with_new_fields(self, client: AsyncClient):
+        """Exported character should include all new chargen fields."""
+        create_resp = await client.post(
+            "/api/characters",
+            json={
+                "name": "Full Export",
+                "race": "dwarf",
+                "class_name": "cleric",
+                "level": 3,
+                "subrace": "hill-dwarf",
+                "subclass": "life-domain",
+                "background": "acolyte",
+                "alignment": "lawful-good",
+                "skills": ["medicine", "religion"],
+                "languages": ["common", "dwarvish", "celestial"],
+                "equipment": ["mace", "scale mail", "shield"],
+                "spells_known": ["cure wounds", "bless"],
+                "cantrips_known": ["sacred flame", "guidance"],
+                "personality_traits": "I see omens everywhere.",
+                "ideals": "Faith guides my path.",
+            },
+        )
+        char_id = create_resp.json()["id"]
+
+        export_resp = await client.get(f"/api/characters/{char_id}/export")
+        assert export_resp.status_code == 200
+        data = export_resp.json()
+        assert data["subrace"] == "hill-dwarf"
+        assert data["subclass"] == "life-domain"
+        assert data["background"] == "acolyte"
+        assert data["alignment"] == "lawful-good"
+        assert data["skills"] == ["medicine", "religion"]
+        assert data["languages"] == ["common", "dwarvish", "celestial"]
+        assert data["equipment"] == ["mace", "scale mail", "shield"]
+        assert data["spells_known"] == ["cure wounds", "bless"]
+        assert data["cantrips_known"] == ["sacred flame", "guidance"]
+        assert data["personality_traits"] == "I see omens everywhere."
+        assert data["ideals"] == "Faith guides my path."
+
+    async def test_export_not_found(self, client: AsyncClient):
+        """Exporting a nonexistent character should return 404."""
+        response = await client.get("/api/characters/nonexistent-id/export")
+        assert response.status_code == 404
+
+    async def test_export_filename_sanitized(self, client: AsyncClient):
+        """Export filename should be derived from character name."""
+        create_resp = await client.post(
+            "/api/characters",
+            json={
+                "name": "Sir Galahad",
+                "race": "human",
+                "class_name": "paladin",
+                "level": 1,
+            },
+        )
+        char_id = create_resp.json()["id"]
+
+        export_resp = await client.get(f"/api/characters/{char_id}/export")
+        assert export_resp.status_code == 200
+        disposition = export_resp.headers["content-disposition"]
+        assert "sir_galahad.json" in disposition
