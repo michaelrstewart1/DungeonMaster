@@ -39,9 +39,31 @@ interface GameChatProps {
   phase?: GamePhase
 }
 
+type MessageMood = 'danger' | 'magic' | 'nature' | 'social' | 'dark' | 'neutral'
+
+const MOOD_PATTERNS: { mood: MessageMood; pattern: RegExp }[] = [
+  { mood: 'danger', pattern: /\b(attack|combat|fight|sword|blade|slash|blood|wound|strike|battle|death|kill|damage|crit|hit)\b/i },
+  { mood: 'magic', pattern: /\b(spell|magic|arcane|enchant|glow|shimmer|mystic|rune|ward|aura|conjure|channel)\b/i },
+  { mood: 'nature', pattern: /\b(forest|tree|river|wind|rain|sun|moon|star|flower|meadow|beast|animal|bird)\b/i },
+  { mood: 'social', pattern: /\b(tavern|inn|merchant|shopkeep|barkeep|friend|ally|welcome|greet|smile|laugh|cheer)\b/i },
+  { mood: 'dark', pattern: /\b(dark|shadow|dungeon|cavern|cave|tomb|crypt|undead|skeleton|ghost|whisper|dread|creep)\b/i },
+]
+
+function detectMood(text: string): MessageMood {
+  let best: MessageMood = 'neutral'
+  let bestCount = 0
+  for (const { mood, pattern } of MOOD_PATTERNS) {
+    const matches = text.match(new RegExp(pattern, 'gi'))
+    if (matches && matches.length > bestCount) {
+      bestCount = matches.length
+      best = mood
+    }
+  }
+  return best
+}
+
 /** Simple markdown-like formatting for DM narration */
-function formatMessage(text: string): React.ReactNode[] {
-  // Split by bold **text** and italic *text* patterns
+function formatInline(text: string): React.ReactNode[] {
   const parts: React.ReactNode[] = []
   let remaining = text
   let key = 0
@@ -68,24 +90,34 @@ function formatMessage(text: string): React.ReactNode[] {
       break
     }
 
-    // Add text before match
     if (first.idx > 0) {
       parts.push(remaining.slice(0, first.idx))
     }
 
-    // Add formatted element
     if (first.type === 'bold') {
       parts.push(<strong key={key++}>{first.match![1]}</strong>)
     } else if (first.type === 'italic') {
       parts.push(<em key={key++}>{first.match![1]}</em>)
     } else {
-      parts.push(<span key={key++} className="speech-quote">"{first.match![1]}"</span>)
+      parts.push(<span key={key++} className="speech-quote">&ldquo;{first.match![1]}&rdquo;</span>)
     }
 
     remaining = remaining.slice(first.idx + first.match![0].length)
   }
 
   return parts
+}
+
+/** Split DM text into paragraphs and apply inline formatting */
+function formatMessage(text: string): React.ReactNode[] {
+  // Split on double newlines or single newlines
+  const paragraphs = text.split(/\n{2,}|\n/).filter(p => p.trim())
+  if (paragraphs.length <= 1) {
+    return formatInline(text)
+  }
+  return paragraphs.map((p, i) => (
+    <span key={i} className="dm-paragraph">{formatInline(p.trim())}</span>
+  ))
 }
 
 /** Typewriter effect for DM narration — types text character by character */
@@ -265,9 +297,11 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
           const dmIndex = msg.role === 'dm' ? dmMessageIndices.indexOf(i) : -1
           const isLatestDm = dmIndex >= 0 && dmIndex >= typedMessageCount
           const isTyping = isLatestDm && dmIndex === dmMessageIndices.length - 1
+          const isNewest = i === messages.length - 1
+          const mood = msg.role === 'dm' ? detectMood(msg.text) : 'neutral'
 
           return (
-          <div key={i} className={`chat-message message-${msg.role}`}>
+          <div key={i} className={`chat-message message-${msg.role}${msg.role === 'dm' ? ` mood-${mood}` : ''}${isNewest ? ' message-latest' : ''}`}>
             <div className="message-header">
               <span className="message-role">{msg.role === 'dm' ? '🎲 DM' : '⚔️ You'}</span>
               {msg.timestamp && (
@@ -276,13 +310,13 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
                 </span>
               )}
             </div>
-            <p className="message-text">
+            <div className="message-text">
               {msg.role === 'dm' && isTyping
                 ? <TypewriterText text={msg.text} onComplete={handleTypewriterComplete} />
                 : msg.role === 'dm'
                   ? formatMessage(msg.text)
                   : msg.text}
-            </p>
+            </div>
           </div>
           )
         })}
@@ -290,7 +324,9 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
           <div className="chat-message message-dm typing-message">
             <span className="message-role">🎲 DM</span>
             <div className="typing-indicator">
-              <span></span><span></span><span></span>
+              <span className="typing-quill">✦</span>
+              <span className="typing-text">The DM ponders your fate</span>
+              <span className="typing-dots"><span></span><span></span><span></span></span>
             </div>
           </div>
         )}

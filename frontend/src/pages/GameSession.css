@@ -753,24 +753,107 @@
   font-style: italic;
 }
 
+/* DM paragraph spacing */
+.dm-paragraph {
+  display: block;
+  margin-bottom: 0.5em;
+}
+.dm-paragraph:last-child {
+  margin-bottom: 0;
+}
+
+/* Latest message emphasis */
+.message-dm.message-latest {
+  box-shadow: 0 0 12px rgba(212, 168, 70, 0.15), 0 0 4px rgba(212, 168, 70, 0.08);
+}
+
+/* Mood-tinted DM messages */
+.message-dm.mood-danger {
+  border-left-color: #c44;
+  background: linear-gradient(135deg, rgba(204, 68, 68, 0.08), rgba(212, 168, 70, 0.03));
+}
+.message-dm.mood-danger::after {
+  content: '⚔';
+}
+
+.message-dm.mood-magic {
+  border-left-color: #a66dd4;
+  background: linear-gradient(135deg, rgba(166, 109, 212, 0.08), rgba(212, 168, 70, 0.03));
+}
+.message-dm.mood-magic::after {
+  content: '✧';
+}
+
+.message-dm.mood-dark {
+  border-left-color: #6688aa;
+  background: linear-gradient(135deg, rgba(60, 80, 110, 0.12), rgba(30, 40, 55, 0.06));
+}
+.message-dm.mood-dark::after {
+  content: '🕯';
+  font-size: 0.6rem;
+}
+
+.message-dm.mood-nature {
+  border-left-color: #5a9a5a;
+  background: linear-gradient(135deg, rgba(90, 154, 90, 0.08), rgba(212, 168, 70, 0.03));
+}
+.message-dm.mood-nature::after {
+  content: '🌿';
+  font-size: 0.6rem;
+}
+
+.message-dm.mood-social {
+  border-left-color: var(--gold-light);
+  background: linear-gradient(135deg, rgba(212, 168, 70, 0.12), rgba(212, 168, 70, 0.04));
+}
+.message-dm.mood-social::after {
+  content: '🍺';
+  font-size: 0.6rem;
+}
+
 /* Typing indicator animation */
 .typing-indicator {
   display: flex;
-  gap: 4px;
-  padding: 0.5rem 1rem;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.25rem;
   align-self: flex-start;
 }
 
-.typing-indicator span {
-  width: 6px;
-  height: 6px;
+.typing-quill {
+  color: var(--gold);
+  font-size: 0.9rem;
+  animation: quillPulse 2s ease-in-out infinite;
+}
+
+@keyframes quillPulse {
+  0%, 100% { opacity: 0.4; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.15); }
+}
+
+.typing-text {
+  font-family: var(--font-body);
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+
+.typing-dots {
+  display: flex;
+  gap: 3px;
+}
+
+.typing-dots span {
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--gold-dim);
   animation: typingBounce 1.4s ease-in-out infinite;
 }
 
-.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+.typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+.typing-dots span:nth-child(3) { animation-delay: 0.4s; }
 
 @keyframes typingBounce {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
