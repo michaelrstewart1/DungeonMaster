@@ -101,6 +101,7 @@ test.describe('Overnight Playtest', () => {
   })
 
   test('04 — Start game session and play', async ({ page }) => {
+    test.setTimeout(120_000) // 2 min — Ollama responses can be slow
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     
@@ -349,6 +350,7 @@ test.describe('Overnight Playtest', () => {
   })
 
   test('09 — Game session with multiple interactions', async ({ page }) => {
+    test.setTimeout(300_000) // 5 min — Ollama can be slow under concurrent load
     await page.goto('/')
     await page.waitForLoadState('networkidle')
     
@@ -396,7 +398,7 @@ test.describe('Overnight Playtest', () => {
     for (let i = 0; i < actions.length; i++) {
       // Wait for input to be enabled (DM finished responding)
       const actionInput = page.locator('textarea.chat-input')
-      await expect(actionInput).toBeEnabled({ timeout: 30000 })
+      await expect(actionInput).toBeEnabled({ timeout: 60000 })
       
       await actionInput.fill(actions[i])
       const sendBtn = page.locator('.chat-submit')
@@ -406,8 +408,9 @@ test.describe('Overnight Playtest', () => {
         await actionInput.press('Enter')
       }
       // Wait for DM response (input gets re-enabled after DM responds)
+      // Backend has 45s Ollama timeout + keyword fallback, so allow 60s
       await expect(actionInput).toBeDisabled({ timeout: 5000 })
-      await expect(actionInput).toBeEnabled({ timeout: 30000 })
+      await expect(actionInput).toBeEnabled({ timeout: 60000 })
       await page.waitForTimeout(500) // Brief pause for render
       await screenshot(page, `09-action-${i + 1}-response`)
     }
