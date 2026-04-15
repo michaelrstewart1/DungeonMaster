@@ -169,6 +169,12 @@ test.describe('Overnight Playtest', () => {
     await expect(actionInput).toBeVisible({ timeout: 15000 })
     await screenshot(page, '04-game-session-loaded')
     
+    // Wait for AI greeting to upgrade (gives Ollama time under load)
+    const dmMessage = page.locator('.dm-message').first()
+    await dmMessage.waitFor({ timeout: 5000 }).catch(() => {})
+    // Wait a bit for the async greeting replacement
+    await page.waitForTimeout(8000)
+    
     // Check map area
     const mapArea = page.locator('.map-area')
     if (await mapArea.isVisible()) {
