@@ -19,6 +19,26 @@ async function screenshotFull(page: Page, name: string) {
 test.describe('Overnight Playtest', () => {
   test.setTimeout(120_000) // 2 minutes per test
 
+  // Cleanup stale campaigns from PREVIOUS runs before starting new tests.
+  // Using beforeAll (not afterAll) avoids the race condition where cleanup
+  // deletes campaigns that parallel tests are still using.
+  test.beforeAll(async () => {
+    const baseURL = process.env.E2E_BASE_URL || 'http://localhost:5173'
+    try {
+      const resp = await fetch(`${baseURL}/api/campaigns`)
+      if (!resp.ok) return
+      const campaigns = await resp.json()
+      for (const campaign of campaigns) {
+        await fetch(`${baseURL}/api/campaigns/${campaign.id}`, { method: 'DELETE' }).catch(() => {})
+      }
+      if (campaigns.length > 0) {
+        console.log(`Cleaned up ${campaigns.length} stale campaigns from previous runs`)
+      }
+    } catch {
+      // Cleanup is best-effort
+    }
+  })
+
   test('01 — Home page loads with hero and featured campaigns', async ({ page }) => {
     await page.goto('/')
     await page.waitForLoadState('networkidle')
@@ -454,23 +474,4 @@ test.describe('Overnight Playtest', () => {
     }
   })
 
-  // Cleanup: delete test campaigns after all tests
-  test.afterAll(async () => {
-    const baseURL = process.env.E2E_BASE_URL || 'http://localhost:5173'
-    // API is proxied through nginx on the same host
-    const apiBase = baseURL
-    try {
-      const resp = await fetch(`${apiBase}/api/campaigns`)
-      if (!resp.ok) return
-      const campaigns = await resp.json()
-      for (const campaign of campaigns) {
-        await fetch(`${apiBase}/api/campaigns/${campaign.id}`, { method: 'DELETE' }).catch(() => {})
-      }
-      if (campaigns.length > 0) {
-        console.log(`Cleaned up ${campaigns.length} test campaigns`)
-      }
-    } catch {
-      // Cleanup is best-effort
-    }
-  })
 })
