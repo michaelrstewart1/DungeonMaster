@@ -64,7 +64,9 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
   useEffect(() => {
     // Target the step content area, falling back to the form
     const target = stepContentRef.current || creatorRef.current
-    target?.scrollIntoView?.({ behavior: 'auto', block: 'nearest' })
+    if (target) {
+      target.scrollIntoView({ behavior: 'auto', block: 'start' })
+    }
   }, [step])
 
   // Step 0: Race + Subrace

@@ -2238,12 +2238,35 @@
   align-items: center;
   gap: 0.45rem;
   padding: 1rem 0.75rem 0.85rem;
-  background: linear-gradient(180deg, rgba(28, 26, 40, 0.9) 0%, rgba(14, 12, 22, 0.95) 100%);
-  border: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(35, 32, 55, 0.95) 0%, rgba(20, 18, 30, 0.98) 100%);
+  border: 1px solid rgba(212, 168, 70, 0.15);
   border-radius: 12px;
   transition: all 0.3s;
   position: relative;
   overflow: hidden;
+}
+
+/* Tooltip text hidden by default, shown on hover */
+.ability-card .tooltip-text {
+  display: none;
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(10, 10, 15, 0.95);
+  border: 1px solid var(--gold-border);
+  border-radius: 8px;
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  width: max-content;
+  max-width: 250px;
+  z-index: 10;
+  pointer-events: none;
+}
+
+.ability-card:hover .tooltip-text {
+  display: block;
 }
 
 /* Top accent line */
