@@ -823,6 +823,12 @@
   gap: 0.5rem;
   padding: 0.5rem 0.25rem;
   align-self: flex-start;
+  white-space: nowrap;
+}
+
+.typing-message {
+  width: auto !important;
+  max-width: fit-content !important;
 }
 
 .typing-quill {
