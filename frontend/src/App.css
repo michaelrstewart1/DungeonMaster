@@ -2238,13 +2238,13 @@
   align-items: center;
   gap: 0.45rem;
   padding: 1rem 0.75rem 0.85rem;
-  background: linear-gradient(180deg, var(--bg-light) 0%, var(--bg-medium) 100%);
-  border: 1px solid var(--gold-border);
+  background: linear-gradient(180deg, #2d2d4a 0%, #222240 100%);
+  border: 1px solid rgba(212, 168, 70, 0.4);
   border-radius: 12px;
   transition: all 0.3s;
   position: relative;
   overflow: hidden;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(212, 168, 70, 0.08);
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5), inset 0 1px 0 rgba(212, 168, 70, 0.12);
 }
 
 /* Tooltip text hidden by default, shown on hover */
@@ -2415,10 +2415,10 @@
   margin-bottom: 1.5rem;
   padding: 1.25rem 1.5rem;
   background:
-    radial-gradient(ellipse at 20% 30%, rgba(212, 168, 70, 0.08) 0%, transparent 60%),
-    linear-gradient(135deg, var(--bg-light) 0%, var(--bg-medium) 100%);
+    radial-gradient(ellipse at 20% 30%, rgba(212, 168, 70, 0.1) 0%, transparent 60%),
+    linear-gradient(135deg, #2d2d4a 0%, #222240 100%);
   border-radius: 10px;
-  border: 1px solid var(--gold-border);
+  border: 1px solid rgba(212, 168, 70, 0.4);
   position: relative;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2), inset 0 1px 0 rgba(212, 168, 70, 0.04);
 }
@@ -6060,8 +6060,8 @@
 .review-section {
   margin-bottom: 1rem;
   padding: 0.75rem 1rem;
-  background: linear-gradient(180deg, var(--bg-medium) 0%, var(--bg-dark) 100%);
-  border: 1px solid var(--gold-border);
+  background: linear-gradient(180deg, #2d2d4a 0%, #222240 100%);
+  border: 1px solid rgba(212, 168, 70, 0.35);
   border-radius: 8px;
   animation: fadeInUp 0.35s ease-out both;
 }
@@ -6098,9 +6098,9 @@
   gap: 0.15rem;
   padding: 0.5rem 0.75rem;
   background:
-    radial-gradient(ellipse at center top, rgba(212, 168, 70, 0.12) 0%, transparent 70%),
-    linear-gradient(180deg, var(--bg-light) 0%, var(--bg-medium) 100%);
-  border: 1px solid rgba(212, 168, 70, 0.3);
+    radial-gradient(ellipse at center top, rgba(212, 168, 70, 0.15) 0%, transparent 70%),
+    linear-gradient(180deg, #2d2d4a 0%, #222240 100%);
+  border: 1px solid rgba(212, 168, 70, 0.4);
   border-radius: 8px 8px 4px 4px;
   min-width: 58px;
   position: relative;
