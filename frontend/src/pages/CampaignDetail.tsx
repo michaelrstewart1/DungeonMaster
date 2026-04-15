@@ -286,20 +286,22 @@ export function CampaignDetail() {
         ) : null}
       </section>
 
-      <section className="campaign-actions">
-        {characterMode === 'none' && characters.length === 0 && (
-          <p className="campaign-warning">
-            ⚠️ You haven't added any characters yet. Add at least one hero before beginning your adventure!
-          </p>
-        )}
-        <button
-          className="btn-primary btn-start-game"
-          onClick={handleStartGame}
-          disabled={startingGame || characters.length === 0}
-        >
-          {startingGame ? 'Starting...' : 'Begin Adventure'}
-        </button>
-      </section>
+      {characterMode === 'none' && (
+        <section className="campaign-actions">
+          {characters.length === 0 && (
+            <p className="campaign-warning">
+              ⚠️ You haven't added any characters yet. Add at least one hero before beginning your adventure!
+            </p>
+          )}
+          <button
+            className="btn-primary btn-start-game"
+            onClick={handleStartGame}
+            disabled={startingGame || characters.length === 0}
+          >
+            {startingGame ? 'Starting...' : 'Begin Adventure'}
+          </button>
+        </section>
+      )}
 
       {/* Session History */}
       {campaignId && <SessionHistory campaignId={campaignId} />}
