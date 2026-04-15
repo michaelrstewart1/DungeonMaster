@@ -1,6 +1,7 @@
 """Game session management endpoints."""
 from typing import List, Optional
 from datetime import datetime, timezone
+import logging
 import random
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
@@ -12,6 +13,8 @@ from app.models.enums import GamePhase
 from app.api import storage
 from app.db import get_db
 import app.repository as repo
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/game", tags=["game"])
 
@@ -229,8 +232,8 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                 world_context=world_context,
                 story_bible=story_bible,
             )
-        except Exception:
-            pass  # fall through to keyword mock
+        except Exception as exc:
+            logger.warning("Narrator failed, falling back to keyword mock: %s", exc)
 
     # Keyword mock fallback
     import re
@@ -266,7 +269,7 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                 "The sounds of the cavern seem distant here. You feel your strength slowly returning "
                 "as you tend to your wounds and gather your resolve for what lies ahead.")
 
-    return (f"You {player_action}. The cavern seems to respond to your presence — "
+    return ("The cavern seems to respond to your presence — "
             "shadows shift along the walls, and you hear a distant sound, like stone grinding "
             "against stone. Something has taken notice of you.")
 

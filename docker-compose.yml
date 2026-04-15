@@ -16,14 +16,14 @@ services:
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     environment:
-      - DATABASE_URL=postgresql+asyncpg://dm:${POSTGRES_PASSWORD:-changeme}@postgres:5432/dungeon_master
-      - REDIS_URL=redis://redis:6379/0
-      - MONGODB_URL=mongodb://mongo:27017/srd
-      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
-      - LLM_MODEL=${LLM_MODEL:-llama3.1:8b}
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
-      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
-      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - DM_DATABASE_URL=postgresql+asyncpg://dm:${POSTGRES_PASSWORD:-changeme}@postgres:5432/dungeon_master
+      - DM_REDIS_URL=redis://redis:6379/0
+      - DM_MONGODB_URL=mongodb://mongo:27017/srd
+      - DM_LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - DM_OLLAMA_MODEL=${LLM_MODEL:-llama3.1:8b}
+      - DM_OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - DM_ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - DM_OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - TTS_PROVIDER=${TTS_PROVIDER:-piper}
       - STT_PROVIDER=${STT_PROVIDER:-whisper}
     depends_on:

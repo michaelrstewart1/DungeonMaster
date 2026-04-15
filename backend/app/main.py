@@ -24,19 +24,36 @@ logger = logging.getLogger(__name__)
 def _init_app_state(app: FastAPI) -> None:
     """Initialize narrator and TTS on app startup.
 
-    When an OpenAI API key is configured the app uses real GPT-4o narration
-    and the onyx TTS voice (deep, wizard-like).  When no key is present we fall
-    back to None / FakeTTS so all unit-tests still pass without network calls.
+    Supports OpenAI (cloud) and Ollama (local) LLM providers based on config.
+    Falls back to None / FakeTTS so unit-tests still pass without network calls.
     """
     from app.config import settings
     from app.services.llm.narrator import DMNarrator
     from app.services.llm.openai import OpenAIProvider
+    from app.services.llm.ollama import OllamaProvider
     from app.services.voice.tts import FakeTTS, OpenAITTS
 
     narrator = None
     tts = FakeTTS()
 
-    if settings.openai_api_key:
+    provider = settings.llm_provider.lower()
+
+    if provider == "ollama":
+        try:
+            llm = OllamaProvider(
+                base_url=settings.ollama_base_url,
+                model=settings.ollama_model,
+            )
+            narrator = DMNarrator(llm=llm, max_history=30)
+            logger.info(
+                "AI DM: Ollama narrator ready (model=%s, url=%s)",
+                settings.ollama_model,
+                settings.ollama_base_url,
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.warning("AI DM: could not init Ollama (%s) — using fallbacks", exc)
+
+    elif provider == "openai" and settings.openai_api_key:
         try:
             llm = OpenAIProvider(api_key=settings.openai_api_key)
             narrator = DMNarrator(llm=llm, max_history=30)
@@ -48,6 +65,9 @@ def _init_app_state(app: FastAPI) -> None:
             logger.info("AI DM: GPT-4o narrator + OpenAI TTS (voice=%s) ready", settings.openai_tts_voice)
         except Exception as exc:  # pragma: no cover
             logger.warning("AI DM: could not init OpenAI services (%s) — using fallbacks", exc)
+
+    if narrator is None:
+        logger.warning("AI DM: No LLM provider active (provider=%s) — using keyword fallbacks", provider)
 
     app.state.narrator = narrator
     app.state.tts = tts
