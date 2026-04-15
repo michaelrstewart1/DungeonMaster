@@ -398,10 +398,14 @@ export function GameSession() {
           setShowRecap(true)
         }
       } catch { /* no recap available — skip */ }
-      // Fetch the real AI greeting + scene set
+      // Fetch the real AI greeting with a client-side timeout
       let openingText = state.current_scene || 'Welcome, adventurers. Your legend begins tonight.'
       try {
-        openingText = await getSessionGreeting(sessionId)
+        const greetingPromise = getSessionGreeting(sessionId)
+        const timeoutPromise = new Promise<string>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 8000)
+        )
+        openingText = await Promise.race([greetingPromise, timeoutPromise])
       } catch { /* fallback to current_scene */ }
       setMessages([{ role: 'dm', text: openingText, timestamp: Date.now() }])
       processDMMessage(openingText)

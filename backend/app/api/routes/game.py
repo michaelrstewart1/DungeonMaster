@@ -313,7 +313,7 @@ async def get_session_greeting(request: Request, session_id: str, db: AsyncSessi
                     world_context=world_context,
                     tone=tone,
                 ),
-                timeout=10.0,
+                timeout=3.0,
             )
             await repo.set_campaign_story_bible(db, campaign_id, bible)
             existing_bible = bible
@@ -332,7 +332,7 @@ async def get_session_greeting(request: Request, session_id: str, db: AsyncSessi
                     last_summary=last_summary,
                     world_context=greeting_world_context,
                 ),
-                timeout=15.0,
+                timeout=5.0,
             )
         except asyncio.TimeoutError:
             greeting = None  # fall through to static greeting
