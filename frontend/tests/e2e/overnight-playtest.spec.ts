@@ -94,8 +94,8 @@ test.describe('Overnight Playtest', () => {
     ])
     expect(confirmResponse.status()).toBeLessThan(400)
 
-    // Should see character sheet (picker closes, characters reload)
-    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 15000 })
+    // Should see character in party tray (picker closes, characters reload)
+    await expect(page.locator('.party-tray-member')).toBeVisible({ timeout: 15000 })
     await screenshot(page, '03-character-added')
     await screenshotFull(page, '03-campaign-with-character-full')
   })
@@ -122,7 +122,7 @@ test.describe('Overnight Playtest', () => {
       page.waitForResponse(resp => resp.url().includes('/api/characters') && resp.request().method() === 'POST', { timeout: 15000 }),
       page.click('[data-testid="picker-confirm"]'),
     ])
-    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 15000 })
+    await expect(page.locator('.party-tray-member')).toBeVisible({ timeout: 15000 })
     
     // Click Begin Adventure
     const startBtn = page.locator('.btn-start-game')
@@ -344,7 +344,7 @@ test.describe('Overnight Playtest', () => {
     await page.click('.breadcrumb-link')
     await expect(page).toHaveURL('/', { timeout: 10000 })
     await page.waitForLoadState('networkidle')
-    await expect(page.locator('.hero, .featured-campaigns')).toBeVisible({ timeout: 10000 })
+    await expect(page.locator('.hero')).toBeVisible({ timeout: 10000 })
     await page.waitForTimeout(500) // Let background slideshow and animations settle
     await screenshot(page, '07-back-home')
   })
@@ -368,7 +368,7 @@ test.describe('Overnight Playtest', () => {
       page.waitForResponse(resp => resp.url().includes('/api/characters') && resp.request().method() === 'POST', { timeout: 15000 }),
       page.click('[data-testid="picker-confirm"]'),
     ])
-    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 15000 })
+    await expect(page.locator('.party-tray-member')).toBeVisible({ timeout: 15000 })
     
     // Add second character
     const addBtn = page.locator('.party-tray-add, button:has-text("+ Add")')
@@ -408,7 +408,7 @@ test.describe('Overnight Playtest', () => {
       page.waitForResponse(resp => resp.url().includes('/api/characters') && resp.request().method() === 'POST', { timeout: 15000 }),
       page.click('[data-testid="picker-confirm"]'),
     ])
-    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 15000 })
+    await expect(page.locator('.party-tray-member')).toBeVisible({ timeout: 15000 })
     
     // Start game
     await page.locator('.btn-start-game').click()

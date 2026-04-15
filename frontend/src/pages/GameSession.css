@@ -6653,9 +6653,7 @@
    ============================================================ */
 
 .encounter-panel-container {
-  position: fixed;
-  bottom: 2rem;
-  left: 2rem;
+  position: relative;
   z-index: 400;
 }
 
@@ -6680,12 +6678,11 @@
 }
 
 .encounter-panel {
-  position: fixed;
-  bottom: 2rem;
-  left: 2rem;
-  max-width: 420px;
-  width: 90vw;
-  max-height: 80vh;
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  max-height: 70vh;
   background: radial-gradient(ellipse at 50% 0%, rgba(212, 168, 70, 0.08) 0%, transparent 50%),
               linear-gradient(180deg, rgba(26, 26, 38, 0.98) 0%, rgba(18, 18, 26, 0.98) 100%);
   border: 2px solid var(--gold-dim);
