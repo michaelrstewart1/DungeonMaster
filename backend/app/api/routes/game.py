@@ -351,7 +351,7 @@ async def get_session_greeting(request: Request, session_id: str, db: AsyncSessi
                     last_summary=last_summary,
                     world_context=greeting_world_context,
                 ),
-                timeout=12.0,
+                timeout=25.0,
             )
         except asyncio.TimeoutError:
             greeting = None  # fall through to static greeting
@@ -359,6 +359,7 @@ async def get_session_greeting(request: Request, session_id: str, db: AsyncSessi
         greeting = None
 
     if not greeting:
+        campaign_name = campaign.get("name", "Adventure")
         if last_summary:
             greeting = (
                 f"Welcome back, brave souls. When last we met, {last_summary} "
@@ -366,7 +367,8 @@ async def get_session_greeting(request: Request, session_id: str, db: AsyncSessi
             )
         else:
             greeting = (
-                "Welcome, adventurers. A world of danger and wonder awaits you. "
+                f"Welcome, adventurers, to {campaign_name}. "
+                "A world of danger and wonder awaits you. "
                 "Your legend begins tonight — what will history remember of you?"
             )
 
