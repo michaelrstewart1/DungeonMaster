@@ -131,8 +131,7 @@ test.describe('Overnight Playtest', () => {
     // Should navigate to game session
     await expect(page).toHaveURL(/\/game\//, { timeout: 15000 })
     
-    // Wait for game UI to load
-    await page.waitForTimeout(3000)
+    // Wait for game UI to load (greeting has 8s client timeout)
     await screenshot(page, '04-game-session-initial')
     
     // Check for error boundary
@@ -144,9 +143,9 @@ test.describe('Overnight Playtest', () => {
       return
     }
     
-    // Wait for game elements
-    const gameSession = page.locator('.game-session')
-    await expect(gameSession).toBeVisible({ timeout: 10000 })
+    // Wait for chat input to appear (greeting loaded or timed out)
+    const actionInput = page.locator('textarea.chat-input')
+    await expect(actionInput).toBeVisible({ timeout: 15000 })
     await screenshot(page, '04-game-session-loaded')
     
     // Check map area
@@ -161,12 +160,10 @@ test.describe('Overnight Playtest', () => {
       await screenshot(page, '04-chat-area')
     }
     
-    // Wait for greeting/narrative to appear
-    await page.waitForTimeout(5000)
+    // Take greeting screenshot
     await screenshot(page, '04-after-greeting')
     
-    // Try to type an action
-    const actionInput = page.locator('textarea.chat-input')
+    // Type an action
     if (await actionInput.isVisible()) {
       await actionInput.fill('I look around the room and check for traps')
       await screenshot(page, '04-action-typed')
@@ -376,8 +373,9 @@ test.describe('Overnight Playtest', () => {
     await page.locator('.btn-start-game').click()
     await expect(page).toHaveURL(/\/game\//, { timeout: 15000 })
     
-    // Wait for game to load
-    await page.waitForTimeout(5000)
+    // Wait for game to load (greeting has 8s client timeout)
+    const chatInput = page.locator('textarea.chat-input')
+    await expect(chatInput).toBeVisible({ timeout: 15000 })
     
     // Check for error
     const errorBoundary = page.locator('text=Something went wrong')
