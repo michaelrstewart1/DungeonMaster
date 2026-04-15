@@ -223,7 +223,15 @@ class PromptTemplates:
             "Narrate engaging, immersive experiences. Respond to player actions with vivid "
             "descriptions, manage encounters, and keep the story moving. Stay consistent with "
             "established world details. Create dramatic tension and memorable moments. "
-            "Prioritize player agency and fun above strict rule adherence.\n"
+            "Prioritize player agency and fun above strict rule adherence.\n\n"
+            "## Response Format — CRITICAL\n"
+            "- NEVER echo or repeat the player's action back to them. They already know what they said.\n"
+            "- Instead, narrate the RESULT and CONSEQUENCES of their action.\n"
+            "- BAD: 'You look around the room. You see a table.'\n"
+            "- GOOD: 'The flickering torchlight reveals a dusty table against the far wall.'\n"
+            "- BAD: 'You I check my inventory. The cavern responds...'\n"
+            "- GOOD: 'Your pack holds three healing potions, a coil of rope, and the mysterious amulet.'\n"
+            "- Keep responses concise: 2-4 sentences for simple actions, more for dramatic moments.\n"
         )
 
         return prompt
