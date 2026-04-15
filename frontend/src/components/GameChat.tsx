@@ -331,12 +331,18 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
           )
         })}
         {isWaitingForDM && (
-          <div className="chat-message message-dm typing-message">
+          <div className="chat-message message-dm typing-message dm-thinking-aura">
             <span className="message-role">🎲 DM</span>
             <div className="typing-indicator">
               <span className="typing-quill">✦</span>
               <span className="typing-text">The DM ponders your fate</span>
               <span className="typing-dots"><span></span><span></span><span></span></span>
+            </div>
+            <div className="thinking-particles">
+              <span className="particle">✧</span>
+              <span className="particle">✦</span>
+              <span className="particle">⚝</span>
+              <span className="particle">✧</span>
             </div>
           </div>
         )}

@@ -841,7 +841,33 @@
   font-size: 0.6rem;
 }
 
-/* Typing indicator animation */
+/* Typing indicator animation — mystical DM thinking */
+.dm-thinking-aura {
+  position: relative;
+  border: 1px solid rgba(212, 175, 55, 0.3) !important;
+  box-shadow:
+    0 0 12px rgba(212, 175, 55, 0.15),
+    0 0 30px rgba(212, 175, 55, 0.06),
+    inset 0 0 12px rgba(212, 175, 55, 0.04);
+  animation: auraBreath 3s ease-in-out infinite;
+  overflow: hidden;
+}
+
+@keyframes auraBreath {
+  0%, 100% {
+    box-shadow:
+      0 0 12px rgba(212, 175, 55, 0.15),
+      0 0 30px rgba(212, 175, 55, 0.06),
+      inset 0 0 12px rgba(212, 175, 55, 0.04);
+  }
+  50% {
+    box-shadow:
+      0 0 18px rgba(212, 175, 55, 0.25),
+      0 0 40px rgba(212, 175, 55, 0.1),
+      inset 0 0 18px rgba(212, 175, 55, 0.06);
+  }
+}
+
 .typing-indicator {
   display: flex;
   align-items: center;
@@ -858,13 +884,28 @@
 
 .typing-quill {
   color: var(--gold);
-  font-size: 0.9rem;
-  animation: quillPulse 2s ease-in-out infinite;
+  font-size: 1rem;
+  animation: quillFloat 2.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 4px rgba(212, 175, 55, 0.5));
 }
 
-@keyframes quillPulse {
-  0%, 100% { opacity: 0.4; transform: scale(1); }
-  50% { opacity: 1; transform: scale(1.15); }
+@keyframes quillFloat {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(1) rotate(0deg);
+    filter: drop-shadow(0 0 4px rgba(212, 175, 55, 0.3));
+  }
+  25% {
+    transform: scale(1.1) rotate(-5deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2) rotate(0deg);
+    filter: drop-shadow(0 0 8px rgba(212, 175, 55, 0.6));
+  }
+  75% {
+    transform: scale(1.1) rotate(5deg);
+  }
 }
 
 .typing-text {
@@ -873,6 +914,22 @@
   color: var(--text-dim);
   font-style: italic;
   letter-spacing: 0.02em;
+  background: linear-gradient(
+    90deg,
+    var(--text-dim) 0%,
+    var(--gold-light) 50%,
+    var(--text-dim) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: textShimmer 3s ease-in-out infinite;
+}
+
+@keyframes textShimmer {
+  0%, 100% { background-position: 100% 0; }
+  50% { background-position: -100% 0; }
 }
 
 .typing-dots {
@@ -886,6 +943,7 @@
   border-radius: 50%;
   background: var(--gold-dim);
   animation: typingBounce 1.4s ease-in-out infinite;
+  box-shadow: 0 0 4px rgba(212, 175, 55, 0.3);
 }
 
 .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
@@ -894,6 +952,63 @@
 @keyframes typingBounce {
   0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
   30% { transform: translateY(-6px); opacity: 1; }
+}
+
+/* Floating mystical particles */
+.thinking-particles {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.thinking-particles .particle {
+  position: absolute;
+  color: var(--gold);
+  font-size: 0.6rem;
+  opacity: 0;
+  animation: particleDrift 4s ease-in-out infinite;
+}
+
+.thinking-particles .particle:nth-child(1) {
+  left: 10%;
+  bottom: 0;
+  animation-delay: 0s;
+}
+
+.thinking-particles .particle:nth-child(2) {
+  left: 40%;
+  bottom: 0;
+  animation-delay: 1s;
+}
+
+.thinking-particles .particle:nth-child(3) {
+  left: 70%;
+  bottom: 0;
+  animation-delay: 2s;
+}
+
+.thinking-particles .particle:nth-child(4) {
+  left: 90%;
+  bottom: 0;
+  animation-delay: 3s;
+}
+
+@keyframes particleDrift {
+  0% {
+    transform: translateY(0) scale(0.5);
+    opacity: 0;
+  }
+  20% {
+    opacity: 0.6;
+  }
+  60% {
+    opacity: 0.3;
+  }
+  100% {
+    transform: translateY(-30px) scale(1);
+    opacity: 0;
+  }
 }
 
 /* Typewriter effect for DM narration */
@@ -2167,27 +2282,7 @@
   border-radius: 2px;
 }
 
-.typing-indicator {
-  display: flex;
-  gap: 4px;
-  padding: 0.5rem 0.75rem;
-}
-
-.typing-indicator span {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--gold-dim);
-  animation: typingBounce 1.4s ease-in-out infinite;
-}
-
-.typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
-.typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
-
-@keyframes typingBounce {
-  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
-  30% { transform: translateY(-6px); opacity: 1; }
-}
+/* (typing-indicator styles consolidated above in main section) */
 
 /* ============================================================
    Iteration 46: Connection Status Enhancement
