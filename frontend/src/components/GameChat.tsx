@@ -302,22 +302,20 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
         </button>
       )}
 
-      {!isWaitingForDM && (
-        <div className="quick-actions">
-          {getQuickActions(phase).map((action) => (
-            <button
-              key={action.label}
-              type="button"
-              className="quick-action-btn"
-              disabled={disabled}
-              onClick={() => onSubmitAction(`${action.emoji} ${action.label}`)}
-            >
-              <span className="quick-action-emoji">{action.emoji}</span>
-              <span className="quick-action-label">{action.label}</span>
-            </button>
-          ))}
-        </div>
-      )}
+      <div className={`quick-actions ${isWaitingForDM ? 'waiting' : ''}`}>
+        {getQuickActions(phase).map((action) => (
+          <button
+            key={action.label}
+            type="button"
+            className="quick-action-btn"
+            disabled={disabled || isWaitingForDM}
+            onClick={() => onSubmitAction(`${action.emoji} ${action.label}`)}
+          >
+            <span className="quick-action-emoji">{action.emoji}</span>
+            <span className="quick-action-label">{action.label}</span>
+          </button>
+        ))}
+      </div>
 
       <form onSubmit={handleSubmit} className="chat-input-form">
         <div className="chat-input-wrapper">

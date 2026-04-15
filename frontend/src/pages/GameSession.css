@@ -374,13 +374,14 @@
   background: linear-gradient(135deg, rgba(212, 168, 70, 0.1), transparent, rgba(212, 168, 70, 0.05));
 }
 
-/* Audio Controls — Redesigned (Iteration 20 - GameSession override) */
+/* Audio Controls — Redesigned (Iteration 21 - horizontal row) */
 .audio-controls {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.85rem;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
   background:
     radial-gradient(ellipse at 50% 0%, rgba(212, 168, 70, 0.04) 0%, transparent 70%),
     linear-gradient(180deg, var(--bg-medium) 0%, rgba(26, 26, 38, 0.9) 100%);
@@ -401,15 +402,9 @@
   background: linear-gradient(90deg, transparent, var(--gold-dim), transparent);
 }
 
-/* Waveform visualizer placeholder */
+/* Waveform visualizer placeholder — hidden in row layout */
 .audio-controls::after {
-  content: '∿ ∿ ∿ ∿ ∿';
-  display: block;
-  font-size: 0.6rem;
-  color: var(--gold-dim);
-  opacity: 0.15;
-  letter-spacing: 0.12em;
-  animation: waveformAnim 2s ease-in-out infinite;
+  display: none;
 }
 
 @keyframes waveformAnim {
@@ -418,8 +413,8 @@
 }
 
 .audio-btn {
-  width: 42px;
-  height: 42px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -427,9 +422,10 @@
   background: linear-gradient(180deg, var(--bg-light) 0%, var(--bg-dark) 100%);
   border: 2px solid var(--border);
   cursor: pointer;
-  font-size: 1.1rem;
+  font-size: 1rem;
   transition: all 0.25s;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
 }
 
 .audio-btn:hover {
@@ -2819,6 +2815,12 @@
 .quick-action-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.quick-actions.waiting .quick-action-btn {
+  opacity: 0.3;
+  border-color: var(--border);
+  color: var(--text-muted);
 }
 
 .quick-action-emoji {
