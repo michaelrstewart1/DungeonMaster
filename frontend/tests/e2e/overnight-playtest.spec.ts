@@ -22,21 +22,9 @@ test.describe('Overnight Playtest', () => {
   // Cleanup stale campaigns from PREVIOUS runs before starting new tests.
   // Using beforeAll (not afterAll) avoids the race condition where cleanup
   // deletes campaigns that parallel tests are still using.
+  // Quick health check before tests start
   test.beforeAll(async () => {
-    const baseURL = process.env.E2E_BASE_URL || 'http://localhost:5173'
-    try {
-      const resp = await fetch(`${baseURL}/api/campaigns`)
-      if (!resp.ok) return
-      const campaigns = await resp.json()
-      for (const campaign of campaigns) {
-        await fetch(`${baseURL}/api/campaigns/${campaign.id}`, { method: 'DELETE' }).catch(() => {})
-      }
-      if (campaigns.length > 0) {
-        console.log(`Cleaned up ${campaigns.length} stale campaigns from previous runs`)
-      }
-    } catch {
-      // Cleanup is best-effort
-    }
+    // No-op — each test navigates via page which handles the connection
   })
 
   test('01 — Home page loads with hero and featured campaigns', async ({ page }) => {

@@ -6,15 +6,21 @@ from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.pool import NullPool
+from sqlalchemy import text
 
-# Get database URL from environment, with default for development
-DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dungeon_master.db")
+# Use DM_DATABASE_URL (matching pydantic settings env_prefix) with fallback
+DATABASE_URL = os.getenv("DM_DATABASE_URL", os.getenv("DATABASE_URL", "sqlite+aiosqlite:///./dungeon_master.db"))
 
 # Create async engine
+connect_args = {}
+if "sqlite" in DATABASE_URL:
+    connect_args = {"timeout": 30}  # 30s busy timeout for SQLite
+
 engine = create_async_engine(
     DATABASE_URL,
     echo=os.getenv("SQL_ECHO", "false").lower() == "true",
     poolclass=NullPool if "sqlite" in DATABASE_URL else None,
+    connect_args=connect_args,
 )
 
 # Create async session factory
@@ -37,6 +43,10 @@ async def init_db() -> None:
     from app.models.database import Base
 
     async with engine.begin() as conn:
+        # Enable WAL mode for SQLite (better concurrent access)
+        if "sqlite" in DATABASE_URL:
+            await conn.execute(text("PRAGMA journal_mode=WAL"))
+            await conn.execute(text("PRAGMA busy_timeout=30000"))
         await conn.run_sync(Base.metadata.create_all)
 
 
