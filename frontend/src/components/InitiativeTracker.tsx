@@ -23,7 +23,7 @@ export function InitiativeTracker({ combatants }: InitiativeTrackerProps) {
   }, [hasCombat])
 
   return (
-    <div className={`initiative-tracker ${!hasCombat ? 'empty' : ''}`}>
+    <div className={`initiative-tracker ${!hasCombat ? 'empty' : ''} ${collapsed ? 'is-collapsed' : ''}`}>
       <div
         className="initiative-header"
         onClick={() => setCollapsed(c => !c)}

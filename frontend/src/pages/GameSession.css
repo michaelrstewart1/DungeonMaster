@@ -246,6 +246,38 @@
   75% { opacity: 1; }
 }
 
+/* Idle eye animations — blinking + subtle gaze wandering */
+.dm-avatar.idle .avatar-eye-group {
+  animation: eyeBlink 4.5s ease-in-out infinite;
+}
+
+.dm-avatar.idle .avatar-eye-group.left {
+  animation-delay: 0s;
+}
+
+.dm-avatar.idle .avatar-eye-group.right {
+  animation-delay: 0.05s;
+}
+
+@keyframes eyeBlink {
+  0%, 8%, 100% { transform: scaleY(1); }
+  4% { transform: scaleY(0.05); }
+}
+
+/* Subtle gaze shift when idle */
+.dm-avatar.idle .avatar-eye-group {
+  animation: eyeBlink 4.5s ease-in-out infinite, eyeWander 8s ease-in-out infinite;
+}
+
+@keyframes eyeWander {
+  0%, 100% { transform: translateX(0) scaleY(1); }
+  15% { transform: translateX(-1.5px) scaleY(1); }
+  30%, 45% { transform: translateX(0) scaleY(1); }
+  60% { transform: translateX(1px) scaleY(1); }
+  75% { transform: translateX(0) scaleY(1); }
+  /* blink happens via eyeBlink animation stacking */
+}
+
 /* Floating spark particles */
 .spark {
   animation: sparkFloat 6s ease-in-out infinite;
@@ -971,6 +1003,14 @@
   font-style: italic;
   font-size: 0.85rem;
   padding: 0;
+}
+
+.initiative-tracker.is-collapsed {
+  padding: 0.5rem 0.75rem;
+}
+
+.initiative-tracker.is-collapsed::before {
+  display: none;
 }
 
 .initiative-tracker.empty::after {

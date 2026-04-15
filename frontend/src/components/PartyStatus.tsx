@@ -70,7 +70,7 @@ export function PartyStatus({ characters }: PartyStatusProps) {
               </div>
               <div className="party-member-info">
                 <div className="party-member-name-row">
-                  <span className="party-member-name">{char.name}</span>
+                  <span className="party-member-name" title={char.name}>{char.name}</span>
                   <span className="party-member-class" title={char.class_name}>{classIcon}</span>
                 </div>
                 <div className="party-member-hp-bar" title={`${char.hp}/${char.max_hp} HP`}>
