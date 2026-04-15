@@ -547,9 +547,9 @@
 /* Map area — Atmospheric (Iteration 16) */
 .map-area {
   position: relative;
-  flex: 1;
+  flex: 3;
   overflow: auto;
-  min-height: 200px;
+  min-height: 350px;
   background:
     /* Faded grid pattern */
     linear-gradient(rgba(46, 46, 68, 0.1) 1px, transparent 1px),
@@ -652,7 +652,8 @@
 /* Chat area — Upgraded (Iteration 14) */
 .chat-area {
   flex: 1;
-  min-height: 200px;
+  min-height: 150px;
+  max-height: 280px;
   border-top: 1px solid var(--border);
   overflow: hidden;
   position: relative;
