@@ -88,12 +88,13 @@ class OllamaProvider(LLMProvider):
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
+                "num_ctx": 4096,
             },
         }
 
-        # Add system message if provided
+        # Add system message as first message if provided
         if system_prompt:
-            payload["system"] = system_prompt
+            formatted_messages.insert(0, {"role": "system", "content": system_prompt})
 
         try:
             response = await self._client.post(
@@ -166,12 +167,13 @@ class OllamaProvider(LLMProvider):
             "options": {
                 "temperature": temperature,
                 "num_predict": max_tokens,
+                "num_ctx": 4096,
             },
         }
 
-        # Add system message if provided
+        # Add system message as first message if provided
         if system_prompt:
-            payload["system"] = system_prompt
+            formatted_messages.insert(0, {"role": "system", "content": system_prompt})
 
         try:
             async with self._client.stream(

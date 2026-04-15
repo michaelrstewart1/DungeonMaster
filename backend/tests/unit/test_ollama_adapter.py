@@ -108,8 +108,9 @@ class TestOllamaAdapter:
 
             call_args = mock_post.call_args
             request_data = call_args[1]["json"]
-            assert "system" in request_data
-            assert request_data["system"] == system_prompt
+            # System prompt is now passed as first message with role "system"
+            assert request_data["messages"][0]["role"] == "system"
+            assert request_data["messages"][0]["content"] == system_prompt
 
     @pytest.mark.asyncio
     async def test_generate_parses_ollama_response_format(self, provider):
