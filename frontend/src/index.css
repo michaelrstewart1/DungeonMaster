@@ -39,6 +39,8 @@
   --text-bright: #ededf4;
   --text-dim: #7e7e98;
   --text-gold: var(--gold-light);
+  --text-primary: #e0e0f0;
+  --text-secondary: #8a8aa8;
 
   /* Borders & surfaces */
   --border: #303048;
