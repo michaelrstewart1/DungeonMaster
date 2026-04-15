@@ -11,6 +11,12 @@ import type {
   AwardXPResponse,
   TurnResult,
   EnvironmentData,
+  XPEventRequest,
+  XPEventResponse,
+  PendingLevelUpsResponse,
+  LevelUpChoices,
+  LevelUpResult,
+  DistributeLootResponse,
 } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -339,6 +345,39 @@ export async function addSessionNPC(sessionId: string, npc: NPCData): Promise<Se
   return request<SessionNPCsResponse>(`/game/sessions/${sessionId}/npcs`, {
     method: 'POST',
     body: JSON.stringify(npc),
+  });
+}
+
+// XP Events
+export async function awardXPEvent(sessionId: string, body: XPEventRequest): Promise<XPEventResponse> {
+  return request<XPEventResponse>(`/game/sessions/${sessionId}/xp-event`, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+// Level-Up Management
+export async function getPendingLevelUps(characterId: string): Promise<PendingLevelUpsResponse> {
+  return request<PendingLevelUpsResponse>(`/game/characters/${characterId}/pending-level-ups`);
+}
+
+export async function applyLevelUp(characterId: string, choices: LevelUpChoices): Promise<LevelUpResult> {
+  return request<LevelUpResult>(`/game/characters/${characterId}/apply-level-up`, {
+    method: 'POST',
+    body: JSON.stringify(choices),
+  });
+}
+
+// Loot Distribution
+export async function distributeLoot(
+  sessionId: string,
+  itemIndex: number,
+  characterId: string,
+  quantity: number = 1
+): Promise<DistributeLootResponse> {
+  return request<DistributeLootResponse>(`/game/sessions/${sessionId}/distribute-loot`, {
+    method: 'POST',
+    body: JSON.stringify({ item_index: itemIndex, character_id: characterId, quantity }),
   });
 }
 

@@ -22,6 +22,7 @@ import { NPCDialogue, parseNPCDialogue } from '../components/NPCDialogue'
 import type { NPCType } from '../components/NPCDialogue'
 import { SessionRecap } from '../components/SessionRecap'
 import PartyInventory from '../components/PartyInventory'
+import LevelUpModal from '../components/LevelUpModal'
 import { SceneArt, detectScene } from '../components/SceneArt'
 import type { SceneType } from '../components/SceneArt'
 import { EncounterPanel } from '../components/EncounterPanel'
@@ -77,6 +78,7 @@ export function GameSession() {
   const [showRecap, setShowRecap] = useState(false)
   const [recapText, setRecapText] = useState('')
   const [showInventory, setShowInventory] = useState(false)
+  const [showLevelUp, setShowLevelUp] = useState(false)
   const [currentScene, setCurrentScene] = useState<SceneType>('tavern')
   const [showDeathSaves, setShowDeathSaves] = useState(false)
   const [showSpellSlots, setShowSpellSlots] = useState(false)
@@ -347,10 +349,12 @@ export function GameSession() {
         setShowDeathSaves(false)
         setShowSpellSlots(false)
         setShowNPCJournal(false)
+        setShowLevelUp(false)
       }
       if (e.key === 'j' || e.key === 'J') setAdventureLogOpen(v => !v)
       if (e.key === 'i' || e.key === 'I') setShowInventory(v => !v)
       if (e.key === 'n' || e.key === 'N') setShowNPCJournal(v => !v)
+      if (e.key === 'l' || e.key === 'L') setShowLevelUp(v => !v)
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
@@ -707,6 +711,13 @@ export function GameSession() {
           >
             ✨
           </button>
+          <button
+            className="btn-level-up"
+            onClick={() => setShowLevelUp(v => !v)}
+            title="Level Up (L)"
+          >
+            ⬆️
+          </button>
           <button className="btn-keyboard-help" onClick={() => setShowKeyboardHelp(v => !v)} title="Keyboard shortcuts (?)">
             ⌨
           </button>
@@ -818,7 +829,31 @@ export function GameSession() {
         sessionId={sessionId || ''}
         isOpen={showInventory}
         onClose={() => setShowInventory(false)}
+        partyCharacters={partyCharacters}
+        onLootDistributed={() => {
+          // Refresh party characters after distribution
+          if (sessionId) {
+            import('../api/client').then(({ getGameSessionState }) =>
+              getGameSessionState(sessionId).then(state => {
+                if (state.characters) setPartyCharacters(state.characters as Character[])
+              }).catch(() => {})
+            )
+          }
+        }}
       />
+
+      {/* Level-Up Modal */}
+      {partyCharacters[0] && (
+        <LevelUpModal
+          character={partyCharacters[0]}
+          isOpen={showLevelUp}
+          onClose={() => setShowLevelUp(false)}
+          onLevelUpComplete={(updated) => {
+            setPartyCharacters(prev => prev.map(c => c.id === updated.id ? updated : c))
+            setShowLevelUp(false)
+          }}
+        />
+      )}
 
       {/* NPC Journal */}
       <NPCJournal

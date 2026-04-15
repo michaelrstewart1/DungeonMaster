@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getPartyLoot, addPartyLoot, updatePartyGold } from '../api/client';
+import { getPartyLoot, addPartyLoot, updatePartyGold, distributeLoot } from '../api/client';
 import type { LootItemData, PartyLootResponse } from '../api/client';
+import type { Character } from '../types';
 
 const RARITY_COLORS: Record<string, string> = {
   common: '#9d9d9d',
@@ -26,14 +27,20 @@ interface PartyInventoryProps {
   /** New items detected from DM narration */
   pendingLoot?: LootItemData[];
   onLootClaimed?: () => void;
+  /** Party characters for loot distribution */
+  partyCharacters?: Character[];
+  /** Callback when loot is distributed (to refresh character state) */
+  onLootDistributed?: (characterId: string) => void;
 }
 
-export default function PartyInventory({ sessionId, isOpen, onClose, pendingLoot, onLootClaimed }: PartyInventoryProps) {
+export default function PartyInventory({ sessionId, isOpen, onClose, pendingLoot, onLootClaimed, partyCharacters, onLootDistributed }: PartyInventoryProps) {
   const [inventory, setInventory] = useState<PartyLootResponse>({ items: [], gold: 0 });
   const [goldInput, setGoldInput] = useState('');
   const [goldReason, setGoldReason] = useState('');
   const [filter, setFilter] = useState<string>('all');
   const [loading, setLoading] = useState(false);
+  const [distributing, setDistributing] = useState<Record<number, boolean>>({});
+  const [distributeSuccess, setDistributeSuccess] = useState<Record<number, string>>({});
 
   const fetchLoot = useCallback(async () => {
     try {
@@ -76,10 +83,36 @@ export default function PartyInventory({ sessionId, isOpen, onClose, pendingLoot
     ? inventory.items
     : inventory.items.filter(i => i.item_type === filter);
 
+  // Map filtered items back to their original indices in inventory.items
+  const filteredWithIndex = filteredItems.map(item => ({
+    item,
+    originalIndex: inventory.items.indexOf(item),
+  }));
+
   const typeCount = inventory.items.reduce((acc, item) => {
     acc[item.item_type] = (acc[item.item_type] || 0) + item.quantity;
     return acc;
   }, {} as Record<string, number>);
+
+  const handleDistribute = async (originalIndex: number, characterId: string, quantity: number) => {
+    if (!characterId) return;
+    setDistributing(prev => ({ ...prev, [originalIndex]: true }));
+    try {
+      const result = await distributeLoot(sessionId, originalIndex, characterId, quantity);
+      setInventory(prev => ({ ...prev, items: result.party_loot }));
+      const charName = partyCharacters?.find(c => c.id === characterId)?.name || 'character';
+      setDistributeSuccess(prev => ({ ...prev, [originalIndex]: `Given to ${charName}!` }));
+      onLootDistributed?.(characterId);
+      setTimeout(() => {
+        setDistributeSuccess(prev => {
+          const next = { ...prev };
+          delete next[originalIndex];
+          return next;
+        });
+      }, 2000);
+    } catch { /* ignore */ }
+    setDistributing(prev => ({ ...prev, [originalIndex]: false }));
+  };
 
   if (!isOpen) return null;
 
@@ -151,15 +184,15 @@ export default function PartyInventory({ sessionId, isOpen, onClose, pendingLoot
 
         {/* Item grid */}
         <div className="inventory-grid">
-          {filteredItems.length === 0 ? (
+          {filteredWithIndex.length === 0 ? (
             <div className="inventory-empty">
               <span className="empty-icon">🎒</span>
               <p>No items yet. Adventure awaits!</p>
             </div>
           ) : (
-            filteredItems.map((item, i) => (
+            filteredWithIndex.map(({ item, originalIndex }) => (
               <div
-                key={i}
+                key={`${originalIndex}-${item.name}`}
                 className={`inventory-item rarity-${item.rarity.replace('-', '')}`}
                 style={{ borderColor: RARITY_COLORS[item.rarity] || RARITY_COLORS.common }}
               >
@@ -172,11 +205,73 @@ export default function PartyInventory({ sessionId, isOpen, onClose, pendingLoot
                 </div>
                 {item.description && <div className="item-desc">{item.description}</div>}
                 <div className="item-rarity">{item.rarity}</div>
+
+                {/* Distribution controls */}
+                {partyCharacters && partyCharacters.length > 0 && (
+                  distributeSuccess[originalIndex] ? (
+                    <div className="loot-distribute-success">✓ {distributeSuccess[originalIndex]}</div>
+                  ) : (
+                    <LootDistributeRow
+                      characters={partyCharacters}
+                      maxQuantity={item.quantity}
+                      distributing={distributing[originalIndex] || false}
+                      onDistribute={(charId, qty) => handleDistribute(originalIndex, charId, qty)}
+                    />
+                  )
+                )}
               </div>
             ))
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+/** Inline row for distributing one item to a party member */
+function LootDistributeRow({
+  characters,
+  maxQuantity,
+  distributing,
+  onDistribute,
+}: {
+  characters: Character[];
+  maxQuantity: number;
+  distributing: boolean;
+  onDistribute: (characterId: string, quantity: number) => void;
+}) {
+  const [selectedChar, setSelectedChar] = useState('');
+  const [qty, setQty] = useState(1);
+
+  return (
+    <div className="loot-distribute-row">
+      <select
+        className="loot-distribute-select"
+        value={selectedChar}
+        onChange={e => setSelectedChar(e.target.value)}
+      >
+        <option value="">Give to...</option>
+        {characters.map(c => (
+          <option key={c.id} value={c.id}>{c.name}</option>
+        ))}
+      </select>
+      {maxQuantity > 1 && (
+        <input
+          className="loot-qty-input"
+          type="number"
+          min={1}
+          max={maxQuantity}
+          value={qty}
+          onChange={e => setQty(Math.max(1, Math.min(maxQuantity, parseInt(e.target.value) || 1)))}
+        />
+      )}
+      <button
+        className="loot-distribute-btn"
+        disabled={!selectedChar || distributing}
+        onClick={() => onDistribute(selectedChar, qty)}
+      >
+        {distributing ? '...' : maxQuantity > 1 ? `Give ${qty}` : 'Give'}
+      </button>
     </div>
   );
 }

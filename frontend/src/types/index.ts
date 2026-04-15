@@ -192,3 +192,68 @@ export interface EnvironmentData {
   temperature: 'freezing' | 'cold' | 'cool' | 'mild' | 'warm' | 'hot';
   season: 'spring' | 'summer' | 'autumn' | 'winter';
 }
+
+// XP Event (session-level XP awards)
+export interface XPEventRequest {
+  event_type: 'combat' | 'quest' | 'milestone' | 'discovery' | 'roleplay';
+  description: string;
+  xp_total?: number;
+  cr?: string;
+  creature_count?: number;
+  character_ids?: string[];
+}
+
+export interface XPAward {
+  character_id: string;
+  character_name: string;
+  xp_awarded: number;
+  total_xp: number;
+  old_level: number;
+  new_level: number;
+  leveled_up: boolean;
+}
+
+export interface XPEventResponse {
+  total_xp: number;
+  xp_per_character: number;
+  awards: XPAward[];
+}
+
+// Level-Up
+export interface PendingLevelUp {
+  from_level: number;
+  to_level: number;
+  choices_made: boolean;
+  hp_rolled: boolean;
+}
+
+export interface PendingLevelUpsResponse {
+  character_id: string;
+  character_name: string;
+  level: number;
+  pending: PendingLevelUp[];
+}
+
+export interface LevelUpChoices {
+  ability_score_increase?: Record<string, number>;
+  hp_roll?: number | null;
+  new_spells?: string[];
+  new_skill?: string | null;
+  feat?: string | null;
+}
+
+export interface LevelUpResult {
+  character_id: string;
+  level: number;
+  hp_gained: number;
+  changes_applied: boolean;
+  remaining_level_ups: number;
+  character: Character;
+}
+
+// Loot Distribution
+export interface DistributeLootResponse {
+  distributed: { item: string; quantity: number; to: string };
+  party_loot: Array<{ name: string; quantity: number; [key: string]: unknown }>;
+  character_inventory: string[];
+}
