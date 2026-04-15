@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { mkdirSync } from 'fs'
 
 /**
  * LEVEL-UP & LOOT PLAYTEST — Tests the full level-up flow and loot distribution.
@@ -13,6 +14,7 @@ import { test, expect, type Page } from '@playwright/test'
 const BASE = process.env.E2E_BASE_URL || 'http://localhost:5173'
 const API = `${BASE.replace(/\/$/, '')}/api`
 const SCREENSHOT_DIR = 'test-results/levelup-loot'
+mkdirSync(SCREENSHOT_DIR, { recursive: true })
 
 async function screenshot(page: Page, name: string) {
   await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}.png`, fullPage: false })

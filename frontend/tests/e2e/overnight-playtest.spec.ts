@@ -1,4 +1,5 @@
 import { test, expect, type Page } from '@playwright/test'
+import { mkdirSync } from 'fs'
 
 /**
  * OVERNIGHT PLAYTEST — Comprehensive game flow test against the live server.
@@ -7,6 +8,7 @@ import { test, expect, type Page } from '@playwright/test'
  */
 
 const SCREENSHOT_DIR = 'test-results/overnight'
+mkdirSync(SCREENSHOT_DIR, { recursive: true })
 
 async function screenshot(page: Page, name: string) {
   await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}.png`, fullPage: false })
