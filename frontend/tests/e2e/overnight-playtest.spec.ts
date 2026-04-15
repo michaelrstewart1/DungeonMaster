@@ -402,8 +402,8 @@ test.describe('Overnight Playtest', () => {
       return
     }
     
-    // Wait for the AI greeting to arrive
-    await expect(page.locator('.message-dm:not(.typing-message)')).toHaveCount(1, { timeout: 60000 })
+    // Wait for the AI greeting to arrive (may get >1 DM msg if greeting + scene intro)
+    await expect(page.locator('.message-dm:not(.typing-message)')).not.toHaveCount(0, { timeout: 60000 })
     await screenshot(page, '09-game-start')
     
     // Send multiple actions
