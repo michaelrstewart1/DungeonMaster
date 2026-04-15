@@ -59,6 +59,7 @@ class PromptTemplates:
         game_state: dict,
         tone: str = "dark_fantasy",
         narration_mode: str = "cinematic",
+        compact: bool = False,
     ) -> str:
         """Create a system prompt for the Dungeon Master role.
 
@@ -72,10 +73,15 @@ class PromptTemplates:
             game_state: Current game state including location, time, weather, etc.
             tone: Narrative tone — one of dark_fantasy, comedic, gritty, storybook
             narration_mode: Response length — cinematic (rich) or fast (punchy)
+            compact: If True, use a condensed prompt for local/slow LLMs
 
         Returns:
             System prompt string for the Dungeon Master
         """
+        if compact:
+            return PromptTemplates._compact_dm_prompt(
+                world_context, characters, game_state, tone
+            )
         tone_text = _TONES.get(tone, _TONES["dark_fantasy"])
         mode_text = _NARRATION_MODES.get(narration_mode, _NARRATION_MODES["cinematic"])
 
@@ -235,6 +241,49 @@ class PromptTemplates:
         )
 
         return prompt
+
+    @staticmethod
+    def _compact_dm_prompt(
+        world_context: str,
+        characters: list[dict],
+        game_state: dict,
+        tone: str = "dark_fantasy",
+    ) -> str:
+        """Condensed DM prompt for local/slow LLMs (~800 tokens instead of ~2000)."""
+        tone_text = _TONES.get(tone, _TONES["dark_fantasy"])
+
+        char_lines = ""
+        for c in characters:
+            char_lines += f"- {c.get('name', '?')}: Lv{c.get('level', '?')} {c.get('race', '')} {c.get('class', '')}\n"
+
+        state_lines = ""
+        for k, v in game_state.items():
+            if k == "story_bible":
+                continue
+            state_lines += f"- {k.replace('_', ' ').title()}: {v}\n"
+
+        story_bible = game_state.get("story_bible", "")
+        bible_section = ""
+        if story_bible:
+            bible_section = (
+                f"\n## Secret Story Plan (players don't know this)\n{story_bible}\n"
+            )
+
+        return (
+            "You are a D&D 5e Dungeon Master. Run the game by the rules.\n\n"
+            f"Tone: {tone_text}\n\n"
+            f"## World\n{world_context}\n\n"
+            f"## Party\n{char_lines}\n"
+            f"## State\n{state_lines}"
+            f"{bible_section}\n"
+            "## Rules\n"
+            "- Call for ability checks (d20+mod vs DC) when outcome is uncertain\n"
+            "- Track HP, spell slots, conditions per 5e rules\n"
+            "- NPCs have names, motives, and memory\n"
+            "- Failure creates story, not dead ends\n"
+            "- NEVER echo the player's action. Narrate the RESULT only.\n"
+            "- Keep responses to 2-4 vivid sentences.\n"
+        )
 
     @staticmethod
     def combat_narration(

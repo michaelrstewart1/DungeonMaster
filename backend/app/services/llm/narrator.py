@@ -84,6 +84,8 @@ class DMNarrator:
         self._llm = llm
         self._max_history = max_history
         self._history: list[LLMMessage] = []
+        # Use compact prompts for local models (Ollama) to reduce latency
+        self._compact = hasattr(llm, '_base_url')  # Ollama has _base_url
 
     async def narrate_exploration(
         self,
@@ -119,6 +121,7 @@ class DMNarrator:
                 world_context=world_context,
                 characters=characters,
                 game_state=game_state,
+                compact=self._compact,
             )
 
             # Create user message
@@ -131,13 +134,15 @@ class DMNarrator:
             messages = self._history.copy()
             messages.append(LLMMessage(role="user", content=user_message))
 
+            max_tokens = 200 if self._compact else 500
+
             # Generate narration
-            logger.info("Calling LLM generate (system_prompt=%d chars, messages=%d)", len(system_prompt), len(messages))
+            logger.info("Calling LLM generate (system_prompt=%d chars, messages=%d, compact=%s)", len(system_prompt), len(messages), self._compact)
             response = await self._llm.generate(
                 messages=messages,
                 system_prompt=system_prompt,
                 temperature=0.8,
-                max_tokens=500,
+                max_tokens=max_tokens,
             )
             logger.info("LLM response received (%d chars)", len(response.content))
 
