@@ -39,7 +39,7 @@ async function apiGet(path: string) {
   return resp.json()
 }
 
-test.describe('Level-Up & Loot Playtest', () => {
+test.describe.serial('Level-Up & Loot Playtest', () => {
   test.setTimeout(180_000) // 3 minutes per test
 
   let campaignId: string
@@ -467,7 +467,7 @@ test.describe('Level-Up & Loot Playtest', () => {
     
     // Navigate to campaign page to see character details
     await page.goto(`/campaign/${campaignId}`)
-    await page.waitForSelector('.campaign-detail, .campaign-page', { timeout: 15000 })
+    await page.waitForSelector('.page-campaign-detail', { timeout: 15000 })
     await page.waitForTimeout(1500)
     await screenshot(page, '09-campaign-with-leveled-character')
 
@@ -499,7 +499,7 @@ test.describe('Level-Up & Loot Playtest', () => {
     }
 
     // Close modal
-    const closeBtn = modal.locator('.levelup-close, .levelup-btn:has-text("Close")')
+    const closeBtn = modal.locator('.levelup-close').first()
     await closeBtn.click()
     await expect(modal).not.toBeVisible({ timeout: 3000 })
     await screenshot(page, '10-modal-closed')
