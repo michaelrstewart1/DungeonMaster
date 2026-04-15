@@ -351,7 +351,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                 aria-pressed={race === r.value}
                 data-testid={`race-${r.value}`}
               >
-                <img className="race-art" src={`/art/races/${r.value}.png`} alt={r.label} />
+                <img className="race-art" src={`/art/races/${r.value}.jpg`} alt={r.label} />
                 <span className="race-name">{r.label}</span>
                 <span className="card-tooltip">{r.desc}</span>
               </button>
@@ -427,7 +427,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                     '--class-glow': colors.accent,
                   } as React.CSSProperties}
                 >
-                  <img className="class-art" src={`/art/classes/${c.value}.png`} alt={c.label} />
+                  <img className="class-art" src={`/art/classes/${c.value}.jpg`} alt={c.label} />
                   <span className="class-name">{c.label}</span>
                   <span className="class-hit-die">d{HIT_DICE[c.value]}</span>
                   <span className="card-tooltip">{c.desc}</span>
@@ -494,6 +494,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
                 aria-pressed={background === bg.value}
                 data-testid={`bg-${bg.value}`}
               >
+                <img className="bg-art" src={`/art/backgrounds/${bg.value}.jpg`} alt={bg.label} />
                 <span className="bg-name">{bg.label}</span>
                 <span className="bg-skills">Skills: {bg.skillProficiencies.join(', ')}</span>
                 {bg.toolProficiencies.length > 0 && (

@@ -7,14 +7,14 @@ import type { Campaign } from '../types'
 import type { PremadeCampaign } from '../data/premadeCampaigns'
 
 const LANDSCAPE_SCENES = [
-  '/art/landscapes/dragon-peak.png',
-  '/art/landscapes/ancient-citadel.png',
-  '/art/landscapes/enchanted-forest.png',
-  '/art/landscapes/volcanic-wasteland.png',
-  '/art/landscapes/frozen-throne.png',
-  '/art/landscapes/abyssal-depths.png',
-  '/art/landscapes/celestial-sanctum.png',
-  '/art/landscapes/stormy-seas.png',
+  '/art/landscapes/dragon-peak.jpg',
+  '/art/landscapes/ancient-citadel.jpg',
+  '/art/landscapes/enchanted-forest.jpg',
+  '/art/landscapes/volcanic-wasteland.jpg',
+  '/art/landscapes/frozen-throne.jpg',
+  '/art/landscapes/abyssal-depths.jpg',
+  '/art/landscapes/celestial-sanctum.jpg',
+  '/art/landscapes/stormy-seas.jpg',
 ]
 
 export function Home() {
