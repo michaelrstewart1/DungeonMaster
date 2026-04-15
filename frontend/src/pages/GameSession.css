@@ -629,31 +629,54 @@
   background:
     radial-gradient(ellipse at 50% 80%, rgba(212, 168, 70, 0.02) 0%, transparent 70%);
   scroll-behavior: smooth;
+  position: relative;
 }
 
-/* Empty chat welcome state */
-.chat-messages:empty::before {
-  content: '⚔ Your adventure begins here...';
-  display: block;
-  text-align: center;
-  padding: 2rem 1rem;
-  color: var(--text-dim);
-  font-family: var(--font-body);
-  font-style: italic;
-  font-size: 1rem;
-  opacity: 0.5;
-  margin: auto;
+/* Chat watermark — fills the void when few messages */
+.chat-watermark {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.8s ease;
+  z-index: 0;
 }
 
-.chat-messages:empty::after {
-  content: '✦  ✦  ✦';
-  display: block;
-  text-align: center;
+.chat-watermark-fading {
+  opacity: 0.35;
+}
+
+.watermark-icon {
+  font-size: 4rem;
   color: var(--gold-dim);
-  opacity: 0.15;
-  font-size: 0.8rem;
-  letter-spacing: 0.2em;
-  font-style: normal;
+  opacity: 0.12;
+  margin-bottom: 1rem;
+  filter: drop-shadow(0 0 20px rgba(212, 168, 70, 0.1));
+}
+
+.watermark-text {
+  font-family: var(--font-heading);
+  font-size: 1.1rem;
+  color: var(--gold-dim);
+  opacity: 0.18;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  font-style: italic;
+}
+
+.watermark-ornament {
+  margin-top: 0.75rem;
+  font-size: 0.7rem;
+  color: var(--gold-dim);
+  opacity: 0.1;
+  letter-spacing: 0.4em;
 }
 
 .chat-message {
@@ -662,6 +685,7 @@
   max-width: 85%;
   animation: messageIn 0.3s ease;
   position: relative;
+  z-index: 1;
 }
 
 @keyframes messageIn {

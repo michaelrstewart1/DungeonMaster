@@ -295,6 +295,13 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
   return (
     <div className="game-chat">
       <div className="chat-messages" ref={chatContainerRef} onScroll={handleScroll}>
+        {messages.length <= 3 && (
+          <div className={`chat-watermark${messages.length > 0 ? ' chat-watermark-fading' : ''}`}>
+            <div className="watermark-icon">⚔</div>
+            <div className="watermark-text">Your adventure awaits...</div>
+            <div className="watermark-ornament">✦ ✦ ✦</div>
+          </div>
+        )}
         {messages.map((msg, i) => {
           // Determine if this DM message should use the typewriter effect
           const dmIndex = msg.role === 'dm' ? dmMessageIndices.indexOf(i) : -1
