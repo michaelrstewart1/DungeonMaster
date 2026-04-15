@@ -663,6 +663,7 @@
 .chat-area-full {
   border-top: none;
   flex: 1;
+  max-height: none;
 }
 
 /* Scroll gradient at top */

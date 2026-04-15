@@ -87,11 +87,15 @@ test.describe('Overnight Playtest', () => {
     await expect(page.locator('[data-testid="picker-detail"]')).toBeVisible()
     await screenshot(page, '03-character-detail')
     
-    // Confirm
-    await page.click('[data-testid="picker-confirm"]')
-    
-    // Should see character sheet
-    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 10000 })
+    // Confirm — wait for the API response before checking UI
+    const [confirmResponse] = await Promise.all([
+      page.waitForResponse(resp => resp.url().includes('/api/characters') && resp.request().method() === 'POST', { timeout: 15000 }),
+      page.click('[data-testid="picker-confirm"]'),
+    ])
+    expect(confirmResponse.status()).toBeLessThan(400)
+
+    // Should see character sheet (picker closes, characters reload)
+    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 15000 })
     await screenshot(page, '03-character-added')
     await screenshotFull(page, '03-campaign-with-character-full')
   })
@@ -113,8 +117,11 @@ test.describe('Overnight Playtest', () => {
     await expect(page.locator('[data-testid="character-picker"]')).toBeVisible({ timeout: 10000 })
     await page.locator('.picker-card').first().click()
     await expect(page.locator('[data-testid="picker-detail"]')).toBeVisible()
-    await page.click('[data-testid="picker-confirm"]')
-    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 10000 })
+    await Promise.all([
+      page.waitForResponse(resp => resp.url().includes('/api/characters') && resp.request().method() === 'POST', { timeout: 15000 }),
+      page.click('[data-testid="picker-confirm"]'),
+    ])
+    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 15000 })
     
     // Click Begin Adventure
     const startBtn = page.locator('.btn-start-game')
@@ -320,8 +327,11 @@ test.describe('Overnight Playtest', () => {
     await expect(page.locator('[data-testid="character-picker"]')).toBeVisible({ timeout: 10000 })
     await page.locator('.picker-card').first().click()
     await expect(page.locator('[data-testid="picker-detail"]')).toBeVisible()
-    await page.click('[data-testid="picker-confirm"]')
-    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 10000 })
+    await Promise.all([
+      page.waitForResponse(resp => resp.url().includes('/api/characters') && resp.request().method() === 'POST', { timeout: 15000 }),
+      page.click('[data-testid="picker-confirm"]'),
+    ])
+    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 15000 })
     
     // Add second character
     const addBtn = page.locator('.party-tray-add, button:has-text("+ Add")')
@@ -330,7 +340,10 @@ test.describe('Overnight Playtest', () => {
       await expect(page.locator('[data-testid="character-picker"]')).toBeVisible({ timeout: 10000 })
       await page.locator('.picker-card').nth(1).click()
       await expect(page.locator('[data-testid="picker-detail"]')).toBeVisible()
-      await page.click('[data-testid="picker-confirm"]')
+      await Promise.all([
+        page.waitForResponse(resp => resp.url().includes('/api/characters') && resp.request().method() === 'POST', { timeout: 15000 }),
+        page.click('[data-testid="picker-confirm"]'),
+      ])
       await page.waitForTimeout(2000)
     }
     
@@ -353,8 +366,11 @@ test.describe('Overnight Playtest', () => {
     await expect(page.locator('[data-testid="character-picker"]')).toBeVisible({ timeout: 10000 })
     await page.locator('.picker-card').first().click()
     await expect(page.locator('[data-testid="picker-detail"]')).toBeVisible()
-    await page.click('[data-testid="picker-confirm"]')
-    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 10000 })
+    await Promise.all([
+      page.waitForResponse(resp => resp.url().includes('/api/characters') && resp.request().method() === 'POST', { timeout: 15000 }),
+      page.click('[data-testid="picker-confirm"]'),
+    ])
+    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 15000 })
     
     // Start game
     await page.locator('.btn-start-game').click()
