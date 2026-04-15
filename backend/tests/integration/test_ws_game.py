@@ -1,16 +1,78 @@
 """Integration tests for WebSocket game events."""
 import pytest
 from starlette.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker, Session
 
 from app.main import create_app
+from app.models.database import Base
+from app.db import get_db
 from app.api import storage
+
+
+# Sync SQLite for Starlette TestClient (which uses sync I/O)
+_sync_engine = create_engine("sqlite://", echo=False)
+_SyncSession = sessionmaker(_sync_engine, expire_on_commit=False)
+
+
+def _sync_override_get_db():
+    """Sync DB session for Starlette TestClient."""
+    # We need an async override even though TestClient is sync,
+    # because FastAPI's Depends expects an async generator.
+    from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+    import asyncio
+
+    # Reuse module-level async engine
+    async def _override():
+        async with _ws_async_session() as session:
+            try:
+                yield session
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                raise
+    return _override
+
+
+# Use async engine for WS tests too
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+_ws_async_engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+_ws_async_session = async_sessionmaker(_ws_async_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def _ws_override_get_db():
+    async with _ws_async_session() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 
 @pytest.fixture
 def ws_client():
-    """Create a test client with WebSocket support."""
+    """Create a test client with WebSocket support and DB setup."""
+    import asyncio
+
+    async def setup_tables():
+        async with _ws_async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+    asyncio.get_event_loop().run_until_complete(setup_tables())
+
     app = create_app()
-    return TestClient(app)
+    app.dependency_overrides[get_db] = _ws_override_get_db
+    app.state.db_factory = _ws_async_session
+
+    client = TestClient(app)
+    yield client
+
+    async def teardown_tables():
+        async with _ws_async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
+
+    asyncio.get_event_loop().run_until_complete(teardown_tables())
 
 
 @pytest.fixture(autouse=True)

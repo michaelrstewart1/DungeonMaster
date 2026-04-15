@@ -3,10 +3,13 @@ import random
 from datetime import datetime, timezone
 from typing import List
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db import get_db
 from app.models.schemas import CampaignCreate, CampaignResponse
 from app.api import storage
+import app.repository as repo
 
 router = APIRouter(prefix="/campaigns", tags=["campaigns"])
 
@@ -40,7 +43,7 @@ _TONE_LABELS = {
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=CampaignResponse)
-async def create_campaign(campaign: CampaignCreate) -> CampaignResponse:
+async def create_campaign(campaign: CampaignCreate, db: AsyncSession = Depends(get_db)) -> CampaignResponse:
     """Create a new campaign."""
     campaign_id = storage.generate_id()
     now = datetime.now(timezone.utc)
@@ -56,17 +59,13 @@ async def create_campaign(campaign: CampaignCreate) -> CampaignResponse:
         "updated_at": now,
     }
     
-    storage.campaigns[campaign_id] = campaign_data
+    await repo.save_campaign(db, campaign_data)
     return CampaignResponse(**campaign_data)
 
 
 @router.post("/randomize", status_code=status.HTTP_201_CREATED, response_model=CampaignResponse)
-async def randomize_campaign(request: Request) -> CampaignResponse:
-    """Create a fully randomized campaign with AI-generated world and story.
-
-    Picks a random name, tone, and uses the narrator to generate a rich world
-    context. The campaign is ready to play immediately — no setup required.
-    """
+async def randomize_campaign(request: Request, db: AsyncSession = Depends(get_db)) -> CampaignResponse:
+    """Create a fully randomized campaign with AI-generated world and story."""
     campaign_id = storage.generate_id()
     now = datetime.now(timezone.utc)
 
@@ -127,33 +126,34 @@ async def randomize_campaign(request: Request) -> CampaignResponse:
         "updated_at": now,
     }
 
-    storage.campaigns[campaign_id] = campaign_data
+    await repo.save_campaign(db, campaign_data)
     return CampaignResponse(**campaign_data)
 
 
 @router.get("", response_model=List[CampaignResponse])
-async def list_campaigns() -> List[CampaignResponse]:
+async def list_campaigns(db: AsyncSession = Depends(get_db)) -> List[CampaignResponse]:
     """List all campaigns."""
-    return [CampaignResponse(**campaign) for campaign in storage.campaigns.values()]
+    campaigns = await repo.list_campaigns(db)
+    return [CampaignResponse(**c) for c in campaigns]
 
 
 @router.get("/{campaign_id}", response_model=CampaignResponse)
-async def get_campaign(campaign_id: str) -> CampaignResponse:
+async def get_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)) -> CampaignResponse:
     """Get a specific campaign by ID."""
-    if campaign_id not in storage.campaigns:
+    campaign = await repo.get_campaign(db, campaign_id)
+    if campaign is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-    
-    return CampaignResponse(**storage.campaigns[campaign_id])
+    return CampaignResponse(**campaign)
 
 
 @router.put("/{campaign_id}", response_model=CampaignResponse)
-async def update_campaign(campaign_id: str, campaign_update: CampaignCreate) -> CampaignResponse:
+async def update_campaign(campaign_id: str, campaign_update: CampaignCreate, db: AsyncSession = Depends(get_db)) -> CampaignResponse:
     """Update a campaign."""
-    if campaign_id not in storage.campaigns:
+    existing = await repo.get_campaign(db, campaign_id)
+    if existing is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
     
-    campaign = storage.campaigns[campaign_id]
-    campaign.update({
+    existing.update({
         "name": campaign_update.name,
         "description": campaign_update.description,
         "character_ids": campaign_update.character_ids,
@@ -162,13 +162,13 @@ async def update_campaign(campaign_id: str, campaign_update: CampaignCreate) -> 
         "updated_at": datetime.now(timezone.utc),
     })
     
-    return CampaignResponse(**campaign)
+    saved = await repo.save_campaign(db, existing)
+    return CampaignResponse(**saved)
 
 
 @router.delete("/{campaign_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_campaign(campaign_id: str) -> None:
+async def delete_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)) -> None:
     """Delete a campaign."""
-    if campaign_id not in storage.campaigns:
+    deleted = await repo.delete_campaign(db, campaign_id)
+    if not deleted:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-    
-    del storage.campaigns[campaign_id]

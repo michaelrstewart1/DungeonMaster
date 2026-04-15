@@ -5,10 +5,12 @@ import urllib.parse
 from typing import Any, Dict, List, Optional
 
 import httpx
-from fastapi import APIRouter, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db import get_db
 from app.models.schemas import (
     CharacterCreate,
     CharacterImportRequest,
@@ -17,6 +19,7 @@ from app.models.schemas import (
 )
 from app.api import storage
 from app.config import settings
+import app.repository as repo
 
 # D&D 5e XP thresholds by level (index 0 = level 1, index 19 = level 20)
 XP_THRESHOLDS: list[int] = [
@@ -33,7 +36,7 @@ router = APIRouter(prefix="/characters", tags=["characters"])
 
 
 @router.post("", status_code=status.HTTP_201_CREATED, response_model=CharacterResponse)
-async def create_character(character: CharacterCreate) -> CharacterResponse:
+async def create_character(character: CharacterCreate, db: AsyncSession = Depends(get_db)) -> CharacterResponse:
     """Create a new character and optionally link to a campaign."""
     character_id = storage.generate_id()
     
@@ -45,13 +48,14 @@ async def create_character(character: CharacterCreate) -> CharacterResponse:
         **char_dict,
     }
     
-    storage.characters[character_id] = character_data
+    await repo.save_character(db, character_data)
     
     # Link character to campaign if campaign_id provided
-    if campaign_id and campaign_id in storage.campaigns:
-        campaign = storage.campaigns[campaign_id]
-        if character_id not in campaign["character_ids"]:
+    if campaign_id:
+        campaign = await repo.get_campaign(db, campaign_id)
+        if campaign and character_id not in campaign["character_ids"]:
             campaign["character_ids"].append(character_id)
+            await repo.save_campaign(db, campaign)
     
     return CharacterResponse(**character_data)
 
@@ -119,7 +123,7 @@ def _parse_generic_data(data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 @router.post("/import", status_code=status.HTTP_201_CREATED, response_model=CharacterResponse)
-async def import_character(request: CharacterImportRequest) -> CharacterResponse:
+async def import_character(request: CharacterImportRequest, db: AsyncSession = Depends(get_db)) -> CharacterResponse:
     """Import a character from an external format (r20 or generic)."""
     if request.format == "r20":
         parsed = _parse_r20_data(request.data)
@@ -136,21 +140,20 @@ async def import_character(request: CharacterImportRequest) -> CharacterResponse
 
     character_id = storage.generate_id()
     character_data = {"id": character_id, **character.model_dump()}
-    storage.characters[character_id] = character_data
+    await repo.save_character(db, character_data)
     return CharacterResponse(**character_data)
 
 
 @router.get("", response_model=List[CharacterResponse])
-async def list_characters(campaign_id: Optional[str] = Query(None)) -> List[CharacterResponse]:
+async def list_characters(campaign_id: Optional[str] = Query(None), db: AsyncSession = Depends(get_db)) -> List[CharacterResponse]:
     """List all characters, optionally filtered by campaign."""
-    characters = list(storage.characters.values())
+    characters = await repo.list_characters(db)
     
     # Filter by campaign if provided
     if campaign_id:
-        if campaign_id not in storage.campaigns:
+        campaign = await repo.get_campaign(db, campaign_id)
+        if campaign is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-        
-        campaign = storage.campaigns[campaign_id]
         character_ids_in_campaign = set(campaign["character_ids"])
         characters = [c for c in characters if c["id"] in character_ids_in_campaign]
     
@@ -158,42 +161,40 @@ async def list_characters(campaign_id: Optional[str] = Query(None)) -> List[Char
 
 
 @router.get("/{character_id}", response_model=CharacterResponse)
-async def get_character(character_id: str) -> CharacterResponse:
+async def get_character(character_id: str, db: AsyncSession = Depends(get_db)) -> CharacterResponse:
     """Get a specific character by ID."""
-    if character_id not in storage.characters:
+    character = await repo.get_character(db, character_id)
+    if character is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
-    
-    return CharacterResponse(**storage.characters[character_id])
-
-
-@router.put("/{character_id}", response_model=CharacterResponse)
-async def update_character(character_id: str, character_update: CharacterUpdate) -> CharacterResponse:
-    """Update a character (partial update supported)."""
-    if character_id not in storage.characters:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
-    
-    character = storage.characters[character_id]
-    
-    # Only update provided fields
-    update_data = character_update.model_dump(exclude_unset=True)
-    character.update(update_data)
-    
     return CharacterResponse(**character)
 
 
-@router.delete("/{character_id}", status_code=status.HTTP_204_NO_CONTENT)
-async def delete_character(character_id: str) -> None:
-    """Delete a character."""
-    if character_id not in storage.characters:
+@router.put("/{character_id}", response_model=CharacterResponse)
+async def update_character(character_id: str, character_update: CharacterUpdate, db: AsyncSession = Depends(get_db)) -> CharacterResponse:
+    """Update a character (partial update supported)."""
+    character = await repo.get_character(db, character_id)
+    if character is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
     
-    del storage.characters[character_id]
+    update_data = character_update.model_dump(exclude_unset=True)
+    character.update(update_data)
+    saved = await repo.save_character(db, character)
+    return CharacterResponse(**saved)
+
+
+@router.delete("/{character_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_character(character_id: str, db: AsyncSession = Depends(get_db)) -> None:
+    """Delete a character."""
+    deleted = await repo.delete_character(db, character_id)
+    if not deleted:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
 
 
 @router.post("/{character_id}/generate-portrait", response_model=CharacterResponse)
-async def generate_portrait(character_id: str) -> CharacterResponse:
+async def generate_portrait(character_id: str, db: AsyncSession = Depends(get_db)) -> CharacterResponse:
     """Generate a DALL-E portrait for a character."""
-    if character_id not in storage.characters:
+    character = await repo.get_character(db, character_id)
+    if character is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
 
     if not settings.openai_api_key:
@@ -202,7 +203,6 @@ async def generate_portrait(character_id: str) -> CharacterResponse:
             detail="Portrait generation is not configured: missing OpenAI API key",
         )
 
-    character = storage.characters[character_id]
     race = character.get("race", "human")
     class_name = character.get("class_name", "adventurer")
 
@@ -252,6 +252,7 @@ async def generate_portrait(character_id: str) -> CharacterResponse:
         f.write(image_resp.content)
 
     character["portrait_url"] = f"/api/portraits/{filename}"
+    await repo.save_character(db, character)
     return CharacterResponse(**character)
 
 
@@ -332,14 +333,13 @@ _MILESTONES = [
 
 
 @router.post("/{character_id}/award-xp", response_model=AwardXPResponse)
-async def award_xp(character_id: str, body: AwardXPRequest) -> AwardXPResponse:
+async def award_xp(character_id: str, body: AwardXPRequest, db: AsyncSession = Depends(get_db)) -> AwardXPResponse:
     """Award XP to a character and check for level-up."""
-    if character_id not in storage.characters:
+    character = await repo.get_character(db, character_id)
+    if character is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
 
-    character = storage.characters[character_id]
     old_level = character.get("level", 1)
-
     current_xp = character.get("experience_points", 0)
     character["experience_points"] = current_xp + body.xp
 
@@ -347,6 +347,8 @@ async def award_xp(character_id: str, body: AwardXPRequest) -> AwardXPResponse:
     leveled_up = new_level > old_level
     if leveled_up:
         character["level"] = new_level
+
+    await repo.save_character(db, character)
 
     return AwardXPResponse(
         character=CharacterResponse(**character),
@@ -356,12 +358,12 @@ async def award_xp(character_id: str, body: AwardXPRequest) -> AwardXPResponse:
 
 
 @router.get("/{character_id}/progression", response_model=ProgressionResponse)
-async def get_progression(character_id: str) -> ProgressionResponse:
+async def get_progression(character_id: str, db: AsyncSession = Depends(get_db)) -> ProgressionResponse:
     """Get XP progression info for a character."""
-    if character_id not in storage.characters:
+    character = await repo.get_character(db, character_id)
+    if character is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
 
-    character = storage.characters[character_id]
     level = character.get("level", 1)
     xp = character.get("experience_points", 0)
 
@@ -385,12 +387,12 @@ async def get_progression(character_id: str) -> ProgressionResponse:
 
 
 @router.get("/{character_id}/export")
-async def export_character(character_id: str) -> JSONResponse:
+async def export_character(character_id: str, db: AsyncSession = Depends(get_db)) -> JSONResponse:
     """Export a character as a downloadable JSON file."""
-    if character_id not in storage.characters:
+    character = await repo.get_character(db, character_id)
+    if character is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
 
-    character = storage.characters[character_id]
     char_name = character.get("name", "character").replace(" ", "_").lower()
 
     return JSONResponse(
@@ -450,12 +452,11 @@ async def _generate_pollinations_portrait(character_id: str, character: dict) ->
 
 
 @router.post("/{character_id}/generate-portrait-free", response_model=CharacterResponse)
-async def generate_portrait_free(character_id: str) -> CharacterResponse:
+async def generate_portrait_free(character_id: str, db: AsyncSession = Depends(get_db)) -> CharacterResponse:
     """Generate a free portrait using Pollinations.ai (no API key required)."""
-    if character_id not in storage.characters:
+    character = await repo.get_character(db, character_id)
+    if character is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
-
-    character = storage.characters[character_id]
 
     try:
         portrait_url = await _generate_pollinations_portrait(character_id, character)
@@ -466,6 +467,7 @@ async def generate_portrait_free(character_id: str) -> CharacterResponse:
             detail=f"Portrait generation failed: {exc}",
         )
 
+    await repo.save_character(db, character)
     return CharacterResponse(**character)
 
 

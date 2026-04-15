@@ -3,12 +3,15 @@ from typing import List, Optional
 from datetime import datetime, timezone
 import random
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.schemas import GameStateResponse, CombatState
 from app.models.enums import GamePhase
 from app.api import storage
+from app.db import get_db
+import app.repository as repo
 
 router = APIRouter(prefix="/game", tags=["game"])
 
@@ -66,14 +69,11 @@ class EnvironmentData(BaseModel):
 
 
 @router.post("/sessions", status_code=status.HTTP_201_CREATED, response_model=GameStateResponse)
-async def create_game_session(session_create: GameSessionCreate) -> GameStateResponse:
+async def create_game_session(session_create: GameSessionCreate, db: AsyncSession = Depends(get_db)) -> GameStateResponse:
     """Create a new game session for a campaign."""
-    # Verify campaign exists
-    if session_create.campaign_id not in storage.campaigns:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Campaign not found"
-        )
+    campaign = await repo.get_campaign(db, session_create.campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
     
     session_id = storage.generate_id()
     
@@ -95,7 +95,7 @@ async def create_game_session(session_create: GameSessionCreate) -> GameStateRes
         },
     }
     
-    storage.game_sessions[session_id] = session_data
+    await repo.save_game_session(db, session_data)
 
     # Auto-generate a room code for multiplayer join
     room_code = storage.generate_room_code()
@@ -107,14 +107,15 @@ async def create_game_session(session_create: GameSessionCreate) -> GameStateRes
 
 
 @router.get("/sessions")
-async def list_game_sessions(campaign_id: str | None = None) -> list[dict]:
+async def list_game_sessions(campaign_id: str | None = None, db: AsyncSession = Depends(get_db)) -> list[dict]:
     """List game sessions, optionally filtered by campaign_id."""
+    all_sessions = await repo.list_game_sessions(db)
     sessions = []
-    for sid, sdata in storage.game_sessions.items():
+    for sdata in all_sessions:
         if campaign_id and sdata.get("campaign_id") != campaign_id:
             continue
         sessions.append({
-            "id": sid,
+            "id": sdata["id"],
             "campaign_id": sdata.get("campaign_id", ""),
             "phase": sdata.get("current_phase", "exploration"),
             "turn_count": sdata.get("turn_count", 0),
@@ -126,15 +127,12 @@ async def list_game_sessions(campaign_id: str | None = None) -> list[dict]:
 
 
 @router.get("/sessions/{session_id}/state", response_model=GameStateResponse)
-async def get_game_state(session_id: str) -> GameStateResponse:
+async def get_game_state(session_id: str, db: AsyncSession = Depends(get_db)) -> GameStateResponse:
     """Get the current game state for a session."""
-    if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found"
-        )
-    
-    return GameStateResponse(**storage.game_sessions[session_id])
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+    return GameStateResponse(**session)
 
 
 @router.post("/sessions/{session_id}/action", response_model=PlayerActionResponse)
@@ -142,21 +140,19 @@ async def submit_player_action(
     request: Request,
     session_id: str,
     action: PlayerActionRequest,
+    db: AsyncSession = Depends(get_db),
 ) -> PlayerActionResponse:
     """Submit a player action to the game."""
-    if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found"
-        )
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
     
-    session = storage.game_sessions[session_id]
     player_text = action.resolved_action
     turn_number = len(session["narrative_history"])
 
     # Try real LLM narrator; fall back to keyword mock when no API key is set
     narrator = getattr(request.app.state, "narrator", None)
-    narration = await _generate_dm_response(player_text, session, narrator)
+    narration = await _generate_dm_response(player_text, session, narrator, db)
     
     # Add to narrative history
     session["narrative_history"].append(f"Player: {player_text}")
@@ -169,6 +165,8 @@ async def submit_player_action(
 
     # Auto-advance time and potentially change weather
     _advance_time(session)
+
+    await repo.save_game_session(db, session)
 
     return PlayerActionResponse(
         narration=narration,
@@ -202,27 +200,28 @@ def _detect_effects(narration: str, player_action: str) -> List[str]:
     return list(set(effects))
 
 
-async def _generate_dm_response(player_action: str, session: dict, narrator=None) -> str:
+async def _generate_dm_response(player_action: str, session: dict, narrator=None, db=None) -> str:
     """Generate a DM narrative response.
 
     Uses the real LLM narrator when available; falls back to keyword-matching
     mock responses so tests (which have no API key) continue to pass.
     """
-    if narrator is not None:
+    if narrator is not None and db is not None:
         try:
             campaign_id = session.get("campaign_id", "")
-            campaign = storage.campaigns.get(campaign_id, {})
+            campaign = await repo.get_campaign(db, campaign_id) or {}
             world_context = campaign.get("world_state", {}).get("context", "A perilous realm.")
-            characters = [
-                storage.characters[cid]
-                for cid in campaign.get("character_ids", [])
-                if cid in storage.characters
-            ]
+            char_ids = campaign.get("character_ids", [])
+            characters = []
+            for cid in char_ids:
+                c = await repo.get_character(db, cid)
+                if c:
+                    characters.append(c)
             scene = {
                 "name": "Current Scene",
                 "description": session.get("current_scene", ""),
             }
-            story_bible = storage.story_bibles.get(campaign_id, "")
+            story_bible = await repo.get_campaign_story_bible(db, campaign_id) or ""
             return await narrator.narrate_exploration(
                 scene=scene,
                 player_action=player_action,
@@ -273,30 +272,28 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
 
 
 @router.get("/sessions/{session_id}/greeting")
-async def get_session_greeting(request: Request, session_id: str) -> dict:
-    """Generate the session-opening greeting and last-session recap.
-
-    Returns:
-        {"greeting": "...wizard voice narration..."}
-    """
-    if session_id not in storage.game_sessions:
+async def get_session_greeting(request: Request, session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Generate the session-opening greeting and last-session recap."""
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
 
-    session = storage.game_sessions[session_id]
     campaign_id = session.get("campaign_id", "")
-    campaign = storage.campaigns.get(campaign_id, {})
-    characters = [
-        storage.characters[cid]
-        for cid in campaign.get("character_ids", [])
-        if cid in storage.characters
-    ]
+    campaign = await repo.get_campaign(db, campaign_id) or {}
+    char_ids = campaign.get("character_ids", [])
+    characters = []
+    for cid in char_ids:
+        c = await repo.get_character(db, cid)
+        if c:
+            characters.append(c)
     world_context = campaign.get("world_state", {}).get("context", "")
-    last_summary = storage.session_summaries.get(campaign_id, "")
+    last_summary = await repo.get_campaign_session_summary(db, campaign_id) or ""
 
     narrator = getattr(request.app.state, "narrator", None)
 
     # Generate a story bible for this campaign if one doesn't exist yet
-    if narrator is not None and campaign_id not in storage.story_bibles:
+    existing_bible = await repo.get_campaign_story_bible(db, campaign_id)
+    if narrator is not None and not existing_bible:
         tone = campaign.get("world_state", {}).get("theme", "dark_fantasy")
         try:
             bible = await narrator.generate_story_bible(
@@ -304,17 +301,15 @@ async def get_session_greeting(request: Request, session_id: str) -> dict:
                 world_context=world_context,
                 tone=tone,
             )
-            storage.story_bibles[campaign_id] = bible
+            await repo.set_campaign_story_bible(db, campaign_id, bible)
+            existing_bible = bible
         except Exception:
-            pass  # non-fatal; DM still works without it
+            pass  # non-fatal
 
     if narrator is not None:
-        # Enrich world_context with the story bible's world section for the greeting
-        bible = storage.story_bibles.get(campaign_id, "")
         greeting_world_context = world_context
-        if bible and not world_context:
-            # Use first paragraph of bible as world context hint for the greeting
-            greeting_world_context = bible.split("\n\n")[0] if "\n\n" in bible else bible[:300]
+        if existing_bible and not world_context:
+            greeting_world_context = existing_bible.split("\n\n")[0] if "\n\n" in existing_bible else existing_bible[:300]
         greeting = await narrator.generate_session_greeting(
             campaign_name=campaign.get("name", "Adventure"),
             characters=characters,
@@ -337,22 +332,15 @@ async def get_session_greeting(request: Request, session_id: str) -> dict:
 
 @router.post("/sessions/{session_id}/summary")
 async def save_session_summary(
-    request: Request, session_id: str, body: SessionSummaryRequest
+    request: Request, session_id: str, body: SessionSummaryRequest, db: AsyncSession = Depends(get_db)
 ) -> dict:
-    """Save (or auto-generate) a session summary for next session's recap.
-
-    If no summary is provided in the body, the narrator generates one from
-    the narrative history.
-
-    Returns:
-        {"summary": "..."}
-    """
-    if session_id not in storage.game_sessions:
+    """Save (or auto-generate) a session summary for next session's recap."""
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
 
-    session = storage.game_sessions[session_id]
     campaign_id = session.get("campaign_id", "")
-    campaign = storage.campaigns.get(campaign_id, {})
+    campaign = await repo.get_campaign(db, campaign_id) or {}
 
     if body.summary:
         summary = body.summary
@@ -367,7 +355,7 @@ async def save_session_summary(
             history = session.get("narrative_history", [])
             summary = history[-1] if history else "The party's deeds were recorded."
 
-    storage.session_summaries[campaign_id] = summary
+    await repo.set_campaign_session_summary(db, campaign_id, summary)
     return {"summary": summary}
 
 
@@ -387,39 +375,24 @@ class SessionNPCsResponse(BaseModel):
 
 
 @router.get("/sessions/{session_id}/npcs", response_model=SessionNPCsResponse)
-async def get_session_npcs(session_id: str) -> SessionNPCsResponse:
+async def get_session_npcs(session_id: str, db: AsyncSession = Depends(get_db)) -> SessionNPCsResponse:
     """Get all NPCs for a session."""
-    if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found"
-        )
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
     
-    session = storage.game_sessions[session_id]
     npcs_data = session.get("npcs", [])
-    
-    # Convert dict NPCs back to NPCData objects
     npcs = [NPCData(**npc) if isinstance(npc, dict) else npc for npc in npcs_data]
-    
     return SessionNPCsResponse(npcs=npcs)
 
 
 @router.post("/sessions/{session_id}/npcs", response_model=SessionNPCsResponse)
-async def add_session_npc(session_id: str, npc: NPCData) -> SessionNPCsResponse:
-    """Add or update an NPC in a session.
+async def add_session_npc(session_id: str, npc: NPCData, db: AsyncSession = Depends(get_db)) -> SessionNPCsResponse:
+    """Add or update an NPC in a session."""
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
     
-    If an NPC with the same name exists, it will be updated.
-    Otherwise, a new NPC is added.
-    """
-    if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found"
-        )
-    
-    session = storage.game_sessions[session_id]
-    
-    # Initialize npcs list if it doesn't exist
     if "npcs" not in session:
         session["npcs"] = []
     
@@ -431,33 +404,25 @@ async def add_session_npc(session_id: str, npc: NPCData) -> SessionNPCsResponse:
             existing_idx = idx
             break
     
-    # Convert NPC to dict for storage
     npc_dict = npc.dict()
     
     if existing_idx is not None:
-        # Update existing NPC
         session["npcs"][existing_idx] = npc_dict
     else:
-        # Add new NPC
         session["npcs"].append(npc_dict)
     
-    # Convert back to NPCData for response
-    npcs = [NPCData(**npc) if isinstance(npc, dict) else npc for npc in session["npcs"]]
+    await repo.save_game_session(db, session)
     
+    npcs = [NPCData(**n) if isinstance(n, dict) else n for n in session["npcs"]]
     return SessionNPCsResponse(npcs=npcs)
 
 
 @router.post("/world/generate")
-async def generate_world(request: Request, body: WorldGenerateRequest) -> dict:
-    """Generate a rich world context and store it in the campaign.
-
-    Returns:
-        {"world_context": "..."}
-    """
-    if body.campaign_id not in storage.campaigns:
+async def generate_world(request: Request, body: WorldGenerateRequest, db: AsyncSession = Depends(get_db)) -> dict:
+    """Generate a rich world context and store it in the campaign."""
+    campaign = await repo.get_campaign(db, body.campaign_id)
+    if campaign is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
-
-    campaign = storage.campaigns[body.campaign_id]
 
     narrator = getattr(request.app.state, "narrator", None)
     if narrator is not None:
@@ -479,43 +444,38 @@ async def generate_world(request: Request, body: WorldGenerateRequest) -> dict:
     campaign["world_state"]["context"] = world_context
     campaign["world_state"]["theme"] = body.theme
     campaign["world_state"]["setting"] = body.setting
+    await repo.save_campaign(db, campaign)
 
     return {"world_context": world_context}
 
 
 @router.post("/sessions/{session_id}/start-combat", response_model=GameStateResponse)
-async def start_combat(session_id: str) -> GameStateResponse:
+async def start_combat(session_id: str, db: AsyncSession = Depends(get_db)) -> GameStateResponse:
     """Start combat encounter in the session."""
-    if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found"
-        )
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
     
-    session = storage.game_sessions[session_id]
     session["current_phase"] = GamePhase.COMBAT.value
     session["combat_state"] = {
         "initiative_order": [],
         "current_turn_index": 0,
         "round_number": 1,
     }
-    
+    await repo.save_game_session(db, session)
     return GameStateResponse(**session)
 
 
 @router.post("/sessions/{session_id}/end-combat", response_model=GameStateResponse)
-async def end_combat(session_id: str) -> GameStateResponse:
+async def end_combat(session_id: str, db: AsyncSession = Depends(get_db)) -> GameStateResponse:
     """End combat encounter in the session."""
-    if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found"
-        )
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
     
-    session = storage.game_sessions[session_id]
     session["current_phase"] = GamePhase.EXPLORATION.value
     session["combat_state"] = None
-    
+    await repo.save_game_session(db, session)
     return GameStateResponse(**session)
 
 
@@ -647,53 +607,41 @@ def _advance_time(session: dict) -> None:
 
 
 @router.get("/sessions/{session_id}/environment", response_model=EnvironmentData)
-async def get_environment(session_id: str) -> EnvironmentData:
+async def get_environment(session_id: str, db: AsyncSession = Depends(get_db)) -> EnvironmentData:
     """Get the current environment (weather, time of day, etc.)."""
-    if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found"
-        )
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
     
-    session = storage.game_sessions[session_id]
     env = session.get("environment", {
         "time_of_day": "dawn",
         "weather": "clear",
         "temperature": "cool",
         "season": "spring",
     })
-    
     return EnvironmentData(**env)
 
 
 @router.post("/sessions/{session_id}/environment", response_model=EnvironmentData)
-async def update_environment(session_id: str, env: EnvironmentData) -> EnvironmentData:
+async def update_environment(session_id: str, env: EnvironmentData, db: AsyncSession = Depends(get_db)) -> EnvironmentData:
     """Update the environment (weather, time of day, etc.)."""
-    if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found"
-        )
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
     
-    session = storage.game_sessions[session_id]
     session["environment"] = env.dict()
-    
+    await repo.save_game_session(db, session)
     return EnvironmentData(**session["environment"])
 
 
 @router.get("/sessions/{session_id}/mood")
-async def get_scene_mood(session_id: str) -> SceneMood:
-    """Get the atmospheric mood of the current scene.
-
-    Analyzes the current scene description and recent narrative to determine
-    lighting, atmosphere, danger level, and suggested ambient sounds.
-    """
-    if session_id not in storage.game_sessions:
+async def get_scene_mood(session_id: str, db: AsyncSession = Depends(get_db)) -> SceneMood:
+    """Get the atmospheric mood of the current scene."""
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
 
-    session = storage.game_sessions[session_id]
     scene = session.get("current_scene", "")
-    # Include recent narrative for more context
     history = session.get("narrative_history", [])
     recent = " ".join(history[-4:]) if history else ""
     combined = f"{scene} {recent}"
@@ -702,23 +650,16 @@ async def get_scene_mood(session_id: str) -> SceneMood:
 
 
 @router.get("/sessions/{session_id}/recap")
-async def get_session_recap(session_id: str) -> dict:
-    """Get the recap of the previous session for cinematic display.
+async def get_session_recap(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Get the recap of the previous session for cinematic display."""
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
 
-    Returns the last session summary for the campaign so the frontend
-    can show a dramatic "Previously on..." overlay.
-    """
-    if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found",
-        )
-
-    session = storage.game_sessions[session_id]
     campaign_id = session.get("campaign_id", "")
-    campaign = storage.campaigns.get(campaign_id, {})
+    campaign = await repo.get_campaign(db, campaign_id) or {}
     campaign_name = campaign.get("name", "Your Adventure")
-    last_summary = storage.session_summaries.get(campaign_id, "")
+    last_summary = await repo.get_campaign_session_summary(db, campaign_id) or ""
 
     if not last_summary:
         return {"has_recap": False, "campaign_name": campaign_name, "recap_text": ""}
@@ -1094,17 +1035,11 @@ def _get_cr_value(difficulty: str, party_level: int) -> tuple[float, float]:
 
 
 @router.post("/sessions/{session_id}/encounter", response_model=EncounterResponse)
-async def generate_encounter(session_id: str, body: EncounterRequest) -> EncounterResponse:
-    """Generate a random encounter based on party level and environment.
-    
-    Uses D&D 5e encounter building rules with CR-based enemy selection
-    and XP threshold balancing.
-    """
-    if session_id not in storage.game_sessions:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Game session not found"
-        )
+async def generate_encounter(session_id: str, body: EncounterRequest, db: AsyncSession = Depends(get_db)) -> EncounterResponse:
+    """Generate a random encounter based on party level and environment."""
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
     
     # Validate inputs
     valid_envs = set(SRD_MONSTERS.keys())
@@ -1216,11 +1151,11 @@ class GoldTransactionRequest(BaseModel):
 
 
 @router.get("/sessions/{session_id}/loot")
-async def get_party_loot(session_id: str) -> dict:
+async def get_party_loot(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     """Get the party's loot inventory."""
-    if session_id not in storage.game_sessions:
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
-    session = storage.game_sessions[session_id]
     return {
         "items": session.get("party_loot", []),
         "gold": session.get("party_gold", 0),
@@ -1228,27 +1163,29 @@ async def get_party_loot(session_id: str) -> dict:
 
 
 @router.post("/sessions/{session_id}/loot")
-async def add_party_loot(session_id: str, body: AddLootRequest) -> dict:
+async def add_party_loot(session_id: str, body: AddLootRequest, db: AsyncSession = Depends(get_db)) -> dict:
     """Add loot items to the party inventory."""
-    if session_id not in storage.game_sessions:
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
-    session = storage.game_sessions[session_id]
     if "party_loot" not in session:
         session["party_loot"] = []
     for item in body.items:
         session["party_loot"].append(item.model_dump())
+    await repo.save_game_session(db, session)
     return {"items": session["party_loot"], "gold": session.get("party_gold", 0)}
 
 
 @router.post("/sessions/{session_id}/gold")
-async def update_party_gold(session_id: str, body: GoldTransactionRequest) -> dict:
+async def update_party_gold(session_id: str, body: GoldTransactionRequest, db: AsyncSession = Depends(get_db)) -> dict:
     """Add or subtract gold from the party."""
-    if session_id not in storage.game_sessions:
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
-    session = storage.game_sessions[session_id]
     current = session.get("party_gold", 0)
     new_total = max(0, current + body.amount)
     session["party_gold"] = new_total
+    await repo.save_game_session(db, session)
     return {"gold": new_total, "transaction": f"{'+' if body.amount >= 0 else ''}{body.amount} GP — {body.reason or 'adjustment'}"}
 
 
@@ -1263,14 +1200,15 @@ class DistributeLootRequest(BaseModel):
 
 
 @router.post("/sessions/{session_id}/distribute-loot")
-async def distribute_loot(session_id: str, body: DistributeLootRequest) -> dict:
+async def distribute_loot(session_id: str, body: DistributeLootRequest, db: AsyncSession = Depends(get_db)) -> dict:
     """Move a loot item from party inventory to a character's inventory."""
-    if session_id not in storage.game_sessions:
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
-    if body.character_id not in storage.characters:
+    character = await repo.get_character(db, body.character_id)
+    if character is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
 
-    session = storage.game_sessions[session_id]
     party_loot = session.get("party_loot", [])
 
     if body.item_index >= len(party_loot):
@@ -1280,15 +1218,12 @@ async def distribute_loot(session_id: str, body: DistributeLootRequest) -> dict:
     available = item.get("quantity", 1)
     take = min(body.quantity, available)
 
-    character = storage.characters[body.character_id]
     if "inventory" not in character:
         character["inventory"] = []
 
-    # Add item name (and quantity if >1) to character inventory
     label = item["name"] if take == 1 else f"{item['name']} x{take}"
     character["inventory"].append(label)
 
-    # Track structured inventory separately for rich item data
     if "structured_inventory" not in character:
         character["structured_inventory"] = []
     distributed_item = {**item, "quantity": take}
@@ -1300,6 +1235,9 @@ async def distribute_loot(session_id: str, body: DistributeLootRequest) -> dict:
         party_loot.pop(body.item_index)
     else:
         item["quantity"] = remaining
+
+    await repo.save_game_session(db, session)
+    await repo.save_character(db, character)
 
     return {
         "distributed": {"item": item["name"], "quantity": take, "to": character.get("name", body.character_id)},
@@ -1338,14 +1276,14 @@ class XPEventResponse(BaseModel):
 
 
 @router.post("/sessions/{session_id}/xp-event", response_model=XPEventResponse)
-async def award_xp_event(session_id: str, body: XPEventRequest) -> XPEventResponse:
+async def award_xp_event(session_id: str, body: XPEventRequest, db: AsyncSession = Depends(get_db)) -> XPEventResponse:
     """Award XP to characters from a game event (combat, quest, etc)."""
-    if session_id not in storage.game_sessions:
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
 
-    session = storage.game_sessions[session_id]
     campaign_id = session.get("campaign_id", "")
-    campaign = storage.campaigns.get(campaign_id, {})
+    campaign = await repo.get_campaign(db, campaign_id) or {}
 
     # Determine total XP
     if body.xp_total is not None:
@@ -1359,9 +1297,15 @@ async def award_xp_event(session_id: str, body: XPEventRequest) -> XPEventRespon
 
     # Determine recipients
     if body.character_ids:
-        char_ids = [cid for cid in body.character_ids if cid in storage.characters]
+        char_ids = []
+        for cid in body.character_ids:
+            if await repo.character_exists(db, cid):
+                char_ids.append(cid)
     else:
-        char_ids = [cid for cid in campaign.get("character_ids", []) if cid in storage.characters]
+        char_ids = []
+        for cid in campaign.get("character_ids", []):
+            if await repo.character_exists(db, cid):
+                char_ids.append(cid)
 
     if not char_ids:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No valid characters to award XP to")
@@ -1370,18 +1314,16 @@ async def award_xp_event(session_id: str, body: XPEventRequest) -> XPEventRespon
     awards = []
 
     for cid in char_ids:
-        character = storage.characters[cid]
+        character = await repo.get_character(db, cid)
         old_xp = character.get("experience_points", 0)
         old_level = character.get("level", 1)
         character["experience_points"] = old_xp + xp_each
 
-        # Import level calculation from characters module
         from app.api.routes.characters import _level_for_xp
         new_level = _level_for_xp(character["experience_points"])
         leveled_up = new_level > old_level
         if leveled_up:
             character["level"] = new_level
-            # Mark pending level-up choices
             pending = character.get("pending_level_ups", [])
             for lvl in range(old_level + 1, new_level + 1):
                 pending.append({
@@ -1391,6 +1333,8 @@ async def award_xp_event(session_id: str, body: XPEventRequest) -> XPEventRespon
                     "hp_rolled": False,
                 })
             character["pending_level_ups"] = pending
+
+        await repo.save_character(db, character)
 
         awards.append({
             "character_id": cid,
@@ -1413,6 +1357,7 @@ async def award_xp_event(session_id: str, body: XPEventRequest) -> XPEventRespon
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
     session["xp_log"] = xp_log
+    await repo.save_game_session(db, session)
 
     return XPEventResponse(total_xp=total_xp, xp_per_character=xp_each, awards=awards)
 
@@ -1441,11 +1386,11 @@ _ASI_LEVELS = {4, 8, 12, 16, 19}
 
 
 @router.get("/characters/{character_id}/pending-level-ups")
-async def get_pending_level_ups(character_id: str) -> dict:
+async def get_pending_level_ups(character_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     """Get any pending level-up choices for a character."""
-    if character_id not in storage.characters:
+    character = await repo.get_character(db, character_id)
+    if character is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
-    character = storage.characters[character_id]
     return {
         "character_id": character_id,
         "character_name": character.get("name", "Unknown"),
@@ -1455,12 +1400,12 @@ async def get_pending_level_ups(character_id: str) -> dict:
 
 
 @router.post("/characters/{character_id}/apply-level-up")
-async def apply_level_up(character_id: str, body: LevelUpChoices) -> dict:
+async def apply_level_up(character_id: str, body: LevelUpChoices, db: AsyncSession = Depends(get_db)) -> dict:
     """Apply level-up choices to a character."""
-    if character_id not in storage.characters:
+    character = await repo.get_character(db, character_id)
+    if character is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
 
-    character = storage.characters[character_id]
     pending = character.get("pending_level_ups", [])
     if not pending:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No pending level-ups")
@@ -1531,6 +1476,8 @@ async def apply_level_up(character_id: str, body: LevelUpChoices) -> dict:
     pending.pop(0)
     character["pending_level_ups"] = pending
 
+    await repo.save_character(db, character)
+
     return {
         "character_id": character_id,
         "level": character.get("level", 1),
@@ -1552,27 +1499,31 @@ class JoinRequest(BaseModel):
 
 
 @router.get("/sessions/{session_id}/room-code")
-async def get_room_code(session_id: str) -> dict:
+async def get_room_code(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     """Get or create the room code for a session."""
-    if session_id not in storage.game_sessions:
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
 
-    session = storage.game_sessions[session_id]
     code = session.get("room_code")
     if not code:
         code = storage.generate_room_code()
         storage.room_codes[code] = session_id
         session["room_code"] = code
+        await repo.save_game_session(db, session)
 
     return {"room_code": code, "session_id": session_id}
 
 
 @router.post("/join")
-async def join_game(body: JoinRequest) -> dict:
-    """Join a game session using a room code. Returns session ID and player ID."""
+async def join_game(body: JoinRequest, db: AsyncSession = Depends(get_db)) -> dict:
+    """Join a game session using a room code."""
     code = body.room_code.strip().upper()
     session_id = storage.room_codes.get(code)
-    if not session_id or session_id not in storage.game_sessions:
+    if not session_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid room code")
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid room code")
 
     player_id = storage.generate_id()
@@ -1590,14 +1541,15 @@ async def join_game(body: JoinRequest) -> dict:
     return {
         "session_id": session_id,
         "player_id": player_id,
-        "campaign_id": storage.game_sessions[session_id].get("campaign_id", ""),
+        "campaign_id": session.get("campaign_id", ""),
     }
 
 
 @router.get("/sessions/{session_id}/players")
-async def get_session_players(session_id: str) -> dict:
+async def get_session_players(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     """Get the list of players in a session."""
-    if session_id not in storage.game_sessions:
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
     return {"players": storage.session_players.get(session_id, [])}
 
@@ -1611,11 +1563,10 @@ class NarrateTTSRequest(BaseModel):
 
 
 @router.post("/sessions/{session_id}/narrate-tts")
-async def narrate_tts(session_id: str, body: NarrateTTSRequest, request: Request):
-    """Synthesize narration text to audio and return MP3 bytes.
-    Used by the DM Display to speak narration aloud.
-    """
-    if session_id not in storage.game_sessions:
+async def narrate_tts(session_id: str, body: NarrateTTSRequest, request: Request, db: AsyncSession = Depends(get_db)):
+    """Synthesize narration text to audio and return MP3 bytes."""
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
 
     text = body.text.strip()

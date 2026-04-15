@@ -6,8 +6,11 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api import storage
+from app.db import get_db
+import app.repository as repo
 
 router = APIRouter(prefix="/auth")
 
@@ -49,23 +52,20 @@ def _hash_password(password: str) -> str:
 
 
 # ── Token verification dependency ──
-
-
-def _get_user_by_token(token: str) -> Optional[dict]:
-    """Look up user by token in the token store."""
-    user_id = storage.tokens.get(token)
-    if user_id is None:
-        return None
-    return storage.users.get(user_id)
+# Tokens are volatile (in-memory). Users are persisted in DB.
 
 
 async def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: AsyncSession = Depends(get_db),
 ) -> dict:
     """Dependency that extracts and validates the Bearer token."""
     if credentials is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-    user = _get_user_by_token(credentials.credentials)
+    user_id = storage.tokens.get(credentials.credentials)
+    if user_id is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+    user = await repo.get_user(db, user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
     return user
@@ -75,14 +75,13 @@ async def get_current_user(
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest):
-    # Check for duplicate username
-    for u in storage.users.values():
-        if u["username"] == body.username:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Username already exists",
-            )
+async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    existing = await repo.get_user_by_username(db, body.username)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username already exists",
+        )
 
     user_id = storage.generate_id()
     user = {
@@ -90,18 +89,18 @@ async def register(body: RegisterRequest):
         "username": body.username,
         "password_hash": _hash_password(body.password),
     }
-    storage.users[user_id] = user
+    await repo.save_user(db, user)
     return UserResponse(id=user_id, username=body.username)
 
 
 @router.post("/login", response_model=LoginResponse)
-async def login(body: LoginRequest):
+async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     pw_hash = _hash_password(body.password)
-    for u in storage.users.values():
-        if u["username"] == body.username and u["password_hash"] == pw_hash:
-            token = secrets.token_urlsafe(32)
-            storage.tokens[token] = u["id"]
-            return LoginResponse(token=token, username=u["username"], id=u["id"])
+    user = await repo.get_user_by_username(db, body.username)
+    if user and user.get("password_hash") == pw_hash:
+        token = secrets.token_urlsafe(32)
+        storage.tokens[token] = user["id"]
+        return LoginResponse(token=token, username=user["username"], id=user["id"])
 
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
 

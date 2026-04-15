@@ -5,7 +5,6 @@ import pytest
 import os
 from datetime import datetime
 from uuid import uuid4
-from subprocess import run
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy import select
@@ -52,14 +51,10 @@ class TestCampaignDB:
             id=str(uuid4()),
             name="Test Campaign",
             description="A test campaign",
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
         )
         assert campaign.name == "Test Campaign"
         assert campaign.description == "A test campaign"
         assert campaign.id is not None
-        assert isinstance(campaign.created_at, datetime)
-        assert isinstance(campaign.updated_at, datetime)
 
     async def test_campaign_create_and_retrieve(self, session: AsyncSession):
         """Test creating and retrieving a campaign from the database."""
@@ -78,19 +73,34 @@ class TestCampaignDB:
         assert retrieved.name == "Dragon's Lair Campaign"
         assert retrieved.description == "Fight the dragon"
 
+    async def test_campaign_extra_data_round_trip(self, session: AsyncSession):
+        """Test that extra_data survives save/load."""
+        cid = str(uuid4())
+        campaign = CampaignDB.from_dict({
+            "id": cid,
+            "name": "Extra Test",
+            "description": "",
+            "custom_field": "hello",
+        })
+        session.add(campaign)
+        await session.commit()
+
+        result = await session.execute(select(CampaignDB).where(CampaignDB.id == cid))
+        retrieved = result.scalar_one_or_none()
+        d = retrieved.to_dict()
+        assert d["custom_field"] == "hello"
+
 
 class TestCharacterDB:
     """Test CharacterDB model."""
 
     async def test_character_instantiate(self):
         """Test that CharacterDB can be instantiated."""
-        campaign_id = str(uuid4())
         character = CharacterDB(
             id=str(uuid4()),
-            campaign_id=campaign_id,
             name="Aragorn",
             race="human",
-            character_class="fighter",
+            class_name="fighter",
             level=5,
             hp=45,
             max_hp=45,
@@ -98,68 +108,55 @@ class TestCharacterDB:
         )
         assert character.name == "Aragorn"
         assert character.race == "human"
-        assert character.character_class == "fighter"
+        assert character.class_name == "fighter"
         assert character.level == 5
         assert character.hp == 45
         assert character.max_hp == 45
         assert character.ac == 16
 
     async def test_character_with_json_fields(self):
-        """Test character with JSON ability scores, skills, and inventory."""
-        campaign_id = str(uuid4())
-        abilities = {
-            "strength": 18,
-            "dexterity": 14,
-            "constitution": 16,
-            "intelligence": 10,
-            "wisdom": 13,
-            "charisma": 12,
-        }
-        skills = {
-            "athletics": 6,
-            "acrobatics": 3,
-        }
+        """Test character with JSON skills and inventory."""
+        skills = ["athletics", "acrobatics"]
         inventory = ["Longsword", "Shield", "Backpack"]
 
         character = CharacterDB(
             id=str(uuid4()),
-            campaign_id=campaign_id,
             name="Aragorn",
             race="human",
-            character_class="fighter",
+            class_name="fighter",
             level=5,
             hp=45,
             max_hp=45,
             ac=16,
-            abilities=abilities,
+            strength=18,
+            dexterity=14,
+            constitution=16,
+            intelligence=10,
+            wisdom=13,
+            charisma=12,
             skills=skills,
             inventory=inventory,
         )
-        assert character.abilities == abilities
         assert character.skills == skills
         assert character.inventory == inventory
+        assert character.strength == 18
 
     async def test_character_create_and_retrieve(self, session: AsyncSession):
         """Test creating and retrieving a character from the database."""
-        campaign_id = str(uuid4())
         character_id = str(uuid4())
-        abilities = {
-            "strength": 18,
-            "dexterity": 14,
-        }
         inventory = ["Sword", "Shield"]
 
         character = CharacterDB(
             id=character_id,
-            campaign_id=campaign_id,
             name="Legolas",
             race="elf",
-            character_class="ranger",
+            class_name="ranger",
             level=6,
             hp=40,
             max_hp=40,
             ac=15,
-            abilities=abilities,
+            strength=14,
+            dexterity=18,
             inventory=inventory,
         )
         session.add(character)
@@ -172,8 +169,29 @@ class TestCharacterDB:
         assert retrieved is not None
         assert retrieved.name == "Legolas"
         assert retrieved.race == "elf"
-        assert retrieved.abilities == abilities
+        assert retrieved.dexterity == 18
         assert retrieved.inventory == inventory
+
+    async def test_character_extra_data_round_trip(self, session: AsyncSession):
+        """Test that extra_data fields survive save/load."""
+        cid = str(uuid4())
+        character = CharacterDB.from_dict({
+            "id": cid,
+            "name": "Test",
+            "race": "human",
+            "class_name": "fighter",
+            "level": 1,
+            "hp": 10,
+            "ac": 10,
+            "spell_slots": {"1": 2, "2": 1},
+        })
+        session.add(character)
+        await session.commit()
+
+        result = await session.execute(select(CharacterDB).where(CharacterDB.id == cid))
+        retrieved = result.scalar_one_or_none()
+        d = retrieved.to_dict()
+        assert d["spell_slots"] == {"1": 2, "2": 1}
 
 
 class TestGameSessionDB:
@@ -185,25 +203,12 @@ class TestGameSessionDB:
         session_obj = GameSessionDB(
             id=str(uuid4()),
             campaign_id=campaign_id,
-            phase="combat",
-            turn_number=5,
+            current_phase="combat",
+            turn_count=5,
         )
-        assert session_obj.phase == "combat"
-        assert session_obj.turn_number == 5
+        assert session_obj.current_phase == "combat"
+        assert session_obj.turn_count == 5
         assert session_obj.campaign_id == campaign_id
-
-    async def test_game_session_with_active_character(self):
-        """Test GameSessionDB with active character."""
-        campaign_id = str(uuid4())
-        character_id = str(uuid4())
-        session_obj = GameSessionDB(
-            id=str(uuid4()),
-            campaign_id=campaign_id,
-            phase="combat",
-            turn_number=3,
-            active_character_id=character_id,
-        )
-        assert session_obj.active_character_id == character_id
 
     async def test_game_session_create_and_retrieve(self, session: AsyncSession):
         """Test creating and retrieving a game session."""
@@ -212,8 +217,8 @@ class TestGameSessionDB:
         game_session = GameSessionDB(
             id=session_id,
             campaign_id=campaign_id,
-            phase="exploration",
-            turn_number=1,
+            current_phase="exploration",
+            turn_count=1,
         )
         session.add(game_session)
         await session.commit()
@@ -223,8 +228,28 @@ class TestGameSessionDB:
         )
         retrieved = result.scalar_one_or_none()
         assert retrieved is not None
-        assert retrieved.phase == "exploration"
-        assert retrieved.turn_number == 1
+        assert retrieved.current_phase == "exploration"
+        assert retrieved.turn_count == 1
+
+    async def test_game_session_extra_data_round_trip(self, session: AsyncSession):
+        """Test that extra_data fields survive save/load."""
+        sid = str(uuid4())
+        gs = GameSessionDB.from_dict({
+            "id": sid,
+            "campaign_id": str(uuid4()),
+            "current_phase": "exploration",
+            "current_scene": "A tavern",
+            "party_loot": ["gold ring"],
+            "room_code": "ABC123",
+        })
+        session.add(gs)
+        await session.commit()
+
+        result = await session.execute(select(GameSessionDB).where(GameSessionDB.id == sid))
+        retrieved = result.scalar_one_or_none()
+        d = retrieved.to_dict()
+        assert d["party_loot"] == ["gold ring"]
+        assert d["room_code"] == "ABC123"
 
 
 class TestMapDB:
@@ -234,13 +259,10 @@ class TestMapDB:
         """Test that MapDB can be instantiated."""
         session_id = str(uuid4())
         map_obj = MapDB(
-            id=str(uuid4()),
             session_id=session_id,
-            name="Throne Room",
             width=20,
             height=20,
         )
-        assert map_obj.name == "Throne Room"
         assert map_obj.width == 20
         assert map_obj.height == 20
         assert map_obj.session_id == session_id
@@ -257,51 +279,45 @@ class TestMapDB:
             {"entity_id": "char1", "x": 0, "y": 0},
             {"entity_id": "char2", "x": 1, "y": 1},
         ]
-        fog_revealed = [
+        fog = [
             [True, True, False],
             [True, True, False],
             [False, False, False],
         ]
 
         map_obj = MapDB(
-            id=str(uuid4()),
             session_id=session_id,
-            name="Dungeon Hall",
             width=3,
             height=3,
-            grid=grid,
-            tokens=tokens,
-            fog_revealed=fog_revealed,
+            terrain_grid=grid,
+            token_positions=tokens,
+            fog_of_war=fog,
         )
-        assert map_obj.grid == grid
-        assert map_obj.tokens == tokens
-        assert map_obj.fog_revealed == fog_revealed
+        assert map_obj.terrain_grid == grid
+        assert map_obj.token_positions == tokens
+        assert map_obj.fog_of_war == fog
 
     async def test_map_create_and_retrieve(self, session: AsyncSession):
         """Test creating and retrieving a map."""
         session_id = str(uuid4())
-        map_id = str(uuid4())
         grid = [["empty", "wall"], ["empty", "empty"]]
         tokens = [{"entity_id": "player", "x": 0, "y": 0}]
 
         map_obj = MapDB(
-            id=map_id,
             session_id=session_id,
-            name="Forest",
             width=2,
             height=2,
-            grid=grid,
-            tokens=tokens,
+            terrain_grid=grid,
+            token_positions=tokens,
         )
         session.add(map_obj)
         await session.commit()
 
-        result = await session.execute(select(MapDB).where(MapDB.id == map_id))
+        result = await session.execute(select(MapDB).where(MapDB.session_id == session_id))
         retrieved = result.scalar_one_or_none()
         assert retrieved is not None
-        assert retrieved.name == "Forest"
-        assert retrieved.grid == grid
-        assert retrieved.tokens == tokens
+        assert retrieved.terrain_grid == grid
+        assert retrieved.token_positions == tokens
 
 
 class TestUserDB:
@@ -313,11 +329,9 @@ class TestUserDB:
             id=str(uuid4()),
             username="gandalf",
             password_hash="hashed_password_123",
-            created_at=datetime.utcnow(),
         )
         assert user.username == "gandalf"
         assert user.password_hash == "hashed_password_123"
-        assert isinstance(user.created_at, datetime)
 
     async def test_user_create_and_retrieve(self, session: AsyncSession):
         """Test creating and retrieving a user."""
@@ -339,8 +353,8 @@ class TestUserDB:
 class TestRelationships:
     """Test model relationships."""
 
-    async def test_campaign_character_relationship(self, session: AsyncSession):
-        """Test that characters are associated with campaigns."""
+    async def test_campaign_with_character_ids(self, session: AsyncSession):
+        """Test that campaigns track character IDs."""
         campaign_id = str(uuid4())
         char_id_1 = str(uuid4())
         char_id_2 = str(uuid4())
@@ -349,46 +363,19 @@ class TestRelationships:
             id=campaign_id,
             name="Adventure",
             description="An adventure",
+            character_ids=[char_id_1, char_id_2],
         )
-        char1 = CharacterDB(
-            id=char_id_1,
-            campaign_id=campaign_id,
-            name="Hero1",
-            race="human",
-            character_class="fighter",
-            level=1,
-            hp=10,
-            max_hp=10,
-            ac=10,
-        )
-        char2 = CharacterDB(
-            id=char_id_2,
-            campaign_id=campaign_id,
-            name="Hero2",
-            race="elf",
-            character_class="ranger",
-            level=1,
-            hp=10,
-            max_hp=10,
-            ac=10,
-        )
-
         session.add(campaign)
-        session.add(char1)
-        session.add(char2)
         await session.commit()
 
-        # Verify characters are linked to campaign
-        result = await session.execute(
-            select(CharacterDB).where(CharacterDB.campaign_id == campaign_id)
-        )
-        characters = result.scalars().all()
-        assert len(characters) == 2
-        assert characters[0].campaign_id == campaign_id
-        assert characters[1].campaign_id == campaign_id
+        result = await session.execute(select(CampaignDB).where(CampaignDB.id == campaign_id))
+        retrieved = result.scalar_one_or_none()
+        assert retrieved is not None
+        assert char_id_1 in retrieved.character_ids
+        assert char_id_2 in retrieved.character_ids
 
     async def test_game_session_campaign_relationship(self, session: AsyncSession):
-        """Test that game sessions are associated with campaigns."""
+        """Test that game sessions reference campaigns."""
         campaign_id = str(uuid4())
         session_id = str(uuid4())
 
@@ -400,8 +387,8 @@ class TestRelationships:
         game_session = GameSessionDB(
             id=session_id,
             campaign_id=campaign_id,
-            phase="combat",
-            turn_number=1,
+            current_phase="combat",
+            turn_count=1,
         )
 
         session.add(campaign)
@@ -419,7 +406,6 @@ class TestRelationships:
         """Test that maps are associated with game sessions."""
         campaign_id = str(uuid4())
         session_id = str(uuid4())
-        map_id = str(uuid4())
 
         campaign = CampaignDB(
             id=campaign_id,
@@ -429,13 +415,11 @@ class TestRelationships:
         game_session = GameSessionDB(
             id=session_id,
             campaign_id=campaign_id,
-            phase="exploration",
-            turn_number=1,
+            current_phase="exploration",
+            turn_count=1,
         )
         map_obj = MapDB(
-            id=map_id,
             session_id=session_id,
-            name="Test Map",
             width=10,
             height=10,
         )
@@ -456,24 +440,22 @@ class TestDatabaseMetadata:
 
     async def test_create_tables(self, async_engine):
         """Test that all tables can be created from metadata."""
-        # The fixture already creates tables, so we just verify they exist
         async with async_engine.connect() as conn:
-            # Get all table names from metadata
-            table_names = Base.metadata.tables.keys()
-            assert "campaign" in table_names
-            assert "character" in table_names
-            assert "game_session" in table_names
-            assert "map" in table_names
-            assert "user" in table_names
+            table_names = list(Base.metadata.tables.keys())
+            assert "campaigns" in table_names
+            assert "characters" in table_names
+            assert "game_sessions" in table_names
+            assert "maps" in table_names
+            assert "users" in table_names
 
     async def test_all_models_in_base(self):
         """Test that all ORM models are registered in Base metadata."""
-        model_names = [name.lower() for name in Base.metadata.tables.keys()]
-        assert "campaign" in model_names
-        assert "character" in model_names
-        assert "game_session" in model_names
-        assert "map" in model_names
-        assert "user" in model_names
+        model_names = list(Base.metadata.tables.keys())
+        assert "campaigns" in model_names
+        assert "characters" in model_names
+        assert "game_sessions" in model_names
+        assert "maps" in model_names
+        assert "users" in model_names
 
 
 class TestAlembicMigrations:
@@ -510,10 +492,10 @@ class TestAlembicMigrations:
                 return inspector.get_table_names()
 
             tables = await conn.run_sync(_inspect)
-            assert "campaign" in tables
-            assert "character" in tables
-            assert "game_session" in tables
-            assert "map" in tables
-            assert "user" in tables
+            assert "campaigns" in tables
+            assert "characters" in tables
+            assert "game_sessions" in tables
+            assert "maps" in tables
+            assert "users" in tables
 
         await engine.dispose()

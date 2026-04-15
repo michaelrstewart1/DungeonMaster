@@ -1,16 +1,42 @@
-"""Test configuration for vision tests."""
+"""Test configuration for integration tests."""
 import pytest
 from httpx import ASGITransport, AsyncClient
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 
+from app.models.database import Base
+from app.db import get_db
 from app.api import storage
+
+# In-memory SQLite for integration tests
+_test_engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+_TestSession = async_sessionmaker(_test_engine, class_=AsyncSession, expire_on_commit=False)
+
+
+async def _override_get_db():
+    async with _TestSession() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise
 
 
 @pytest.fixture
-def app():
-    """Create a fresh FastAPI app instance for testing."""
-    # Import here to avoid the SRD models issue during conftest loading
+async def app():
+    """Create a fresh FastAPI app with an in-memory test database."""
+    async with _test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
     from app.main import create_app
-    return create_app()
+    application = create_app()
+    application.dependency_overrides[get_db] = _override_get_db
+    application.state.db_factory = _TestSession
+
+    yield application
+
+    async with _test_engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
 
 
 @pytest.fixture
