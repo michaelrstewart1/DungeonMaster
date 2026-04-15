@@ -6,10 +6,7 @@ interface DMAvatarProps {
 }
 
 export function DMAvatar({ expression, isSpeaking, mouthAmplitude = 0, gaze = 'center' }: DMAvatarProps) {
-  // Eye position shifts based on gaze direction
-  const gazeOffset = gaze === 'left' ? -3 : gaze === 'right' ? 3 : 0
-
-  // Speaking animation: mouth opens wider
+  const gazeOffset = gaze === 'left' ? -4 : gaze === 'right' ? 4 : 0
   const mouthOpen = isSpeaking ? Math.max(2, Math.round(mouthAmplitude * 8)) : 0
 
   return (
@@ -21,54 +18,38 @@ export function DMAvatar({ expression, isSpeaking, mouthAmplitude = 0, gaze = 'c
           xmlns="http://www.w3.org/2000/svg"
         >
           <defs>
-            {/* Eye glow filter */}
-            <filter id="eyeGlow" x="-100%" y="-100%" width="300%" height="300%">
-              <feGaussianBlur stdDeviation="4" result="blur" />
+            {/* Strong eye glow — triple blur merge for intensity */}
+            <filter id="eyeGlow" x="-150%" y="-150%" width="400%" height="400%">
+              <feGaussianBlur stdDeviation="6" result="blur1" />
+              <feGaussianBlur stdDeviation="3" in="SourceGraphic" result="blur2" />
               <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="blur" />
+                <feMergeNode in="blur1" />
+                <feMergeNode in="blur1" />
+                <feMergeNode in="blur2" />
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
 
-            {/* Outer aura glow */}
-            <filter id="auraGlow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="8" result="blur" />
-              <feMerge>
-                <feMergeNode in="blur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
+            {/* Ambient face glow from eyes illuminating hood */}
+            <filter id="faceGlow" x="-50%" y="-50%" width="200%" height="200%">
+              <feGaussianBlur stdDeviation="12" />
             </filter>
 
-            {/* Radial gradient for the dark orb background */}
             <radialGradient id="orbBg" cx="50%" cy="45%" r="50%">
-              <stop offset="0%" stopColor="#1a1520" />
-              <stop offset="60%" stopColor="#0d0a12" />
-              <stop offset="100%" stopColor="#06050a" />
+              <stop offset="0%" stopColor="#14111c" />
+              <stop offset="60%" stopColor="#0a0810" />
+              <stop offset="100%" stopColor="#050408" />
             </radialGradient>
 
-            {/* Hood gradient */}
-            <radialGradient id="hoodGrad" cx="50%" cy="20%" r="60%">
-              <stop offset="0%" stopColor="#0a0810" stopOpacity="0.95" />
-              <stop offset="50%" stopColor="#0d0a14" stopOpacity="0.85" />
-              <stop offset="100%" stopColor="transparent" stopOpacity="0" />
+            {/* Eye gradient — bright golden with hot center */}
+            <radialGradient id="eyeGrad" cx="35%" cy="35%" r="55%">
+              <stop offset="0%" stopColor="#fffbe6" />
+              <stop offset="20%" stopColor="#f5e6a8" />
+              <stop offset="50%" stopColor="#d4a846" />
+              <stop offset="85%" stopColor="#9a7a32" />
+              <stop offset="100%" stopColor="#6b5420" />
             </radialGradient>
 
-            {/* Eye gradient — golden iris */}
-            <radialGradient id="eyeLeft" cx="40%" cy="40%" r="50%">
-              <stop offset="0%" stopColor="#fff8dc" />
-              <stop offset="30%" stopColor="#f5e6a8" />
-              <stop offset="60%" stopColor="#d4a846" />
-              <stop offset="100%" stopColor="#9a7a32" />
-            </radialGradient>
-            <radialGradient id="eyeRight" cx="40%" cy="40%" r="50%">
-              <stop offset="0%" stopColor="#fff8dc" />
-              <stop offset="30%" stopColor="#f5e6a8" />
-              <stop offset="60%" stopColor="#d4a846" />
-              <stop offset="100%" stopColor="#9a7a32" />
-            </radialGradient>
-
-            {/* Rune circle mask */}
             <clipPath id="circleClip">
               <circle cx="80" cy="80" r="72" />
             </clipPath>
@@ -78,98 +59,107 @@ export function DMAvatar({ expression, isSpeaking, mouthAmplitude = 0, gaze = 'c
           <circle cx="80" cy="80" r="76" fill="none" stroke="#d4a846" strokeWidth="0.5"
             strokeOpacity="0.15" strokeDasharray="3 5" className="rune-ring" />
 
-          {/* Main orb border */}
+          {/* Main orb */}
           <circle cx="80" cy="80" r="72" fill="url(#orbBg)"
-            stroke="#d4a846" strokeWidth="2" strokeOpacity="0.5" className="orb-border" />
+            stroke="#d4a846" strokeWidth="2.5" strokeOpacity="0.45" className="orb-border" />
 
-          {/* Inner decorative ring */}
+          {/* Inner ring */}
           <circle cx="80" cy="80" r="68" fill="none"
-            stroke="#d4a846" strokeWidth="0.5" strokeOpacity="0.1" />
+            stroke="#d4a846" strokeWidth="0.5" strokeOpacity="0.08" />
 
-          {/* Content clipped to circle */}
           <g clipPath="url(#circleClip)">
-            {/* Hood silhouette — pointed cowl shape */}
+            {/* Hood — bold pointed cowl */}
             <path
-              d="M80 8 C55 8 25 35 18 65 C14 80 16 100 22 115 L25 120
-                 C30 108 38 85 45 72 C52 60 62 48 80 42
-                 C98 48 108 60 115 72 C122 85 130 108 135 120
-                 L138 115 C144 100 146 80 142 65 C135 35 105 8 80 8Z"
-              fill="#0a0810"
-              opacity="0.9"
+              d="M80 5 C50 5 18 35 12 68 C8 85 12 105 20 120 L28 130
+                 C35 110 45 85 55 72 C62 62 70 52 80 48
+                 C90 52 98 62 105 72 C115 85 125 110 132 130
+                 L140 120 C148 105 152 85 148 68 C142 35 110 5 80 5Z"
+              fill="#08060e"
+              opacity="0.95"
             />
-            {/* Hood inner shadow for depth */}
+            {/* Hood inner layer */}
             <path
-              d="M80 18 C60 20 35 42 30 65 C27 78 30 95 35 108
-                 C42 92 52 72 60 62 C68 52 74 46 80 44
-                 C86 46 92 52 100 62 C108 72 118 92 125 108
-                 C130 95 133 78 130 65 C125 42 100 20 80 18Z"
-              fill="#12101a"
-              opacity="0.7"
+              d="M80 15 C56 18 30 42 25 68 C22 82 25 98 32 112
+                 C40 95 50 75 62 65 C70 57 76 50 80 48
+                 C84 50 90 57 98 65 C110 75 120 95 128 112
+                 C135 98 138 82 135 68 C130 42 104 18 80 15Z"
+              fill="#0e0c16"
+              opacity="0.8"
             />
-            {/* Face shadow area inside hood */}
-            <ellipse cx="80" cy="78" rx="32" ry="28" fill="#0d0b14" opacity="0.6" />
 
-            {/* Left eye — almond shaped */}
+            {/* Ambient golden glow cast by eyes onto inner hood */}
+            <ellipse cx="80" cy="75" rx="35" ry="20"
+              fill="#d4a846" opacity="0.04" filter="url(#faceGlow)" />
+
+            {/* Face shadow pocket */}
+            <ellipse cx="80" cy="80" rx="36" ry="30" fill="#0a0812" opacity="0.5" />
+
+            {/* === LEFT EYE === */}
             <g filter="url(#eyeGlow)" className="avatar-eye-group left">
+              {/* Eye shape — large almond */}
               <ellipse
-                cx={56 + gazeOffset} cy="72" rx="10" ry="5.5"
-                fill="url(#eyeLeft)"
+                cx={60 + gazeOffset} cy="75" rx="14" ry="7.5"
+                fill="url(#eyeGrad)"
                 className="avatar-eye-shape"
               />
-              {/* Pupil */}
+              {/* Dark slit pupil */}
               <ellipse
-                cx={56 + gazeOffset} cy="72" rx="3.5" ry="4.5"
-                fill="#0a0a10"
+                cx={60 + gazeOffset} cy="75" rx="3" ry="6.5"
+                fill="#06050a"
               />
-              {/* Specular highlight */}
-              <ellipse cx={53 + gazeOffset} cy="70" rx="2" ry="1.2" fill="white" opacity="0.7" />
+              {/* Bright specular */}
+              <ellipse cx={55 + gazeOffset} cy="72.5" rx="3" ry="1.8"
+                fill="white" opacity="0.8" />
+              {/* Secondary highlight */}
+              <ellipse cx={63 + gazeOffset} cy="77" rx="1.5" ry="1"
+                fill="white" opacity="0.3" />
             </g>
 
-            {/* Right eye — almond shaped */}
+            {/* === RIGHT EYE === */}
             <g filter="url(#eyeGlow)" className="avatar-eye-group right">
               <ellipse
-                cx={104 + gazeOffset} cy="72" rx="10" ry="5.5"
-                fill="url(#eyeRight)"
+                cx={100 + gazeOffset} cy="75" rx="14" ry="7.5"
+                fill="url(#eyeGrad)"
                 className="avatar-eye-shape"
               />
-              {/* Pupil */}
               <ellipse
-                cx={104 + gazeOffset} cy="72" rx="3.5" ry="4.5"
-                fill="#0a0a10"
+                cx={100 + gazeOffset} cy="75" rx="3" ry="6.5"
+                fill="#06050a"
               />
-              {/* Specular highlight */}
-              <ellipse cx={101 + gazeOffset} cy="70" rx="2" ry="1.2" fill="white" opacity="0.7" />
+              <ellipse cx={95 + gazeOffset} cy="72.5" rx="3" ry="1.8"
+                fill="white" opacity="0.8" />
+              <ellipse cx={103 + gazeOffset} cy="77" rx="1.5" ry="1"
+                fill="white" opacity="0.3" />
             </g>
 
             {/* Nose shadow hint */}
-            <line x1="80" y1="76" x2="80" y2="85" stroke="#d4a846" strokeWidth="0.5" opacity="0.1" />
+            <line x1="80" y1="82" x2="80" y2="90" stroke="#d4a846"
+              strokeWidth="0.4" opacity="0.08" />
 
-            {/* Mouth — subtle, only visible when speaking */}
+            {/* Mouth — visible when speaking */}
             {mouthOpen > 0 && (
               <ellipse
-                cx="80" cy="92" rx={6 + mouthOpen} ry={mouthOpen}
-                fill="#0a0810"
-                stroke="#d4a846"
-                strokeWidth="0.5"
-                strokeOpacity="0.3"
+                cx="80" cy="96" rx={7 + mouthOpen} ry={mouthOpen}
+                fill="#08060e"
+                stroke="#d4a846" strokeWidth="0.5" strokeOpacity="0.25"
                 className="avatar-mouth-shape"
               />
             )}
 
-            {/* Chin shadow when idle — subtle expression line */}
+            {/* Idle expression line */}
             {mouthOpen === 0 && (
               <path
-                d="M73 90 Q80 93 87 90"
-                fill="none" stroke="#d4a846" strokeWidth="0.5" opacity="0.15"
+                d="M72 94 Q80 97 88 94"
+                fill="none" stroke="#d4a846" strokeWidth="0.5" opacity="0.1"
               />
             )}
           </g>
 
-          {/* Ambient particles — floating embers/sparks */}
-          <circle cx="30" cy="40" r="1" fill="#d4a846" opacity="0.3" className="spark spark-1" />
-          <circle cx="130" cy="50" r="0.8" fill="#d4a846" opacity="0.2" className="spark spark-2" />
-          <circle cx="45" cy="130" r="0.6" fill="#d4a846" opacity="0.25" className="spark spark-3" />
-          <circle cx="120" cy="125" r="0.7" fill="#d4a846" opacity="0.2" className="spark spark-4" />
+          {/* Floating sparks */}
+          <circle cx="28" cy="38" r="1.2" fill="#d4a846" opacity="0.3" className="spark spark-1" />
+          <circle cx="135" cy="48" r="1" fill="#d4a846" opacity="0.25" className="spark spark-2" />
+          <circle cx="40" cy="135" r="0.8" fill="#d4a846" opacity="0.2" className="spark spark-3" />
+          <circle cx="125" cy="128" r="0.9" fill="#d4a846" opacity="0.22" className="spark spark-4" />
         </svg>
       </div>
 

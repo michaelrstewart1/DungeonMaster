@@ -240,9 +240,9 @@
 }
 
 @keyframes eyeFlicker {
-  0%, 100% { opacity: 0.85; }
-  25% { opacity: 0.95; }
-  50% { opacity: 0.75; }
+  0%, 100% { opacity: 0.9; }
+  25% { opacity: 1; }
+  50% { opacity: 0.82; }
   75% { opacity: 1; }
 }
 
