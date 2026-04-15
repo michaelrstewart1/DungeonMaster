@@ -13,7 +13,7 @@ export const PREMADE_CAMPAIGNS: PremadeCampaign[] = [
   {
     id: 'wrath-of-the-stormspire',
     icon: '⛈️',
-    thumbnail: '/campaigns/wrath-of-the-stormspire.png',
+    thumbnail: '/campaigns/wrath-of-the-stormspire.jpg',
     theme: 'Elemental / High Fantasy',
     levelRange: 'Levels 3–10',
     playerCount: '4–6 players',
@@ -35,7 +35,7 @@ export const PREMADE_CAMPAIGNS: PremadeCampaign[] = [
   {
     id: 'the-drowned-throne',
     icon: '🌊',
-    thumbnail: '/campaigns/the-drowned-throne.png',
+    thumbnail: '/campaigns/the-drowned-throne.jpg',
     theme: 'Oceanic / Horror',
     levelRange: 'Levels 1–8',
     playerCount: '3–5 players',
@@ -57,7 +57,7 @@ export const PREMADE_CAMPAIGNS: PremadeCampaign[] = [
   {
     id: 'ember-of-the-last-god',
     icon: '🔥',
-    thumbnail: '/campaigns/ember-of-the-last-god.png',
+    thumbnail: '/campaigns/ember-of-the-last-god.jpg',
     theme: 'Apocalyptic / Divine',
     levelRange: 'Levels 5–12',
     playerCount: '4–6 players',
@@ -79,7 +79,7 @@ export const PREMADE_CAMPAIGNS: PremadeCampaign[] = [
   {
     id: 'carnival-of-stolen-faces',
     icon: '🎭',
-    thumbnail: '/campaigns/carnival-of-stolen-faces.png',
+    thumbnail: '/campaigns/carnival-of-stolen-faces.jpg',
     theme: 'Mystery / Feywild',
     levelRange: 'Levels 2–7',
     playerCount: '3–6 players',
@@ -101,7 +101,7 @@ export const PREMADE_CAMPAIGNS: PremadeCampaign[] = [
   {
     id: 'iron-oath-of-karak-dum',
     icon: '⛏️',
-    thumbnail: '/campaigns/iron-oath-of-karak-dum.png',
+    thumbnail: '/campaigns/iron-oath-of-karak-dum.jpg',
     theme: 'Dungeon Crawl / Dwarven',
     levelRange: 'Levels 3–9',
     playerCount: '4–6 players',
