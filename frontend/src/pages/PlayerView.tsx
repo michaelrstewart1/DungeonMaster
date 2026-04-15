@@ -4,6 +4,7 @@
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
+import { uuid } from '../utils/uuid';
 import { useGameSocket } from '../hooks/useGameSocket';
 import BattleMap from '../components/BattleMap';
 import type { Character, GameState, GameMap } from '../types';
@@ -113,7 +114,7 @@ export function PlayerView() {
       setNarrative((prev) => [
         ...prev,
         {
-          id: crypto.randomUUID(),
+          id: uuid(),
           text: p.narration || '',
           type: 'narration',
           timestamp: new Date().toISOString(),
@@ -130,7 +131,7 @@ export function PlayerView() {
       setNarrative((prev) => [
         ...prev,
         {
-          id: crypto.randomUUID(),
+          id: uuid(),
           text: p.message || '',
           sender: p.sender,
           type: 'chat',
@@ -226,7 +227,7 @@ export function PlayerView() {
     sendAction(character?.id || 'unknown', text);
     setNarrative((prev) => [
       ...prev,
-      { id: crypto.randomUUID(), text, type: 'action', sender: playerName, timestamp: new Date().toISOString() },
+      { id: uuid(), text, type: 'action', sender: playerName, timestamp: new Date().toISOString() },
     ]);
     setActionText('');
   }

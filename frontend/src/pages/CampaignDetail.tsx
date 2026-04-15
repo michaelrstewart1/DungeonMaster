@@ -8,9 +8,18 @@ import { CharacterPicker } from '../components/CharacterPicker'
 import { CharacterPortrait } from '../components/CharacterPortrait'
 import { CampaignSettings } from '../components/CampaignSettings'
 import { SessionHistory } from '../components/SessionHistory'
+import { PREMADE_CAMPAIGNS } from '../data/premadeCampaigns'
 import type { Campaign, Character, CharacterCreate } from '../types'
 
 type CharacterMode = 'none' | 'premade' | 'manual' | 'import'
+
+function getCampaignThumbnail(campaign: Campaign | null): string | null {
+  if (!campaign) return null
+  const match = PREMADE_CAMPAIGNS.find(
+    (p) => p.name.toLowerCase() === campaign.name.toLowerCase()
+  )
+  return match?.thumbnail ?? null
+}
 
 export function CampaignDetail() {
   const { campaignId } = useParams<{ campaignId: string }>()
@@ -117,21 +126,43 @@ export function CampaignDetail() {
         <span className="breadcrumb-sep">/</span>
         <span className="breadcrumb-current">{campaign?.name}</span>
       </nav>
-      <header className="campaign-detail-header">
-        <div className="campaign-detail-header-text">
-          <h1>{campaign?.name}</h1>
-          <p>{campaign?.description}</p>
-        </div>
-        <button
-          className="btn-settings-gear"
-          onClick={() => setShowSettings(true)}
-          title="Campaign Settings"
-          aria-label="Campaign Settings"
-          data-testid="btn-settings"
-        >
-          ⚙️
-        </button>
-      </header>
+      {(() => {
+        const thumb = getCampaignThumbnail(campaign)
+        return thumb ? (
+          <div className="campaign-hero-banner" style={{ backgroundImage: `url(${thumb})` }}>
+            <div className="campaign-hero-overlay" />
+            <div className="campaign-hero-content">
+              <h1>{campaign?.name}</h1>
+              <p>{campaign?.description}</p>
+              <button
+                className="btn-settings-gear"
+                onClick={() => setShowSettings(true)}
+                title="Campaign Settings"
+                aria-label="Campaign Settings"
+                data-testid="btn-settings"
+              >
+                ⚙️
+              </button>
+            </div>
+          </div>
+        ) : (
+          <header className="campaign-detail-header">
+            <div className="campaign-detail-header-text">
+              <h1>{campaign?.name}</h1>
+              <p>{campaign?.description}</p>
+            </div>
+            <button
+              className="btn-settings-gear"
+              onClick={() => setShowSettings(true)}
+              title="Campaign Settings"
+              aria-label="Campaign Settings"
+              data-testid="btn-settings"
+            >
+              ⚙️
+            </button>
+          </header>
+        )
+      })()}
 
       {showSettings && campaign && (
         <CampaignSettings

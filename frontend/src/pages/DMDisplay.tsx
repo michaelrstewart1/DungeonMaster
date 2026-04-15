@@ -3,6 +3,7 @@
  */
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
+import { uuid } from '../utils/uuid';
 import { useGameSocket } from '../hooks/useGameSocket';
 import BattleMap from '../components/BattleMap';
 import type { GameState, GameMap, Character } from '../types';
@@ -92,7 +93,7 @@ export function DMDisplay() {
       setCurrentNarration(text);
       setNarrative((prev) => [
         ...prev.slice(-50),
-        { id: crypto.randomUUID(), text, type: 'narration', timestamp: new Date().toISOString() },
+        { id: uuid(), text, type: 'narration', timestamp: new Date().toISOString() },
       ]);
       // TTS: speak the narration aloud
       if (text) speakNarration(text);

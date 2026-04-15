@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { uuid } from '../utils/uuid'
 import { getGameState, submitAction, getCampaign, getSessionGreeting, getSessionRecap, getCharacters } from '../api/client'
 import { GameWebSocket } from '../api/websocket'
 import { GameChat, type ChatMessage } from '../components/GameChat'
@@ -165,7 +166,7 @@ export function GameSession() {
     const summary = text.length > 100 ? text.slice(0, 100) + '...' : text
 
     const entry: AdventureEntry = {
-      id: crypto.randomUUID(),
+      id: uuid(),
       type: entryType,
       summary,
       turnNumber: turn,
@@ -181,7 +182,7 @@ export function GameSession() {
         setQuests(prev => {
           if (prev.some(q => q.title.toLowerCase() === questTitle.toLowerCase())) return prev
           return [...prev, {
-            id: crypto.randomUUID(),
+            id: uuid(),
             title: questTitle,
             description: summary,
             status: 'active' as const,
@@ -208,7 +209,7 @@ export function GameSession() {
             else if (/uncommon|magic|enchanted/.test(lower)) rarity = 'uncommon'
 
             setLootItems(prev => [...prev, {
-              id: crypto.randomUUID(),
+              id: uuid(),
               name: itemName,
               rarity,
               description: summary,
@@ -238,7 +239,7 @@ export function GameSession() {
     if (/defeated|falls\s+(dead|unconscious)|dies|has been slain|killed/.test(lower)) {
       const match = text.match(/(\w+)\s+(?:has been defeated|falls|dies|has been slain|is killed)/i)
       newEntries.push({
-        id: crypto.randomUUID(),
+        id: uuid(),
         type: 'defeat',
         text: match ? `${match[1]} has been defeated!` : 'A creature has been defeated!',
         timestamp: now,
@@ -249,7 +250,7 @@ export function GameSession() {
     if (/casts?\s|spell|cantrip/.test(lower)) {
       const match = text.match(/(\w+)\s+casts?\s+(.+?)(?:\s+at|\s+on|\.|!|,|$)/i)
       newEntries.push({
-        id: crypto.randomUUID(),
+        id: uuid(),
         type: 'spell',
         text: match ? `${match[1]} casts ${match[2].trim()}` : 'A spell is cast!',
         timestamp: now,
@@ -262,7 +263,7 @@ export function GameSession() {
       const fail = /fails|failure|fails the save/.test(lower)
       const match = text.match(/(\w+)\s+(?:makes?\s+a\s+)?(\w+)\s+sav/i)
       newEntries.push({
-        id: crypto.randomUUID(),
+        id: uuid(),
         type: 'save',
         text: match ? `${match[1]} makes a ${match[2].toUpperCase()} save` : 'A saving throw is made',
         result: success ? 'success' : fail ? 'fail' : undefined,
@@ -277,7 +278,7 @@ export function GameSession() {
       const crit = /critical|nat(?:ural)?\s*20/.test(lower)
       const match = text.match(/(\w+)\s+(?:attacks?|strikes?|swings? at)\s+(?:the\s+)?(\w+)/i)
       newEntries.push({
-        id: crypto.randomUUID(),
+        id: uuid(),
         type: 'attack',
         text: match ? `${match[1]} attacks ${match[2]}` : 'An attack is made',
         result: crit ? 'crit' : hit ? 'hit' : miss ? 'miss' : undefined,
@@ -290,7 +291,7 @@ export function GameSession() {
       const match = text.match(/(?:deals?\s+)?(\d+)\s+(\w+)\s+damage/i)
         || text.match(/takes?\s+(\d+)\s+(?:points?\s+of\s+)?(\w+)?\s*damage/i)
       newEntries.push({
-        id: crypto.randomUUID(),
+        id: uuid(),
         type: 'damage',
         text: match ? `${match[1]} ${match[2] || ''} damage dealt`.trim() : 'Damage is dealt',
         details: match ? `${match[1]} ${match[2] || ''} damage`.trim() : undefined,
@@ -302,7 +303,7 @@ export function GameSession() {
     if (/is now\s+\w+ed|becomes?\s+(?:stunned|frightened|poisoned|paralyzed|restrained|blinded|charmed|prone|incapacitated)/.test(lower)) {
       const match = text.match(/(\w+)\s+(?:is now|becomes?)\s+(\w+)/i)
       newEntries.push({
-        id: crypto.randomUUID(),
+        id: uuid(),
         type: 'condition',
         text: match ? `${match[1]} is now ${match[2]}` : 'A condition is applied',
         timestamp: now,
@@ -321,7 +322,7 @@ export function GameSession() {
       setCombatRound(round)
       if (round > 0) {
         setCombatLogEntries(prev => [...prev, {
-          id: crypto.randomUUID(),
+          id: uuid(),
           type: 'round',
           text: `Round ${round}`,
           timestamp: Date.now(),
