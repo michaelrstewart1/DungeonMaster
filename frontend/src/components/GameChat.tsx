@@ -8,27 +8,30 @@ export interface ChatMessage {
 
 type GamePhase = 'exploration' | 'combat' | 'lobby' | 'rest' | 'shopping' | 'dialogue'
 
+type ActionCategory = 'explore' | 'interact' | 'combat' | 'magic' | 'utility'
+
 interface QuickAction {
   emoji: string
   label: string
+  category: ActionCategory
 }
 
 const EXPLORATION_ACTIONS: QuickAction[] = [
-  { emoji: '🔍', label: 'Look Around' },
-  { emoji: '🚪', label: 'Open Door' },
-  { emoji: '💬', label: 'Talk to NPC' },
-  { emoji: '🎒', label: 'Check Inventory' },
-  { emoji: '⚔️', label: 'Draw Weapon' },
-  { emoji: '🏕️', label: 'Set Up Camp' },
+  { emoji: '🔍', label: 'Look Around', category: 'explore' },
+  { emoji: '🚪', label: 'Open Door', category: 'explore' },
+  { emoji: '💬', label: 'Talk to NPC', category: 'interact' },
+  { emoji: '🎒', label: 'Check Inventory', category: 'utility' },
+  { emoji: '⚔️', label: 'Draw Weapon', category: 'combat' },
+  { emoji: '🏕️', label: 'Set Up Camp', category: 'utility' },
 ]
 
 const COMBAT_ACTIONS: QuickAction[] = [
-  { emoji: '⚔️', label: 'Attack' },
-  { emoji: '🛡️', label: 'Defend' },
-  { emoji: '🔮', label: 'Cast Spell' },
-  { emoji: '🏃', label: 'Dodge' },
-  { emoji: '💊', label: 'Use Potion' },
-  { emoji: '🏳️', label: 'Retreat' },
+  { emoji: '⚔️', label: 'Attack', category: 'combat' },
+  { emoji: '🛡️', label: 'Defend', category: 'combat' },
+  { emoji: '🔮', label: 'Cast Spell', category: 'magic' },
+  { emoji: '🏃', label: 'Dodge', category: 'utility' },
+  { emoji: '💊', label: 'Use Potion', category: 'utility' },
+  { emoji: '🏳️', label: 'Retreat', category: 'utility' },
 ]
 
 interface GameChatProps {
@@ -339,11 +342,13 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
       )}
 
       <div className={`quick-actions ${isWaitingForDM ? 'waiting' : ''}`}>
-        {getQuickActions(phase).map((action) => (
+        {getQuickActions(phase).map((action, index) => (
           <button
             key={action.label}
             type="button"
             className="quick-action-btn"
+            data-category={action.category}
+            style={{ animationDelay: `${index * 0.05}s` }}
             disabled={disabled || isWaitingForDM}
             onClick={() => onSubmitAction(`${action.emoji} ${action.label}`)}
           >
