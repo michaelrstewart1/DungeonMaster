@@ -3592,17 +3592,18 @@
 
 .audio-controls {
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
   align-items: center;
-  gap: 0.6rem;
-  padding: 0.85rem;
+  justify-content: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
   background:
     radial-gradient(ellipse at 50% 0%, rgba(212, 168, 70, 0.04) 0%, transparent 70%),
     linear-gradient(180deg, var(--bg-dark) 0%, rgba(10, 10, 15, 0.95) 100%);
   border-radius: 8px;
   border: 1px solid var(--gold-border);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .audio-controls::before {
@@ -3616,35 +3617,24 @@
   border-radius: 8px 8px 0 0;
 }
 
-/* Waveform visualizer placeholder */
 .audio-controls::after {
-  content: '∿ ∿ ∿ ∿ ∿';
-  display: block;
-  font-size: 0.65rem;
-  color: var(--gold-dim);
-  opacity: 0.2;
-  letter-spacing: 0.15em;
-  animation: waveformPulse 2s ease-in-out infinite;
-}
-
-@keyframes waveformPulse {
-  0%, 100% { opacity: 0.15; letter-spacing: 0.15em; }
-  50% { opacity: 0.3; letter-spacing: 0.25em; }
+  display: none;
 }
 
 .audio-btn {
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
   background: linear-gradient(180deg, var(--bg-light) 0%, var(--bg-dark) 100%);
   border: 2px solid var(--border);
   border-radius: 50%;
-  font-size: 1.1rem;
+  font-size: 1rem;
   cursor: pointer;
   transition: all 0.25s;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  flex-shrink: 0;
 }
 
 .audio-btn:hover {
@@ -3886,6 +3876,10 @@
   font-size: 0.85rem;
 }
 
+.initiative-tracker.empty.is-collapsed {
+  padding: 0.5rem 0.75rem;
+}
+
 .initiative-tracker.empty::after {
   content: '⚔';
   display: block;
@@ -3895,6 +3889,10 @@
   font-style: normal;
   filter: grayscale(1);
   animation: crossedSwordsPulse 3s ease-in-out infinite;
+}
+
+.initiative-tracker.empty.is-collapsed::after {
+  display: none;
 }
 
 @keyframes crossedSwordsPulse {
