@@ -182,7 +182,7 @@ export async function createGameSession(campaignId: string): Promise<{ id: strin
     method: 'POST',
     body: JSON.stringify({
       campaign_id: campaignId,
-      current_scene: 'The air is thick with anticipation as your party gathers. The Dungeon Master prepares your tale...',
+      current_scene: 'Session starting...',
     }),
   });
 }

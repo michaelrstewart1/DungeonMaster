@@ -398,36 +398,29 @@ export function GameSession() {
           setShowRecap(true)
         }
       } catch { /* no recap available — skip */ }
-      // Show immediate fallback greeting, then upgrade when AI greeting arrives
-      const fallbackGreeting = state.current_scene || 'Welcome, adventurers. Your legend begins tonight.'
-      const fallbackTimestamp = Date.now()
-      setMessages([{ role: 'dm', text: fallbackGreeting, timestamp: fallbackTimestamp }])
-      processDMMessage(fallbackGreeting)
+      // Show typing indicator while the DM greeting loads
       setLoading(false)
+      setWaitingForDM(true)
       
-      // Fetch the real AI greeting in background
+      // Fetch the AI greeting (with fallback)
+      let greeting = ''
       try {
         const greetingPromise = getSessionGreeting(sessionId)
         const timeoutPromise = new Promise<string>((_, reject) =>
           setTimeout(() => reject(new Error('timeout')), 20000)
         )
-        const aiGreeting = await Promise.race([greetingPromise, timeoutPromise])
-        if (aiGreeting && aiGreeting.trim().length > 0) {
-          // Always replace the first DM message with AI greeting (matched by timestamp)
-          setMessages(prev => {
-            const updated = [...prev]
-            const idx = updated.findIndex(m => m.role === 'dm' && m.timestamp === fallbackTimestamp)
-            if (idx !== -1) {
-              updated[idx] = { ...updated[idx], text: aiGreeting }
-            }
-            return updated
-          })
-          if (aiGreeting !== fallbackGreeting) {
-            processDMMessage(aiGreeting)
-            speakText(aiGreeting)
-          }
-        }
-      } catch { /* keep the fallback greeting */ }
+        greeting = await Promise.race([greetingPromise, timeoutPromise])
+      } catch { /* AI greeting unavailable — use static fallback */ }
+
+      if (!greeting || !greeting.trim()) {
+        const name = campaignName || 'this realm'
+        greeting = `Welcome, adventurers, to ${name}. The shadows stir and ancient forces take notice of your arrival. Steel yourselves — your legend begins tonight.`
+      }
+
+      setWaitingForDM(false)
+      setMessages([{ role: 'dm', text: greeting, timestamp: Date.now() }])
+      processDMMessage(greeting)
+      speakText(greeting)
       if (state.combat_state) {
         setCombatants(
           state.combat_state.initiative_order.map((id, idx) => ({
