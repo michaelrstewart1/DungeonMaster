@@ -5,8 +5,51 @@ These tests use FakeLLM to avoid making real API calls.
 """
 
 import pytest
-from app.services.llm.narrator import DMNarrator
+from app.services.llm.narrator import DMNarrator, _strip_action_echo
 from app.services.llm.base import FakeLLM, LLMMessage, LLMResponse, LLMUsage
+
+
+class TestStripActionEcho:
+    """Tests for the _strip_action_echo post-processing function."""
+
+    def test_strips_exact_echo(self):
+        result = _strip_action_echo(
+            "You I check my inventory. The cavern seems dark.",
+            "I check my inventory"
+        )
+        assert result == "The cavern seems dark."
+
+    def test_strips_echo_with_comma(self):
+        result = _strip_action_echo(
+            "You I look around, and notice a faint glow.",
+            "I look around"
+        )
+        assert result == "And notice a faint glow."
+
+    def test_no_echo_passthrough(self):
+        result = _strip_action_echo(
+            "The flickering torchlight reveals a dusty table.",
+            "I look around"
+        )
+        assert result == "The flickering torchlight reveals a dusty table."
+
+    def test_empty_inputs(self):
+        assert _strip_action_echo("", "action") == ""
+        assert _strip_action_echo("response", "") == "response"
+
+    def test_strips_echo_with_dash(self):
+        result = _strip_action_echo(
+            "You I check my inventory — shadows shift along the walls.",
+            "I check my inventory"
+        )
+        assert result == "Shadows shift along the walls."
+
+    def test_case_insensitive_match(self):
+        result = _strip_action_echo(
+            "You i examine the door. It appears locked.",
+            "I examine the door"
+        )
+        assert result == "It appears locked."
 
 
 class TestDMNarrator:

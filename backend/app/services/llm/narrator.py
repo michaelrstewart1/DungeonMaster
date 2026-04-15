@@ -14,6 +14,33 @@ from .prompts import PromptTemplates
 
 logger = logging.getLogger(__name__)
 
+
+def _strip_action_echo(response: str, player_action: str) -> str:
+    """Remove echoed player action from the start of an LLM response.
+    
+    Smaller models often echo the player's action verbatim, e.g.:
+    "You I check my inventory. The cavern..." → "The cavern..."
+    "You check my inventory. The cavern..." → "The cavern..."
+    """
+    if not player_action or not response:
+        return response
+
+    action = player_action.strip().rstrip(".")
+    text = response.strip()
+
+    # Pattern: "You <exact action>." or "You <exact action>," at start
+    for prefix in [f"You {action}", f"You {action.lower()}"]:
+        if text.startswith(prefix):
+            rest = text[len(prefix):]
+            # Strip the connecting punctuation and whitespace
+            rest = rest.lstrip(".,;: —–-")
+            rest = rest.strip()
+            if rest:
+                # Capitalize the first letter of the remaining text
+                return rest[0].upper() + rest[1:]
+
+    return response
+
 # Fallback narrations when LLM fails
 FALLBACK_NARRATIONS = {
     "exploration": (
@@ -118,7 +145,7 @@ class DMNarrator:
                 LLMMessage(role="assistant", content=response.content),
             )
 
-            return response.content
+            return _strip_action_echo(response.content, player_action)
 
         except Exception as e:
             logger.error(f"Error in narrate_exploration: {e}")
