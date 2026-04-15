@@ -3571,50 +3571,12 @@
    DM Avatar
    ============================================================ */
 
+/* DM Avatar — base styles (overridden by GameSession.css for game page) */
 .dm-avatar {
   display: flex;
   flex-direction: column;
   align-items: center;
   padding: 1rem;
-}
-
-.avatar-face {
-  width: 120px;
-  height: 120px;
-  border-radius: 50%;
-  background: var(--bg-dark);
-  border: 2px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 12px;
-  transition: border-color 0.3s;
-  position: relative;
-}
-
-.dm-avatar.is-speaking .avatar-face {
-  border-color: var(--gold);
-  box-shadow: 0 0 20px rgba(212, 168, 70, 0.2);
-}
-
-.avatar-eyes {
-  display: flex;
-  gap: 20px;
-}
-
-.avatar-eye {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--gold);
-}
-
-.avatar-mouth {
-  width: 30px;
-  background: var(--text-dim);
-  border-radius: 4px;
-  transition: height 0.1s;
 }
 
 .avatar-label {
