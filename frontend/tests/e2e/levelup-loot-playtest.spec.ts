@@ -13,7 +13,7 @@ import { mkdirSync } from 'fs'
 
 const BASE = process.env.E2E_BASE_URL || 'http://localhost:5173'
 const API = `${BASE.replace(/\/$/, '')}/api`
-const SCREENSHOT_DIR = 'test-results/levelup-loot'
+const SCREENSHOT_DIR = 'playtest-screenshots/levelup-loot'
 mkdirSync(SCREENSHOT_DIR, { recursive: true })
 
 async function screenshot(page: Page, name: string) {

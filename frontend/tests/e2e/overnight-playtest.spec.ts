@@ -7,7 +7,7 @@ import { mkdirSync } from 'fs'
  * Run with: E2E_BASE_URL=http://192.168.1.94 npx playwright test tests/e2e/overnight-playtest.spec.ts --reporter=list
  */
 
-const SCREENSHOT_DIR = 'test-results/overnight'
+const SCREENSHOT_DIR = 'playtest-screenshots/overnight'
 mkdirSync(SCREENSHOT_DIR, { recursive: true })
 
 async function screenshot(page: Page, name: string) {
