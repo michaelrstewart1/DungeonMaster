@@ -7,9 +7,6 @@ import { test, expect, type Page } from '@playwright/test'
  */
 
 const SCREENSHOT_DIR = 'test-results/overnight'
-const API_BASE = process.env.E2E_BASE_URL
-  ? `${process.env.E2E_BASE_URL.replace(/\/$/, '')}/api`
-  : 'http://192.168.1.94/api'
 
 async function screenshot(page: Page, name: string) {
   await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}.png`, fullPage: false })
@@ -19,66 +16,8 @@ async function screenshotFull(page: Page, name: string) {
   await page.screenshot({ path: `${SCREENSHOT_DIR}/${name}.png`, fullPage: true })
 }
 
-/**
- * Clean up duplicate campaigns and stale game sessions from prior test runs.
- * Keeps only the FIRST instance of each featured campaign.
- */
-async function cleanupStaleCampaigns() {
-  const FEATURED = new Set([
-    'Wrath of the Stormspire',
-    'The Drowned Throne',
-    'Ember of the Last God',
-    'Carnival of Stolen Faces',
-    'Iron Oath of Karak-Dum',
-  ])
-
-  try {
-    const resp = await fetch(`${API_BASE}/campaigns`)
-    if (!resp.ok) return
-    const campaigns = await resp.json() as Array<{ id: string; name: string }>
-
-    const kept = new Set<string>()
-    const toDelete: string[] = []
-
-    for (const c of campaigns) {
-      if (FEATURED.has(c.name) && !kept.has(c.name)) {
-        kept.add(c.name)
-      } else if (FEATURED.has(c.name)) {
-        toDelete.push(c.id) // duplicate featured
-      } else if (c.name.toLowerCase().startsWith('playtest') ||
-                 c.name.toLowerCase().startsWith('test ') ||
-                 c.name.toLowerCase().includes('timer test') ||
-                 c.name.toLowerCase().includes('date-test') ||
-                 c.name.toLowerCase().includes('tray test')) {
-        toDelete.push(c.id) // test campaign
-      }
-    }
-
-    if (toDelete.length === 0) return
-    console.log(`Cleaning up ${toDelete.length} stale campaigns...`)
-
-    // Delete in batches of 10 to avoid overwhelming the server
-    for (let i = 0; i < toDelete.length; i += 10) {
-      const batch = toDelete.slice(i, i + 10)
-      await Promise.all(
-        batch.map(id =>
-          fetch(`${API_BASE}/campaigns/${id}`, { method: 'DELETE' }).catch(() => {})
-        )
-      )
-    }
-    console.log(`Cleanup complete: removed ${toDelete.length} campaigns`)
-  } catch (err) {
-    console.warn('Campaign cleanup failed (non-fatal):', err)
-  }
-}
-
 test.describe('Overnight Playtest', () => {
   test.setTimeout(120_000) // 2 minutes per test
-
-  // Clean up stale campaigns from PREVIOUS test runs before starting new tests
-  test.beforeAll(async () => {
-    await cleanupStaleCampaigns()
-  })
 
   test('01 — Home page loads with hero and featured campaigns', async ({ page }) => {
     await page.goto('/')
