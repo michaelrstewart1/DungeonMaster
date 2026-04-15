@@ -645,12 +645,7 @@
   justify-content: center;
   pointer-events: none;
   opacity: 1;
-  transition: opacity 0.8s ease;
   z-index: 0;
-}
-
-.chat-watermark-fading {
-  opacity: 0.35;
 }
 
 .watermark-icon {
@@ -3222,6 +3217,37 @@
 
 .party-member-card:hover {
   border-color: var(--gold-border);
+}
+
+.party-member-hover-stats {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  transition: max-height 0.3s ease, opacity 0.3s ease, margin 0.3s ease;
+  margin-top: 0;
+}
+
+.party-member-card:hover .party-member-hover-stats {
+  max-height: 1.5rem;
+  opacity: 1;
+  margin-top: 0.25rem;
+}
+
+.hover-stat {
+  font-family: var(--font-body);
+  font-size: 0.55rem;
+  color: var(--gold-dim);
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.hover-stat-divider {
+  font-size: 0.4rem;
+  color: var(--gold-dim);
+  opacity: 0.5;
 }
 
 .party-member-portrait {

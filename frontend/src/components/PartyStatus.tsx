@@ -79,6 +79,15 @@ export function PartyStatus({ characters }: PartyStatusProps) {
                     style={{ width: `${hpPercent}%`, backgroundColor: hpColor }}
                   />
                 </div>
+                <div className="party-member-hover-stats">
+                  <span className="hover-stat">Lvl {char.level}</span>
+                  <span className="hover-stat-divider">•</span>
+                  <span className="hover-stat">{char.class_name}</span>
+                  <span className="hover-stat-divider">•</span>
+                  <span className="hover-stat">AC {char.ac}</span>
+                  <span className="hover-stat-divider">•</span>
+                  <span className="hover-stat">{char.hp}/{char.max_hp ?? char.hp} HP</span>
+                </div>
                 {char.conditions.length > 0 && (
                   <div className="party-member-conditions">
                     {char.conditions.map((cond) => (

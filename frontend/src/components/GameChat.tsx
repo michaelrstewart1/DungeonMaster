@@ -295,8 +295,8 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
   return (
     <div className="game-chat">
       <div className="chat-messages" ref={chatContainerRef} onScroll={handleScroll}>
-        {messages.length <= 3 && (
-          <div className={`chat-watermark${messages.length > 0 ? ' chat-watermark-fading' : ''}`}>
+        {messages.length === 0 && (
+          <div className="chat-watermark">
             <div className="watermark-icon">⚔</div>
             <div className="watermark-text">Your adventure awaits...</div>
             <div className="watermark-ornament">✦ ✦ ✦</div>
