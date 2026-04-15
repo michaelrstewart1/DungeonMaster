@@ -1,6 +1,6 @@
 /**
- * Playwright global setup — runs ONCE before all workers.
- * Cleans up stale/duplicate campaigns from previous test runs.
+ * Playwright global teardown — runs ONCE after all workers finish.
+ * Cleans up test-created campaigns so they don't accumulate.
  */
 
 const API_BASE = process.env.E2E_BASE_URL
@@ -15,13 +15,12 @@ const FEATURED = new Set([
   'Iron Oath of Karak-Dum',
 ])
 
-export default async function globalSetup() {
+export default async function globalTeardown() {
   try {
     const resp = await fetch(`${API_BASE}/campaigns`)
     if (!resp.ok) return
     const campaigns = await resp.json() as Array<{ id: string; name: string }>
 
-    // Keep exactly one copy of each featured campaign; delete everything else
     const kept = new Set<string>()
     const toDelete: string[] = []
 
@@ -33,19 +32,16 @@ export default async function globalSetup() {
       }
     }
 
-    if (toDelete.length === 0) {
-      console.log('[global-setup] No stale campaigns to clean up')
-      return
-    }
+    if (toDelete.length === 0) return
 
-    console.log(`[global-setup] Cleaning up ${toDelete.length} stale campaigns...`)
+    console.log(`[global-teardown] Cleaning up ${toDelete.length} test campaigns...`)
     await Promise.all(
       toDelete.map(id =>
         fetch(`${API_BASE}/campaigns/${id}`, { method: 'DELETE' }).catch(() => {})
       )
     )
-    console.log(`[global-setup] Cleanup complete`)
+    console.log(`[global-teardown] Cleanup complete`)
   } catch (err) {
-    console.warn('[global-setup] Campaign cleanup failed (non-fatal):', err)
+    console.warn('[global-teardown] Cleanup failed (non-fatal):', err)
   }
 }
