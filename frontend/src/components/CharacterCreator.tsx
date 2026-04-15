@@ -62,10 +62,14 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
 
   // Scroll step content into view on step change
   useEffect(() => {
-    const target = stepContentRef.current || creatorRef.current
-    if (target?.scrollIntoView) {
-      target.scrollIntoView({ behavior: 'auto', block: 'start' })
-    }
+    // Small delay to let animations initialize before scrolling
+    const timer = setTimeout(() => {
+      const target = stepContentRef.current || creatorRef.current
+      if (target?.scrollIntoView) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'nearest' })
+      }
+    }, 50)
+    return () => clearTimeout(timer)
   }, [step])
 
   // Step 0: Race + Subrace
@@ -1009,7 +1013,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
       {/* Step 8: Review */}
       {/* ================================================================ */}
       {steps[step] === 'Review' && (
-        <div ref={stepContentRef} className="creator-section" data-testid="step-review" style={{ scrollMarginTop: '1rem' }}>
+        <div ref={stepContentRef} className="creator-section" data-testid="step-review" style={{ scrollMarginTop: '4rem' }}>
           <h3>Review Your Hero</h3>
           <div className="review-layout">
             <div className="review-portrait">

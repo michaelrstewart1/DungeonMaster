@@ -282,6 +282,8 @@ test.describe('Overnight Playtest', () => {
     // Next: Review
     await page.click('button:has-text("Next: Review")')
     await expect(page.locator('[data-testid="step-review"]')).toBeVisible()
+    // Wait for staggered animations to complete and scroll to settle
+    await page.waitForTimeout(600)
     await screenshot(page, '05-wizard-step7-review')
     
     await screenshotFull(page, '05-wizard-full')
@@ -464,6 +466,9 @@ test.describe('Overnight Playtest', () => {
       await featuredCard.click()
       await expect(page).toHaveURL(/\/campaign\//, { timeout: 15000 })
       await page.waitForLoadState('networkidle')
+      // Wait for campaign content to actually render
+      await page.waitForSelector('.campaign-hero-banner, .page-campaign-detail header h1, .campaign-detail-header', { timeout: 10000 }).catch(() => {})
+      await page.waitForTimeout(500)
       await screenshot(page, '11-mobile-campaign')
     }
   })
