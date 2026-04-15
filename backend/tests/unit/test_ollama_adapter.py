@@ -49,7 +49,7 @@ class TestOllamaAdapter:
             mock_response.status_code = 200
             mock_response.json.return_value = {
                 "model": "llama3.1:8b",
-                "response": "Hi there",
+                "message": {"role": "assistant", "content": "Hi there"},
                 "done": True,
             }
             mock_post.return_value = mock_response
@@ -74,7 +74,7 @@ class TestOllamaAdapter:
             mock_response.status_code = 200
             mock_response.json.return_value = {
                 "model": "llama3.1:8b",
-                "response": "Response",
+                "message": {"role": "assistant", "content": "Response"},
                 "done": True,
             }
             mock_post.return_value = mock_response
@@ -99,7 +99,7 @@ class TestOllamaAdapter:
             mock_response.status_code = 200
             mock_response.json.return_value = {
                 "model": "llama3.1:8b",
-                "response": "Once upon a time...",
+                "message": {"role": "assistant", "content": "Once upon a time..."},
                 "done": True,
             }
             mock_post.return_value = mock_response
@@ -121,7 +121,7 @@ class TestOllamaAdapter:
             mock_response.status_code = 200
             mock_response.json.return_value = {
                 "model": "llama3.1:8b",
-                "response": "Test response content",
+                "message": {"role": "assistant", "content": "Test response content"},
                 "done": True,
                 "total_duration": 1234567890,
                 "load_duration": 123456,
@@ -158,10 +158,10 @@ class TestOllamaAdapter:
 
         # Ollama sends line-by-line JSON
         response_lines = [
-            '{"model":"llama3.1:8b","response":"Hello","done":false}',
-            '{"model":"llama3.1:8b","response":" ","done":false}',
-            '{"model":"llama3.1:8b","response":"world","done":false}',
-            '{"model":"llama3.1:8b","response":"","done":true,"total_duration":1000000,"load_duration":100000}',
+            '{"model":"llama3.1:8b","message":{"role":"assistant","content":"Hello"},"done":false}',
+            '{"model":"llama3.1:8b","message":{"role":"assistant","content":" "},"done":false}',
+            '{"model":"llama3.1:8b","message":{"role":"assistant","content":"world"},"done":false}',
+            '{"model":"llama3.1:8b","message":{"role":"assistant","content":""},"done":true,"total_duration":1000000,"load_duration":100000}',
         ]
 
         with patch("httpx.AsyncClient.stream") as mock_stream:
@@ -192,9 +192,9 @@ class TestOllamaAdapter:
         messages = [LLMMessage(role="user", content="Test")]
 
         response_lines = [
-            '{"model":"llama3.1:8b","response":"Part 1","done":false}',
-            '{"model":"llama3.1:8b","response":"Part 2","done":false}',
-            '{"model":"llama3.1:8b","response":"","done":true}',
+            '{"model":"llama3.1:8b","message":{"role":"assistant","content":"Part 1"},"done":false}',
+            '{"model":"llama3.1:8b","message":{"role":"assistant","content":"Part 2"},"done":false}',
+            '{"model":"llama3.1:8b","message":{"role":"assistant","content":""},"done":true}',
         ]
 
         with patch("httpx.AsyncClient.stream") as mock_stream:
@@ -229,7 +229,7 @@ class TestOllamaAdapter:
             mock_response.status_code = 200
             mock_response.json.return_value = {
                 "model": "llama3.1:8b",
-                "response": "Response",
+                "message": {"role": "assistant", "content": "Response"},
                 "done": True,
             }
             mock_post.return_value = mock_response
@@ -246,7 +246,7 @@ class TestOllamaAdapter:
         messages = [LLMMessage(role="user", content="Test")]
 
         response_lines = [
-            '{"model":"llama3.1:8b","response":"","done":true}',
+            '{"model":"llama3.1:8b","message":{"role":"assistant","content":""},"done":true}',
         ]
 
         with patch("httpx.AsyncClient.stream") as mock_stream:
@@ -277,7 +277,7 @@ class TestOllamaAdapter:
             mock_response.status_code = 200
             mock_response.json.return_value = {
                 "model": "llama3.1:8b",
-                "response": "Response",
+                "message": {"role": "assistant", "content": "Response"},
                 "done": True,
             }
             mock_post.return_value = mock_response

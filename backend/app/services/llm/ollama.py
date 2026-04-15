@@ -108,7 +108,9 @@ class OllamaProvider(LLMProvider):
 
             # Parse successful response
             data = response.json()
-            content = data.get("response", "")
+            # /api/chat returns {"message": {"content": "..."}}
+            msg = data.get("message", {})
+            content = msg.get("content", "") if isinstance(msg, dict) else ""
 
             return LLMResponse(
                 content=content,
@@ -184,7 +186,9 @@ class OllamaProvider(LLMProvider):
 
                     try:
                         event_data = json.loads(line)
-                        content = event_data.get("response", "")
+                        # Streaming /api/chat returns {"message": {"content": "..."}}
+                        msg = event_data.get("message", {})
+                        content = msg.get("content", "") if isinstance(msg, dict) else ""
                         is_done = event_data.get("done", False)
 
                         # Yield content chunk if present
