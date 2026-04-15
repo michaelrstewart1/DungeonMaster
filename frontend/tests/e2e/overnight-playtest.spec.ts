@@ -223,45 +223,73 @@ test.describe('Overnight Playtest', () => {
     
     // Open custom character creator
     await page.click('[data-testid="btn-manual"]')
-    await expect(page.locator('[data-testid="step-race"]')).toBeVisible({ timeout: 10000 })
+    const stepEl = page.locator('[data-testid="step-race"]')
+    await expect(stepEl).toBeVisible({ timeout: 10000 })
+    await stepEl.scrollIntoViewIfNeeded()
+    await page.waitForTimeout(800) // Wait for card entrance animations
     await screenshot(page, '05-wizard-step1-race')
     
     // Pick a race
     await page.click('[data-testid="race-elf"]')
     await page.click('button:has-text("Next: Choose Class")')
     await expect(page.locator('[data-testid="step-class"]')).toBeVisible()
+    await page.locator('[data-testid="step-class"]').scrollIntoViewIfNeeded()
+    await page.waitForTimeout(800)
     await screenshot(page, '05-wizard-step2-class')
     
     // Pick a class
     await page.click('[data-testid="class-wizard"]')
     await page.click('button:has-text("Next: Background")')
     await expect(page.locator('[data-testid="step-background"]')).toBeVisible()
+    await page.locator('[data-testid="step-background"]').scrollIntoViewIfNeeded()
+    await page.waitForTimeout(800)
     await screenshot(page, '05-wizard-step2b-background')
     
     // Pick a background
     await page.locator('.background-card').first().click()
     await page.click('button:has-text("Next: Abilities")')
     await expect(page.locator('[data-testid="step-abilities"]')).toBeVisible()
+    await page.locator('[data-testid="step-abilities"]').scrollIntoViewIfNeeded()
+    await page.waitForTimeout(500)
     await screenshot(page, '05-wizard-step3-abilities')
     
-    // Step 3: Abilities — use point buy, click Next: Skills
+    // Step 3: Abilities — bump a few scores via point buy
+    const plusBtns = page.locator('.ability-card .ability-btn:has-text("+")')
+    const btnCount = await plusBtns.count()
+    if (btnCount >= 6) {
+      // Bump STR, DEX, CON, INT, WIS, CHA each by 2 clicks (8→10)
+      for (let i = 0; i < 6; i++) {
+        await plusBtns.nth(i).click()
+        await plusBtns.nth(i).click()
+      }
+    }
+    await screenshot(page, '05-wizard-step3b-abilities-assigned')
+    
     await page.click('button:has-text("Next: Skills")')
     await expect(page.locator('[data-testid="step-skills"]')).toBeVisible()
+    await page.locator('[data-testid="step-skills"]').scrollIntoViewIfNeeded()
+    await page.waitForTimeout(500)
     await screenshot(page, '05-wizard-step4-skills')
     
     // Step 4: Skills — just proceed
     await page.click('button:has-text("Next: Equipment")')
     await expect(page.locator('[data-testid="step-equipment"]')).toBeVisible()
+    await page.locator('[data-testid="step-equipment"]').scrollIntoViewIfNeeded()
+    await page.waitForTimeout(500)
     await screenshot(page, '05-wizard-step5-equipment')
     
     // Step 5: Equipment — Wizard is a spellcaster so next is Spells
     await page.click('button:has-text("Next: Spells")')
     await expect(page.locator('[data-testid="step-spells"]')).toBeVisible()
+    await page.locator('[data-testid="step-spells"]').scrollIntoViewIfNeeded()
+    await page.waitForTimeout(500)
     await screenshot(page, '05-wizard-step5b-spells')
     
     // Step 6: Spells — just proceed
     await page.click('button:has-text("Next: Details")')
     await expect(page.locator('[data-testid="step-details"]')).toBeVisible()
+    await page.locator('[data-testid="step-details"]').scrollIntoViewIfNeeded()
+    await page.waitForTimeout(500)
     await screenshot(page, '05-wizard-step6-details')
     
     // Fill character name
@@ -274,8 +302,8 @@ test.describe('Overnight Playtest', () => {
     // Next: Review
     await page.click('button:has-text("Next: Review")')
     await expect(page.locator('[data-testid="step-review"]')).toBeVisible()
-    // Wait for staggered animations to complete and scroll to settle
-    await page.waitForTimeout(600)
+    await page.locator('[data-testid="step-review"]').scrollIntoViewIfNeeded()
+    await page.waitForTimeout(800)
     await screenshot(page, '05-wizard-step7-review')
     
     await screenshotFull(page, '05-wizard-full')
@@ -315,6 +343,9 @@ test.describe('Overnight Playtest', () => {
     // Click breadcrumb back
     await page.click('.breadcrumb-link')
     await expect(page).toHaveURL('/', { timeout: 10000 })
+    await page.waitForLoadState('networkidle')
+    await expect(page.locator('.hero, .featured-campaigns')).toBeVisible({ timeout: 10000 })
+    await page.waitForTimeout(500) // Let background slideshow and animations settle
     await screenshot(page, '07-back-home')
   })
 

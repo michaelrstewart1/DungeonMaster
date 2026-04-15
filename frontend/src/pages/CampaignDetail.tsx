@@ -269,7 +269,7 @@ export function CampaignDetail() {
           />
         )}
 
-        {characters.length === 0 ? (
+        {characterMode === 'none' && characters.length === 0 ? (
           <div className="empty-state">
             <span className="empty-state-icon">🧙‍♂️</span>
             <span className="empty-state-title">No Characters Yet</span>
@@ -277,17 +277,17 @@ export function CampaignDetail() {
               Choose a hero, create a custom character, or import from Roll20 to begin your quest.
             </span>
           </div>
-        ) : (
+        ) : characterMode === 'none' && characters.length > 0 ? (
           <div className="character-list">
             {characters.map((char) => (
               <CharacterSheet key={char.id} character={char} onRemove={handleRemoveCharacter} />
             ))}
           </div>
-        )}
+        ) : null}
       </section>
 
       <section className="campaign-actions">
-        {characters.length === 0 && (
+        {characterMode === 'none' && characters.length === 0 && (
           <p className="campaign-warning">
             ⚠️ You haven't added any characters yet. Add at least one hero before beginning your adventure!
           </p>
