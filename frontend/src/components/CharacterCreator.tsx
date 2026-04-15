@@ -61,7 +61,9 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
 
   // Scroll to top of creator on step change
   useEffect(() => {
-    creatorRef.current?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+    // Use instant scroll + scrollIntoView to ensure content is visible
+    creatorRef.current?.scrollIntoView?.({ behavior: 'auto', block: 'start' })
+    window.scrollTo({ top: 0, behavior: 'auto' })
   }, [step])
 
   // Step 0: Race + Subrace

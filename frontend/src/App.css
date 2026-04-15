@@ -1842,7 +1842,8 @@
     0 8px 32px rgba(0, 0, 0, 0.4),
     inset 0 1px 0 rgba(212, 168, 70, 0.08);
   position: relative;
-  overflow: hidden;
+  overflow: visible;
+  scroll-margin-top: 1rem;
 }
 
 /* Decorative corner runes */
