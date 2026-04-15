@@ -97,7 +97,7 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 narrator = getattr(websocket.app.state, "narrator", None)
                 if narrator is not None:
                     try:
-                        # Use db_factory for per-operation DB sessions in WS handler
+                        from app.services.llm.narrator import _strip_action_echo
                         db_factory = getattr(websocket.app.state, "db_factory", None)
                         if db_factory:
                             async with db_factory() as db:
@@ -123,6 +123,8 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                                     world_context=world_context,
                                     story_bible=story_bible,
                                 )
+                                # Safety: strip any echoed action
+                                narration = _strip_action_echo(narration, action or "")
                         else:
                             narration = f"Character {character_id} {action}. The DM responds..."
                     except Exception:

@@ -209,6 +209,8 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
     Uses the real LLM narrator when available; falls back to keyword-matching
     mock responses so tests (which have no API key) continue to pass.
     """
+    from app.services.llm.narrator import _strip_action_echo
+
     if narrator is not None and db is not None:
         try:
             import asyncio
@@ -226,7 +228,7 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                 "description": session.get("current_scene", ""),
             }
             story_bible = await repo.get_campaign_story_bible(db, campaign_id) or ""
-            return await asyncio.wait_for(
+            result = await asyncio.wait_for(
                 narrator.narrate_exploration(
                     scene=scene,
                     player_action=player_action,
@@ -236,6 +238,8 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                 ),
                 timeout=45.0,
             )
+            # Safety net: strip echoed player action even if narrator missed it
+            return _strip_action_echo(result, player_action)
         except asyncio.TimeoutError:
             logger.warning("Narrator timed out after 45s, falling back to keyword mock")
         except Exception as exc:
