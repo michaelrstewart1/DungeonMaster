@@ -834,8 +834,9 @@ export function GameSession() {
           // Refresh party characters after distribution
           if (sessionId) {
             import('../api/client').then(({ getGameState: fetchState }) =>
-              fetchState(sessionId).then((state: GameState) => {
-                if (state.characters) setPartyCharacters(state.characters as Character[])
+              fetchState(sessionId).then((state: unknown) => {
+                const s = state as Record<string, unknown>
+                if (s.characters) setPartyCharacters(s.characters as Character[])
               }).catch(() => {})
             )
           }
