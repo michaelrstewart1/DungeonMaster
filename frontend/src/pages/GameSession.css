@@ -2859,8 +2859,8 @@
 
 .party-member-card {
   display: flex;
-  gap: 0.5rem;
-  padding: 0.4rem 0.5rem;
+  gap: 0.4rem;
+  padding: 0.4rem 0.4rem;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: linear-gradient(135deg, rgba(26, 26, 38, 0.8) 0%, rgba(18, 18, 26, 0.9) 100%);
@@ -2872,8 +2872,8 @@
 }
 
 .party-member-portrait {
-  width: 40px;
-  height: 40px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   border: 2px solid var(--gold-border);
   overflow: hidden;
@@ -2914,15 +2914,16 @@
 
 .party-member-name {
   font-family: var(--font-display);
-  font-size: 0.75rem;
+  font-size: 0.7rem;
   color: var(--gold-light);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  letter-spacing: 0.02em;
 }
 
 .party-member-class {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   line-height: 1;
   flex-shrink: 0;
 }
