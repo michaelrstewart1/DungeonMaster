@@ -62,9 +62,8 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
 
   // Scroll step content into view on step change
   useEffect(() => {
-    // Target the step content area, falling back to the form
     const target = stepContentRef.current || creatorRef.current
-    if (target) {
+    if (target?.scrollIntoView) {
       target.scrollIntoView({ behavior: 'auto', block: 'start' })
     }
   }, [step])
@@ -166,11 +165,11 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
     return result
   }, [abilities, racialBonuses])
 
-  // Calculate HP based on class hit die + CON mod
+  // Calculate HP based on class hit die + CON mod (minimum 1 HP per D&D 5e rules)
   const calculatedHP = useMemo(() => {
     const hitDie = HIT_DICE[className] || 8
     const conMod = Math.floor((finalAbilities.constitution - 10) / 2)
-    return hitDie + conMod
+    return Math.max(1, hitDie + conMod)
   }, [className, finalAbilities])
 
   // Calculate AC (base 10 + DEX mod)
@@ -340,14 +339,13 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
         </div>
       )}
 
-      {/* Scroll anchor for step content */}
-      <div ref={stepContentRef} style={{ scrollMarginTop: '1rem' }} />
+      {/* Scroll anchor removed — ref is now on each step's creator-section */}
 
       {/* ================================================================ */}
       {/* Step 0: Race + Subrace */}
       {/* ================================================================ */}
       {steps[step] === 'Race' && (
-        <div className="creator-section" data-testid="step-race">
+        <div ref={stepContentRef} className="creator-section" data-testid="step-race" style={{ scrollMarginTop: '1rem' }}>
           <h3>Choose Your Race</h3>
           <div className="race-grid stagger-children" role="radiogroup" aria-label="Race selection">
             {RACES.map(r => (
@@ -417,7 +415,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
       {/* Step 1: Class + Subclass */}
       {/* ================================================================ */}
       {steps[step] === 'Class' && (
-        <div className="creator-section" data-testid="step-class">
+        <div ref={stepContentRef} className="creator-section" data-testid="step-class" style={{ scrollMarginTop: '1rem' }}>
           <h3>Choose Your Class</h3>
           <div className="class-grid stagger-children" role="radiogroup" aria-label="Class selection">
             {CLASSES.map(c => {
@@ -490,7 +488,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
       {/* Step 2: Background */}
       {/* ================================================================ */}
       {steps[step] === 'Background' && (
-        <div className="creator-section" data-testid="step-background">
+        <div ref={stepContentRef} className="creator-section" data-testid="step-background" style={{ scrollMarginTop: '1rem' }}>
           <h3>Choose Your Background</h3>
           <div className="background-grid" role="radiogroup" aria-label="Background selection">
             {BACKGROUNDS.map(bg => (
@@ -534,7 +532,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
       {/* Step 3: Ability Scores */}
       {/* ================================================================ */}
       {steps[step] === 'Abilities' && (
-        <div className="creator-section" data-testid="step-abilities">
+        <div ref={stepContentRef} className="creator-section" data-testid="step-abilities" style={{ scrollMarginTop: '1rem' }}>
           <h3>Set Ability Scores</h3>
 
           {/* Method selector */}
@@ -707,7 +705,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
       {/* Step 4: Skills */}
       {/* ================================================================ */}
       {steps[step] === 'Skills' && (
-        <div className="creator-section" data-testid="step-skills">
+        <div ref={stepContentRef} className="creator-section" data-testid="step-skills" style={{ scrollMarginTop: '1rem' }}>
           <h3>Choose Your Skills</h3>
           <p className="skill-hint">
             Choose <strong>{classSkillInfo.count}</strong> skills from your class list.
@@ -779,7 +777,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
       {/* Step 5: Equipment */}
       {/* ================================================================ */}
       {steps[step] === 'Equipment' && (
-        <div className="creator-section" data-testid="step-equipment">
+        <div ref={stepContentRef} className="creator-section" data-testid="step-equipment" style={{ scrollMarginTop: '1rem' }}>
           <h3>Choose Starting Equipment</h3>
 
           {(STARTING_EQUIPMENT[className] || []).map((choice, idx) => (
@@ -821,7 +819,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
       {/* Step 6: Spells (casters only) */}
       {/* ================================================================ */}
       {steps[step] === 'Spells' && spellcasterInfo && (
-        <div className="creator-section" data-testid="step-spells">
+        <div ref={stepContentRef} className="creator-section" data-testid="step-spells" style={{ scrollMarginTop: '1rem' }}>
           <h3>Choose Your Spells</h3>
 
           {spellcasterInfo.cantripsKnown > 0 && (
@@ -851,7 +849,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
       {/* Step 7: Details (Name, Alignment, Backstory, Personality) */}
       {/* ================================================================ */}
       {steps[step] === 'Details' && (
-        <div className="creator-section" data-testid="step-details">
+        <div ref={stepContentRef} className="creator-section" data-testid="step-details" style={{ scrollMarginTop: '1rem' }}>
           <h3>Character Details</h3>
 
           <div className="details-grid">
@@ -1011,7 +1009,7 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
       {/* Step 8: Review */}
       {/* ================================================================ */}
       {steps[step] === 'Review' && (
-        <div className="creator-section" data-testid="step-review">
+        <div ref={stepContentRef} className="creator-section" data-testid="step-review" style={{ scrollMarginTop: '1rem' }}>
           <h3>Review Your Hero</h3>
           <div className="review-layout">
             <div className="review-portrait">

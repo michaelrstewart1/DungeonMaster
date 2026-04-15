@@ -400,7 +400,8 @@ export function GameSession() {
       } catch { /* no recap available — skip */ }
       // Show immediate fallback greeting, then upgrade when AI greeting arrives
       const fallbackGreeting = state.current_scene || 'Welcome, adventurers. Your legend begins tonight.'
-      setMessages([{ role: 'dm', text: fallbackGreeting, timestamp: Date.now() }])
+      const fallbackTimestamp = Date.now()
+      setMessages([{ role: 'dm', text: fallbackGreeting, timestamp: fallbackTimestamp }])
       processDMMessage(fallbackGreeting)
       setLoading(false)
       
@@ -411,17 +412,20 @@ export function GameSession() {
           setTimeout(() => reject(new Error('timeout')), 20000)
         )
         const aiGreeting = await Promise.race([greetingPromise, timeoutPromise])
-        if (aiGreeting && aiGreeting !== fallbackGreeting) {
-          // Replace the fallback with the real AI greeting
+        if (aiGreeting && aiGreeting.trim().length > 0) {
+          // Always replace the first DM message with AI greeting (matched by timestamp)
           setMessages(prev => {
             const updated = [...prev]
-            if (updated.length > 0 && updated[0].role === 'dm') {
-              updated[0] = { ...updated[0], text: aiGreeting }
+            const idx = updated.findIndex(m => m.role === 'dm' && m.timestamp === fallbackTimestamp)
+            if (idx !== -1) {
+              updated[idx] = { ...updated[idx], text: aiGreeting }
             }
             return updated
           })
-          processDMMessage(aiGreeting)
-          speakText(aiGreeting)
+          if (aiGreeting !== fallbackGreeting) {
+            processDMMessage(aiGreeting)
+            speakText(aiGreeting)
+          }
         }
       } catch { /* keep the fallback greeting */ }
       if (state.combat_state) {
