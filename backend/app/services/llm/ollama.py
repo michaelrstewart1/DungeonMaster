@@ -47,7 +47,8 @@ class OllamaProvider(LLMProvider):
         """
         self._base_url = base_url
         self._model = model
-        self._client = httpx.AsyncClient(timeout=120.0)
+        # 300s timeout: first call may need to load model into GPU memory
+        self._client = httpx.AsyncClient(timeout=300.0)
 
     @property
     def name(self) -> str:
@@ -122,10 +123,15 @@ class OllamaProvider(LLMProvider):
             raise OllamaConnectionError(
                 f"Failed to connect to Ollama at {self._base_url}: {str(e)}"
             )
+        except httpx.ReadTimeout:
+            raise OllamaError(
+                f"Ollama timed out generating response (model may be loading). "
+                f"Model: {self._model}, URL: {self._base_url}"
+            )
         except OllamaError:
             raise
         except Exception as e:
-            raise OllamaError(f"Unexpected error: {str(e)}")
+            raise OllamaError(f"Unexpected error: {type(e).__name__}: {str(e)}")
 
     async def stream(
         self,
@@ -209,10 +215,15 @@ class OllamaProvider(LLMProvider):
             raise OllamaConnectionError(
                 f"Failed to connect to Ollama at {self._base_url}: {str(e)}"
             )
+        except httpx.ReadTimeout:
+            raise OllamaError(
+                f"Ollama timed out during streaming (model may be loading). "
+                f"Model: {self._model}, URL: {self._base_url}"
+            )
         except OllamaError:
             raise
         except Exception as e:
-            raise OllamaError(f"Unexpected error: {str(e)}")
+            raise OllamaError(f"Unexpected error: {type(e).__name__}: {str(e)}")
 
     def _format_messages(self, messages: list[LLMMessage]) -> list[dict]:
         """Format messages for Ollama API format.
