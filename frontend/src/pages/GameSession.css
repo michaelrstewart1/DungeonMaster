@@ -166,6 +166,11 @@
   grid-template-rows: 1fr;
   flex: 1;
   overflow: hidden;
+  transition: grid-template-columns 0.3s ease;
+}
+
+.game-body.right-collapsed {
+  grid-template-columns: 220px 1fr 44px;
 }
 
 /* Left sidebar */
@@ -1025,15 +1030,54 @@
   pointer-events: none;
 }
 
-/* Section separators between initiative and dice */
-.game-sidebar-right > * {
+/* Section separators now handled by .sidebar-content > * */
+
+/* Sidebar toggle button */
+.sidebar-toggle {
+  position: absolute;
+  top: 50%;
+  left: -14px;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 48px;
+  background: linear-gradient(180deg, var(--bg-medium) 0%, var(--bg-dark) 100%);
+  border: 1px solid var(--gold-border);
+  border-radius: 6px 0 0 6px;
+  color: var(--gold);
+  font-size: 0.7rem;
+  cursor: pointer;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  padding: 0;
+}
+
+.sidebar-toggle:hover {
+  background: linear-gradient(180deg, rgba(212, 168, 70, 0.15) 0%, var(--bg-medium) 100%);
+  color: var(--gold-light);
+  border-color: var(--gold-dim);
+  box-shadow: -2px 0 8px rgba(212, 168, 70, 0.15);
+}
+
+/* Sidebar content wrapper */
+.sidebar-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.sidebar-content > * {
   padding-bottom: 0.75rem;
   margin-bottom: 0.75rem;
   border-bottom: 1px solid var(--border);
   position: relative;
 }
 
-.game-sidebar-right > *::after {
+.sidebar-content > *::after {
   content: '⬥';
   position: absolute;
   bottom: -8px;
@@ -1045,13 +1089,33 @@
   z-index: 1;
 }
 
-.game-sidebar-right > *:last-child {
+.sidebar-content > *:last-child {
   border-bottom: none;
   padding-bottom: 0;
   margin-bottom: 0;
 }
 
-.game-sidebar-right > *:last-child::after {
+.sidebar-content > *:last-child::after {
+  display: none;
+}
+
+/* Collapsed state */
+.game-sidebar-right.sidebar-collapsed {
+  padding: 0;
+  overflow: hidden;
+}
+
+.game-sidebar-right.sidebar-collapsed .sidebar-content {
+  display: none;
+}
+
+.game-sidebar-right.sidebar-collapsed .sidebar-toggle {
+  left: 0;
+  border-radius: 6px 0 0 6px;
+}
+
+.game-sidebar-right.sidebar-collapsed::before,
+.game-sidebar-right.sidebar-collapsed::after {
   display: none;
 }
 

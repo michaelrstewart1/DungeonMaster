@@ -83,6 +83,7 @@ export function GameSession() {
   const [showDeathSaves, setShowDeathSaves] = useState(false)
   const [showSpellSlots, setShowSpellSlots] = useState(false)
   const [showNPCJournal, setShowNPCJournal] = useState(false)
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(false)
   const [achievements, setAchievements] = useState<Achievement[]>([])
   const [unlockedAchievements, setUnlockedAchievements] = useState<Set<string>>(new Set())
   const turnCounterRef = useRef(0)
@@ -95,6 +96,13 @@ export function GameSession() {
 
   // Keep ref in sync for WS callback closure
   useEffect(() => { partyCharsRef.current = partyCharacters }, [partyCharacters])
+
+  // Auto-expand right sidebar when combat starts
+  useEffect(() => {
+    if (gameState?.phase === 'combat') {
+      setRightSidebarOpen(true)
+    }
+  }, [gameState?.phase])
 
   // Detect screen effect from DM narration text
   const detectEffect = useCallback((text: string) => {
@@ -729,7 +737,7 @@ export function GameSession() {
       </header>
 
       {/* Game body */}
-      <div className="game-body">
+      <div className={`game-body ${rightSidebarOpen ? '' : 'right-collapsed'}`}>
         {/* Left sidebar */}
         <aside className="game-sidebar-left">
           <DMAvatar
@@ -776,11 +784,20 @@ export function GameSession() {
         </div>
 
         {/* Right panel */}
-        <aside className="game-sidebar-right">
-          <InitiativeTracker combatants={combatants} />
-          <CombatLog entries={combatLogEntries} isInCombat={gameState?.phase === 'combat'} />
-          <DiceRoller onRoll={handleDiceRoll} lastResult={lastDiceResult ?? undefined} />
-          <EncounterPanel sessionId={sessionId || ''} partyLevel={partyCharacters[0]?.level || 1} />
+        <aside className={`game-sidebar-right ${rightSidebarOpen ? '' : 'sidebar-collapsed'}`}>
+          <button
+            className="sidebar-toggle"
+            onClick={() => setRightSidebarOpen(v => !v)}
+            title={rightSidebarOpen ? 'Collapse panel' : 'Expand combat panel'}
+          >
+            {rightSidebarOpen ? '▶' : '◀'}
+          </button>
+          <div className="sidebar-content">
+            <InitiativeTracker combatants={combatants} />
+            <CombatLog entries={combatLogEntries} isInCombat={gameState?.phase === 'combat'} />
+            <DiceRoller onRoll={handleDiceRoll} lastResult={lastDiceResult ?? undefined} />
+            <EncounterPanel sessionId={sessionId || ''} partyLevel={partyCharacters[0]?.level || 1} />
+          </div>
         </aside>
       </div>
 
