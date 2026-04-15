@@ -21,6 +21,7 @@ def _strip_action_echo(response: str, player_action: str) -> str:
     Smaller models often echo the player's action verbatim, e.g.:
     "You I check my inventory. The cavern..." → "The cavern..."
     "You check my inventory. The cavern..." → "The cavern..."
+    "I check my inventory. The cavern..." → "The cavern..."
     """
     if not player_action or not response:
         return response
@@ -28,16 +29,36 @@ def _strip_action_echo(response: str, player_action: str) -> str:
     action = player_action.strip().rstrip(".")
     text = response.strip()
 
-    # Pattern: "You <exact action>." or "You <exact action>," at start
-    for prefix in [f"You {action}", f"You {action.lower()}"]:
-        if text.startswith(prefix):
+    # Build candidate prefixes to strip (case-insensitive matching)
+    prefixes = [
+        f"You {action}",           # "You I check my inventory"
+        f"You {action.lower()}",   # "You i check my inventory"
+    ]
+
+    # Handle first→second person: "I check" → "You check"
+    action_lower = action.lower()
+    if action_lower.startswith("i "):
+        second_person = "You " + action[2:]           # preserve original case
+        second_person_lc = "You " + action_lower[2:]  # lowercase variant
+        prefixes.extend([second_person, second_person_lc])
+
+    for prefix in prefixes:
+        # Case-insensitive startswith
+        if text.lower().startswith(prefix.lower()):
             rest = text[len(prefix):]
             # Strip the connecting punctuation and whitespace
-            rest = rest.lstrip(".,;: —–-")
+            rest = rest.lstrip(".,;:!? —–-")
             rest = rest.strip()
             if rest:
-                # Capitalize the first letter of the remaining text
                 return rest[0].upper() + rest[1:]
+
+    # Also strip if the response literally starts with the action text
+    if text.lower().startswith(action.lower()):
+        rest = text[len(action):]
+        rest = rest.lstrip(".,;:!? —–-")
+        rest = rest.strip()
+        if rest:
+            return rest[0].upper() + rest[1:]
 
     return response
 

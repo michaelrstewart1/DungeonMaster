@@ -275,6 +275,21 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                 "The sounds of the cavern seem distant here. You feel your strength slowly returning "
                 "as you tend to your wounds and gather your resolve for what lies ahead.")
 
+    if words & {'check', 'inventory', 'bag', 'pack', 'pouch', 'equipment'}:
+        return ("You rummage through your belongings, taking stock of what you carry. "
+                "Everything seems to be in order, though supplies won't last forever. "
+                "The weight of your equipment is a familiar comfort in this uncertain place.")
+
+    if words & {'open', 'door', 'gate', 'chest', 'lid', 'unlock'}:
+        return ("You approach cautiously and reach out. With a creak of ancient hinges, "
+                "the way opens before you. A draft of stale air rushes past, carrying the scent "
+                "of dust and forgotten things. Beyond, darkness awaits.")
+
+    if words & {'hide', 'sneak', 'stealth', 'quiet', 'creep'}:
+        return ("You press yourself against the cold stone, steadying your breath. "
+                "The shadows seem to embrace you as you move in silence. "
+                "For now, you remain unseen — but these depths have eyes of their own.")
+
     return ("The cavern seems to respond to your presence — "
             "shadows shift along the walls, and you hear a distant sound, like stone grinding "
             "against stone. Something has taken notice of you.")

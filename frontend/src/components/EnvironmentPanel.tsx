@@ -33,7 +33,15 @@ export function EnvironmentPanel({ sessionId }: EnvironmentPanelProps) {
     return () => clearInterval(interval);
   }, [sessionId]);
 
-  if (isLoading || !environment) {
+  if (error) {
+    return (
+      <div className="environment-panel environment-error">
+        <span title={error}>⚠</span>
+      </div>
+    );
+  }
+
+  if (isLoading) {
     return (
       <div className="environment-panel environment-loading">
         <span>Loading environment...</span>
@@ -41,10 +49,18 @@ export function EnvironmentPanel({ sessionId }: EnvironmentPanelProps) {
     );
   }
 
-  if (error) {
+  if (!environment) {
+    // Fallback: render a minimal default instead of stuck loading
     return (
-      <div className="environment-panel environment-error">
-        <span title={error}>⚠</span>
+      <div className="environment-panel">
+        <div className="env-item time-of-day">
+          <span className="env-icon">☀️</span>
+          <span className="env-label">morning</span>
+        </div>
+        <div className="env-item weather">
+          <span className="env-icon">☀️</span>
+          <span className="env-label">clear</span>
+        </div>
       </div>
     );
   }

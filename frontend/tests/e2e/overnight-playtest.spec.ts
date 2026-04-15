@@ -402,6 +402,8 @@ test.describe('Overnight Playtest', () => {
       return
     }
     
+    // Wait for the AI greeting to arrive
+    await expect(page.locator('.message-dm:not(.typing-message)')).toHaveCount(1, { timeout: 60000 })
     await screenshot(page, '09-game-start')
     
     // Send multiple actions
@@ -412,9 +414,11 @@ test.describe('Overnight Playtest', () => {
     ]
     
     for (let i = 0; i < actions.length; i++) {
-      // Wait for input to be enabled (DM finished responding)
       const actionInput = page.locator('textarea.chat-input')
       await expect(actionInput).toBeEnabled({ timeout: 60000 })
+      
+      // Count existing DM messages before sending action
+      const dmMessagesBefore = await page.locator('.message-dm:not(.typing-message)').count()
       
       await actionInput.fill(actions[i])
       const sendBtn = page.locator('.chat-submit')
@@ -423,10 +427,8 @@ test.describe('Overnight Playtest', () => {
       } else {
         await actionInput.press('Enter')
       }
-      // Wait for DM response (input gets re-enabled after DM responds)
-      // Backend has 45s Ollama timeout + keyword fallback, so allow 60s
-      await expect(actionInput).toBeDisabled({ timeout: 5000 })
-      await expect(actionInput).toBeEnabled({ timeout: 60000 })
+      // Wait for a NEW DM message to appear (more reliable than disabled/enabled race)
+      await expect(page.locator('.message-dm:not(.typing-message)')).toHaveCount(dmMessagesBefore + 1, { timeout: 90000 })
       await page.waitForTimeout(500) // Brief pause for render
       await screenshot(page, `09-action-${i + 1}-response`)
     }
