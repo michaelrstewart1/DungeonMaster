@@ -45,6 +45,7 @@ interface DiceRollerProps {
 }
 
 export function DiceRoller({ onRoll, lastResult }: DiceRollerProps) {
+  const [collapsed, setCollapsed] = useState(true)
   const [rolling, setRolling] = useState(false)
   const [activeDie, setActiveDie] = useState<DieType>('d20')
   const [modifier, setModifier] = useState(0)
@@ -146,10 +147,23 @@ export function DiceRoller({ onRoll, lastResult }: DiceRollerProps) {
 
   return (
     <div className="dice-roller">
-      <h3 className="dice-roller-title">⚔ Dice Roller</h3>
+      <div
+        className="dice-roller-header"
+        onClick={() => setCollapsed(c => !c)}
+        role="button"
+        tabIndex={0}
+      >
+        <span className="dice-roller-title">⚔ Dice Roller</span>
+        {showResult && lastResult && collapsed && (
+          <span className="dice-roller-preview">{lastResult.notation}: {lastResult.total}</span>
+        )}
+        <span className={`sidebar-chevron ${collapsed ? 'collapsed' : ''}`}>▾</span>
+      </div>
 
-      {/* Dice Selection */}
-      <div className="dice-buttons">
+      {!collapsed && (
+        <>
+          {/* Dice Selection */}
+          <div className="dice-buttons">
         {DICE_TYPES.map((die, idx) => (
           <button
             key={die}
@@ -263,6 +277,8 @@ export function DiceRoller({ onRoll, lastResult }: DiceRollerProps) {
             </span>
           ))}
         </div>
+      )}
+        </>
       )}
     </div>
   )

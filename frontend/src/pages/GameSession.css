@@ -970,23 +970,44 @@
   font-family: var(--font-body);
   font-style: italic;
   font-size: 0.85rem;
-  padding: 1.5rem 1rem;
+  padding: 0;
 }
 
 .initiative-tracker.empty::after {
-  content: '⚔';
-  display: block;
-  font-size: 1.4rem;
-  margin-top: 0.5rem;
-  opacity: 0.2;
-  font-style: normal;
-  filter: grayscale(1);
-  animation: gentlePulse 3s ease-in-out infinite;
+  display: none;
 }
 
-@keyframes gentlePulse {
-  0%, 100% { opacity: 0.15; transform: scale(1); }
-  50% { opacity: 0.25; transform: scale(1.05); }
+.initiative-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+
+.initiative-header:hover .initiative-header-title {
+  color: var(--gold);
+}
+
+.initiative-header-title {
+  font-family: var(--font-display);
+  font-size: 0.85rem;
+  color: var(--gold-light);
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  transition: color 0.2s;
+}
+
+/* Shared sidebar chevron */
+.sidebar-chevron {
+  color: var(--gold-dim);
+  font-size: 0.8rem;
+  transition: transform 0.3s ease;
+}
+
+.sidebar-chevron.collapsed {
+  transform: rotate(-90deg);
 }
 
 .initiative-tracker h3 {
@@ -1089,14 +1110,34 @@
   overflow: hidden;
 }
 
+.dice-roller-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+  gap: 0.5rem;
+}
+
+.dice-roller-header:hover .dice-roller-title {
+  color: var(--gold);
+}
+
 .dice-roller-title {
   font-family: var(--font-display);
   font-size: 0.85rem;
   color: var(--gold-light);
-  margin: 0 0 0.5rem 0;
+  margin: 0;
   text-transform: uppercase;
   letter-spacing: 0.08em;
-  text-align: center;
+  transition: color 0.2s;
+}
+
+.dice-roller-preview {
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  color: var(--gold-dim);
+  margin-left: auto;
 }
 
 .dice-roller::before {

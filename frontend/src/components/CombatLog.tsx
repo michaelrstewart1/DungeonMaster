@@ -41,9 +41,14 @@ function resultClass(result?: CombatLogEntry['result']): string {
 }
 
 export function CombatLog({ entries, isInCombat }: CombatLogProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(!isInCombat)
   const scrollRef = useRef<HTMLDivElement>(null)
   const prevCountRef = useRef(entries.length)
+
+  // Auto-expand when combat starts
+  useEffect(() => {
+    if (isInCombat) setCollapsed(false)
+  }, [isInCombat])
 
   // Auto-scroll to bottom when new entries arrive
   useEffect(() => {
@@ -64,7 +69,7 @@ export function CombatLog({ entries, isInCombat }: CombatLogProps) {
         <span className="combat-log-count">
           {entries.length > 0 ? `(${entries.length} ${entries.length === 1 ? 'entry' : 'entries'})` : ''}
         </span>
-        <span className={`combat-log-chevron ${collapsed ? 'collapsed' : ''}`}>▾</span>
+        <span className={`sidebar-chevron ${collapsed ? 'collapsed' : ''}`}>▾</span>
       </button>
 
       {!collapsed && (
