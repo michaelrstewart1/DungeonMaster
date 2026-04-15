@@ -10,6 +10,17 @@ type GamePhase = 'exploration' | 'combat' | 'lobby' | 'rest' | 'shopping' | 'dia
 
 type ActionCategory = 'explore' | 'interact' | 'combat' | 'magic' | 'utility'
 
+const CLASS_ICONS: Record<string, string> = {
+  barbarian: '⚔️', bard: '🎵', cleric: '✝️', druid: '🌿', fighter: '🗡️', monk: '👊',
+  paladin: '🛡️', ranger: '🏹', rogue: '🗡️', sorcerer: '🔮', warlock: '👁️', wizard: '🧙',
+}
+
+const CLASS_ACCENT_COLORS: Record<string, string> = {
+  barbarian: '#CD853F', bard: '#DDA0DD', cleric: '#FFD700', druid: '#90EE90',
+  fighter: '#7EB3E0', monk: '#DAA520', paladin: '#4169E1', ranger: '#2E8B57',
+  rogue: '#B8B8B8', sorcerer: '#FF6347', warlock: '#8B008B', wizard: '#6495ED',
+}
+
 interface QuickAction {
   emoji: string
   label: string
@@ -40,6 +51,8 @@ interface GameChatProps {
   disabled?: boolean
   isWaitingForDM?: boolean
   phase?: GamePhase
+  characterName?: string
+  characterClass?: string
 }
 
 type MessageMood = 'danger' | 'magic' | 'nature' | 'social' | 'dark' | 'neutral'
@@ -213,7 +226,7 @@ function getQuickActions(phase: GamePhase): QuickAction[] {
   return EXPLORATION_ACTIONS
 }
 
-export function GameChat({ messages, onSubmitAction, disabled = false, isWaitingForDM = false, phase = 'exploration' }: GameChatProps) {
+export function GameChat({ messages, onSubmitAction, disabled = false, isWaitingForDM = false, phase = 'exploration', characterName, characterClass }: GameChatProps) {
   const [input, setInput] = useState('')
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [typedMessageCount, setTypedMessageCount] = useState(0)
@@ -309,11 +322,19 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
           const isTyping = isLatestDm && dmIndex === dmMessageIndices.length - 1
           const isNewest = i === messages.length - 1
           const mood = msg.role === 'dm' ? detectMood(msg.text) : 'neutral'
+          const classIcon = characterClass ? (CLASS_ICONS[characterClass] || '⚔️') : '⚔️'
+          const classAccent = characterClass ? (CLASS_ACCENT_COLORS[characterClass] || undefined) : undefined
 
           return (
-          <div key={i} className={`chat-message message-${msg.role}${msg.role === 'dm' ? ` mood-${mood}` : ''}${isNewest ? ' message-latest' : ''}`}>
+          <div
+            key={i}
+            className={`chat-message message-${msg.role}${msg.role === 'dm' ? ` mood-${mood}` : ''}${isNewest ? ' message-latest' : ''}`}
+            style={msg.role === 'player' && classAccent ? { '--player-accent': classAccent } as React.CSSProperties : undefined}
+          >
             <div className="message-header">
-              <span className="message-role">{msg.role === 'dm' ? '🎲 DM' : '⚔️ You'}</span>
+              <span className="message-role">
+                {msg.role === 'dm' ? '🎲 DM' : `${classIcon} ${characterName || 'You'}`}
+              </span>
               {msg.timestamp && (
                 <span className="message-time">
                   {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}

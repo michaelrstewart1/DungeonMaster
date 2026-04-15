@@ -779,7 +779,7 @@ export function GameSession() {
             </div>
           )}
           <div className={`chat-area ${!mapData ? 'chat-area-full' : ''}`}>
-            <GameChat messages={messages} onSubmitAction={handleSubmitAction} isWaitingForDM={waitingForDM} phase={gameState?.phase === 'combat' ? 'combat' : 'exploration'} />
+            <GameChat messages={messages} onSubmitAction={handleSubmitAction} isWaitingForDM={waitingForDM} phase={gameState?.phase === 'combat' ? 'combat' : 'exploration'} characterName={partyCharacters[0]?.name} characterClass={partyCharacters[0]?.class_name} />
           </div>
         </div>
 
