@@ -58,12 +58,13 @@ const DEFAULT_ABILITIES: AbilityScores = { strength: 8, dexterity: 8, constituti
 export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) {
   const [step, setStep] = useState(0)
   const creatorRef = useRef<HTMLFormElement>(null)
+  const stepContentRef = useRef<HTMLDivElement>(null)
 
-  // Scroll to top of creator on step change
+  // Scroll step content into view on step change
   useEffect(() => {
-    // Use instant scroll + scrollIntoView to ensure content is visible
-    creatorRef.current?.scrollIntoView?.({ behavior: 'auto', block: 'start' })
-    window.scrollTo({ top: 0, behavior: 'auto' })
+    // Target the step content area, falling back to the form
+    const target = stepContentRef.current || creatorRef.current
+    target?.scrollIntoView?.({ behavior: 'auto', block: 'nearest' })
   }, [step])
 
   // Step 0: Race + Subrace
@@ -336,6 +337,9 @@ export function CharacterCreator({ onCreate, onCancel }: CharacterCreatorProps) 
           </div>
         </div>
       )}
+
+      {/* Scroll anchor for step content */}
+      <div ref={stepContentRef} style={{ scrollMarginTop: '1rem' }} />
 
       {/* ================================================================ */}
       {/* Step 0: Race + Subrace */}
