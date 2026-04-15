@@ -12,6 +12,8 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     JSON,
+    Text,
+    func,
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -20,6 +22,24 @@ class Base(DeclarativeBase):
     """Declarative base for all ORM models."""
 
     pass
+
+
+class GameDataDB(Base):
+    """Generic key-value store for game state persistence.
+
+    Each row holds one entity (campaign, character, session, etc.) as a JSON
+    blob.  The in-memory dicts remain the primary fast cache; this table is
+    the durable backing store that survives container restarts.
+    """
+
+    __tablename__ = "game_data"
+
+    store_name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    entity_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSON, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now(), nullable=False
+    )
 
 
 class CampaignDB(Base):

@@ -68,11 +68,27 @@ def _init_app_state(app: FastAPI) -> None:
 async def lifespan(app: FastAPI):
     """ASGI lifespan: boot narrator/TTS on startup, clean up on shutdown."""
     from app.api import storage
-    storage.load_from_disk()
+    from app.db import init_db
+
+    # Create game_data table (and any other ORM tables)
+    await init_db()
+
+    # Try loading from DB first; fall back to JSON; auto-import JSON→DB
+    loaded = await storage.load_from_db()
+    if not loaded:
+        # Attempt one-time migration from save.json → PostgreSQL
+        imported = await storage.import_json_to_db()
+        if not imported:
+            # No DB data and no JSON — start fresh
+            storage.load_from_disk()
+
     _init_app_state(app)
     yield
-    # Auto-save on shutdown
+
+    # Auto-save on shutdown (DB primary, JSON backup)
+    await storage.save_to_db()
     storage.save_to_disk()
+
     # Shutdown — close any open HTTP clients
     narrator = getattr(app.state, "narrator", None)
     if narrator is not None:
@@ -123,7 +139,7 @@ def create_app() -> FastAPI:
             if (request.method in self._MUTATING_METHODS
                     and 200 <= response.status_code < 300):
                 from app.api import storage as _storage
-                _storage.save_to_disk()
+                await _storage.save_to_db()
             return response
 
     app.add_middleware(AutoSaveMiddleware)

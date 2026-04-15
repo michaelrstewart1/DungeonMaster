@@ -156,7 +156,7 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     session_data.setdefault("narrative_history", []).append(f"Player: {player_text}")
                     session_data["narrative_history"].append(f"DM: {narration}")
                     session_data["turn_count"] = session_data.get("turn_count", 0) + 1
-                    _storage.save_to_disk()
+                    await _storage.save_to_db()
             
             elif message_type == "token_move":
                 # Broadcast token move to all players
