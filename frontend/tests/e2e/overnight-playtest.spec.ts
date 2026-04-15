@@ -450,6 +450,8 @@ test.describe('Overnight Playtest', () => {
       await featuredCard.click()
       await expect(page).toHaveURL(/\/campaign\//, { timeout: 15000 })
       await page.waitForLoadState('networkidle')
+      await page.waitForSelector('.campaign-hero-banner, .page-campaign-detail header h1, .campaign-detail-header', { timeout: 10000 }).catch(() => {})
+      await page.waitForTimeout(500)
       await screenshot(page, '10-tablet-campaign')
     }
   })
