@@ -3154,6 +3154,51 @@
   transition-duration: 0.1s;
 }
 
+/* Click ripple effect */
+.quick-action-btn::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 0;
+  height: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(212, 168, 70, 0.4) 0%, transparent 70%);
+  transform: translate(-50%, -50%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.quick-action-btn:active:not(:disabled)::after {
+  animation: quickActionRipple 0.5s ease-out;
+}
+
+.quick-action-btn[data-category="explore"]::after {
+  background: radial-gradient(circle, rgba(100, 180, 120, 0.4) 0%, transparent 70%);
+}
+.quick-action-btn[data-category="interact"]::after {
+  background: radial-gradient(circle, rgba(160, 130, 220, 0.4) 0%, transparent 70%);
+}
+.quick-action-btn[data-category="combat"]::after {
+  background: radial-gradient(circle, rgba(220, 80, 80, 0.4) 0%, transparent 70%);
+}
+.quick-action-btn[data-category="magic"]::after {
+  background: radial-gradient(circle, rgba(100, 160, 255, 0.4) 0%, transparent 70%);
+}
+
+@keyframes quickActionRipple {
+  0% {
+    width: 0;
+    height: 0;
+    opacity: 1;
+  }
+  100% {
+    width: 200%;
+    height: 200%;
+    opacity: 0;
+  }
+}
+
 .quick-action-btn:disabled {
   opacity: 0.4;
   cursor: not-allowed;

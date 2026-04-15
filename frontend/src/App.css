@@ -546,6 +546,33 @@
   flex-direction: column;
 }
 
+.campaign-card-thumbnail {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.15;
+  transition: opacity 0.3s ease;
+  pointer-events: none;
+}
+
+.campaign-card.has-thumbnail:hover .campaign-card-thumbnail {
+  opacity: 0.25;
+}
+
+.campaign-card.has-thumbnail h3,
+.campaign-card.has-thumbnail .campaign-description,
+.campaign-card.has-thumbnail .campaign-meta,
+.campaign-card.has-thumbnail .campaign-card-icon,
+.campaign-card.has-thumbnail .campaign-delete-btn,
+.campaign-card.has-thumbnail .campaign-card-footer {
+  position: relative;
+  z-index: 1;
+}
+
 .campaign-card::before {
   content: '';
   position: absolute;

@@ -1,5 +1,6 @@
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import type { Campaign } from '../types'
+import { PREMADE_CAMPAIGNS } from '../data/premadeCampaigns'
 
 interface CampaignListProps {
   campaigns: Campaign[]
@@ -13,8 +14,24 @@ interface CampaignListProps {
 
 const CAMPAIGN_ICONS = ['🏰', '🐉', '⚔️', '🗺️', '🏔️', '🌋', '🏜️', '🌊']
 
+function findCampaignThumbnail(name: string): string | null {
+  const match = PREMADE_CAMPAIGNS.find(
+    p => p.name.toLowerCase() === name.toLowerCase()
+  )
+  return match?.thumbnail ?? null
+}
+
 export function CampaignList({ campaigns, onSelect, onCreate, onDelete, onRandomize, randomizing, loading }: CampaignListProps) {
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+
+  const thumbnailMap = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const c of campaigns) {
+      const thumb = findCampaignThumbnail(c.name)
+      if (thumb) map.set(c.id, thumb)
+    }
+    return map
+  }, [campaigns])
 
   const handleDelete = (e: React.MouseEvent, id: string) => {
     e.stopPropagation()
@@ -70,12 +87,18 @@ export function CampaignList({ campaigns, onSelect, onCreate, onDelete, onRandom
           {campaigns.map((campaign, idx) => (
             <div
               key={campaign.id}
-              className="campaign-card animate-in"
+              className={`campaign-card animate-in ${thumbnailMap.has(campaign.id) ? 'has-thumbnail' : ''}`}
               onClick={() => onSelect(campaign.id)}
               role="button"
               tabIndex={0}
               onKeyDown={(e) => e.key === 'Enter' && onSelect(campaign.id)}
             >
+              {thumbnailMap.has(campaign.id) && (
+                <div
+                  className="campaign-card-thumbnail"
+                  style={{ backgroundImage: `url(${thumbnailMap.get(campaign.id)})` }}
+                />
+              )}
               <div className="campaign-card-icon">{CAMPAIGN_ICONS[idx % CAMPAIGN_ICONS.length]}</div>
               {onDelete && (
                 <button
