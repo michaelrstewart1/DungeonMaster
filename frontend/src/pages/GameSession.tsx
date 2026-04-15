@@ -84,11 +84,15 @@ export function GameSession() {
   const [achievements, setAchievements] = useState<Achievement[]>([])
   const [unlockedAchievements, setUnlockedAchievements] = useState<Set<string>>(new Set())
   const turnCounterRef = useRef(0)
+  const partyCharsRef = useRef<Character[]>([])
 
   const wsRef = useRef<GameWebSocket | null>(null)
   const audioWsRef = useRef<WebSocket | null>(null)
   const audioChunksRef = useRef<Uint8Array[]>([])
   const isMutedRef = useRef(false)
+
+  // Keep ref in sync for WS callback closure
+  useEffect(() => { partyCharsRef.current = partyCharacters }, [partyCharacters])
 
   // Detect screen effect from DM narration text
   const detectEffect = useCallback((text: string) => {
@@ -498,15 +502,12 @@ export function GameSession() {
           break
         }
         case 'player_joined': {
-          const data = msg.payload as { player_id: string }
-          const shortId = data.player_id.split('-')[0]
-          setMessages((prev) => [...prev, { role: 'dm', text: `A new adventurer (${shortId}) has joined the party!`, timestamp: Date.now() }])
+          const heroName = partyCharsRef.current[0]?.name || 'A new adventurer'
+          setMessages((prev) => [...prev, { role: 'dm', text: `${heroName} has joined the party!`, timestamp: Date.now() }])
           break
         }
         case 'player_left': {
-          const data = msg.payload as { player_id: string }
-          const shortId = data.player_id.split('-')[0]
-          setMessages((prev) => [...prev, { role: 'dm', text: `Adventurer ${shortId} has departed.`, timestamp: Date.now() }])
+          setMessages((prev) => [...prev, { role: 'dm', text: 'An adventurer has departed.', timestamp: Date.now() }])
           break
         }
         case 'error': {
