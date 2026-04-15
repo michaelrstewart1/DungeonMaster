@@ -160,7 +160,11 @@ export default function LevelUpModal({ character, isOpen, onClose, onLevelUpComp
           <div className="levelup-stars">✦ ✦ ✦</div>
           <h2>⬆ Level Up!</h2>
           <p className="levelup-subtitle">
-            {character.name} — Level {currentLevelUp?.from_level ?? '?'} → {currentLevelUp?.to_level ?? '?'}
+            {loading
+              ? `${character.name} — Loading…`
+              : currentLevelUp
+                ? `${character.name} — Level ${currentLevelUp.from_level} → ${currentLevelUp.to_level}`
+                : `${character.name} — Up to date`}
           </p>
           {pending.length > 1 && (
             <div className="levelup-queue-badge">{pending.length} level-ups pending</div>
