@@ -97,10 +97,13 @@ class OllamaProvider(LLMProvider):
             formatted_messages.insert(0, {"role": "system", "content": system_prompt})
 
         try:
+            total_msg_chars = sum(len(m.get("content", "")) for m in formatted_messages)
+            logger.info("Ollama POST /api/chat: %d messages, %d total chars, model=%s", len(formatted_messages), total_msg_chars, self._model)
             response = await self._client.post(
                 f"{self._base_url}/api/chat",
                 json=payload,
             )
+            logger.info("Ollama response: status=%d", response.status_code)
 
             # Check for errors
             if response.status_code >= 400:

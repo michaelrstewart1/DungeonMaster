@@ -132,12 +132,14 @@ class DMNarrator:
             messages.append(LLMMessage(role="user", content=user_message))
 
             # Generate narration
+            logger.info("Calling LLM generate (system_prompt=%d chars, messages=%d)", len(system_prompt), len(messages))
             response = await self._llm.generate(
                 messages=messages,
                 system_prompt=system_prompt,
                 temperature=0.8,
                 max_tokens=500,
             )
+            logger.info("LLM response received (%d chars)", len(response.content))
 
             # Update history
             self._add_to_history(
