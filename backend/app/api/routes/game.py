@@ -239,7 +239,10 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                 timeout=45.0,
             )
             # Safety net: strip echoed player action even if narrator missed it
-            return _strip_action_echo(result, player_action)
+            stripped = _strip_action_echo(result, player_action)
+            if stripped != result:
+                logger.info("Echo stripped: '%s...' → '%s...'", result[:60], stripped[:60])
+            return stripped
         except asyncio.TimeoutError:
             logger.warning("Narrator timed out after 45s, falling back to keyword mock")
         except Exception as exc:

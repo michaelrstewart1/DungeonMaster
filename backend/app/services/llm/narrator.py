@@ -173,7 +173,11 @@ class DMNarrator:
                 LLMMessage(role="assistant", content=response.content),
             )
 
-            return _strip_action_echo(response.content, player_action)
+            raw = response.content
+            stripped = _strip_action_echo(raw, player_action)
+            if stripped != raw:
+                logger.info("Narrator echo stripped: '%s...' → '%s...'", raw[:60], stripped[:60])
+            return stripped
 
         except Exception as e:
             logger.error(f"Error in narrate_exploration: {e}")
