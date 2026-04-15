@@ -99,7 +99,7 @@ export default function PartyInventory({ sessionId, isOpen, onClose, pendingLoot
     setDistributing(prev => ({ ...prev, [originalIndex]: true }));
     try {
       const result = await distributeLoot(sessionId, originalIndex, characterId, quantity);
-      setInventory(prev => ({ ...prev, items: result.party_loot }));
+      setInventory(prev => ({ ...prev, items: result.party_loot as unknown as LootItemData[] }));
       const charName = partyCharacters?.find(c => c.id === characterId)?.name || 'character';
       setDistributeSuccess(prev => ({ ...prev, [originalIndex]: `Given to ${charName}!` }));
       onLootDistributed?.(characterId);

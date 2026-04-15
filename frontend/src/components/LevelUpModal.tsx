@@ -87,7 +87,7 @@ export default function LevelUpModal({ character, isOpen, onClose, onLevelUpComp
     if (newVal < 0 || newVal > 2) return;
     if (totalASI + delta > 2) return;
     // Don't exceed ability score cap of 20
-    const currentAbilityScore = (character as Record<string, number>)[ability] || 10;
+    const currentAbilityScore = (character as unknown as Record<string, number>)[ability] || 10;
     if (currentAbilityScore + newVal > 20) return;
 
     setAsiChoices(prev => {
@@ -244,7 +244,7 @@ export default function LevelUpModal({ character, isOpen, onClose, onLevelUpComp
                   <div className="asi-grid">
                     <div className="asi-budget">Points remaining: {2 - totalASI}</div>
                     {ABILITY_NAMES.map(ability => {
-                      const currentScore = (character as Record<string, number>)[ability] || 10;
+                      const currentScore = (character as unknown as Record<string, number>)[ability] || 10;
                       const increase = asiChoices[ability] || 0;
                       const atCap = currentScore + increase >= 20;
                       return (

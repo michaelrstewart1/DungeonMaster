@@ -833,8 +833,8 @@ export function GameSession() {
         onLootDistributed={() => {
           // Refresh party characters after distribution
           if (sessionId) {
-            import('../api/client').then(({ getGameSessionState }) =>
-              getGameSessionState(sessionId).then(state => {
+            import('../api/client').then(({ getGameState: fetchState }) =>
+              fetchState(sessionId).then((state: GameState) => {
                 if (state.characters) setPartyCharacters(state.characters as Character[])
               }).catch(() => {})
             )
