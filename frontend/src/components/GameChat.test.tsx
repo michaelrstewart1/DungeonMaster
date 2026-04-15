@@ -51,4 +51,21 @@ describe('GameChat', () => {
     const input = screen.getByPlaceholderText(/action|what do you do/i) as HTMLInputElement
     expect(input.disabled).toBe(true)
   })
+
+  it('disables input when waiting for DM response', () => {
+    render(<GameChat messages={[]} onSubmitAction={mockOnSubmit} isWaitingForDM />)
+    const input = screen.getByPlaceholderText(/action|what do you do/i) as HTMLInputElement
+    expect(input.disabled).toBe(true)
+    const sendBtn = screen.getByText('Send') as HTMLButtonElement
+    expect(sendBtn.disabled).toBe(true)
+  })
+
+  it('does not submit when waiting for DM response', () => {
+    const submitFn = vi.fn()
+    render(<GameChat messages={[]} onSubmitAction={submitFn} isWaitingForDM />)
+    const input = screen.getByPlaceholderText(/action|what do you do/i) as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'I attack!' } })
+    fireEvent.submit(input.closest('form')!)
+    expect(submitFn).not.toHaveBeenCalled()
+  })
 })

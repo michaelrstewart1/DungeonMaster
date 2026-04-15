@@ -394,19 +394,22 @@ test.describe('Overnight Playtest', () => {
     ]
     
     for (let i = 0; i < actions.length; i++) {
+      // Wait for input to be enabled (DM finished responding)
       const actionInput = page.locator('textarea.chat-input')
-      if (await actionInput.isVisible()) {
-        await actionInput.fill(actions[i])
-        const sendBtn = page.locator('.chat-submit')
-        if (await sendBtn.isVisible()) {
-          await sendBtn.click()
-        } else {
-          await actionInput.press('Enter')
-        }
-        // Wait for AI response
-        await page.waitForTimeout(15000)
-        await screenshot(page, `09-action-${i + 1}-response`)
+      await expect(actionInput).toBeEnabled({ timeout: 30000 })
+      
+      await actionInput.fill(actions[i])
+      const sendBtn = page.locator('.chat-submit')
+      if (await sendBtn.isVisible()) {
+        await sendBtn.click()
+      } else {
+        await actionInput.press('Enter')
       }
+      // Wait for DM response (input gets re-enabled after DM responds)
+      await expect(actionInput).toBeDisabled({ timeout: 5000 })
+      await expect(actionInput).toBeEnabled({ timeout: 30000 })
+      await page.waitForTimeout(500) // Brief pause for render
+      await screenshot(page, `09-action-${i + 1}-response`)
     }
     
     await screenshotFull(page, '09-game-multi-turn-full')

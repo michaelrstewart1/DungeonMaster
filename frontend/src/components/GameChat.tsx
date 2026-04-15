@@ -241,7 +241,7 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (input.trim()) {
+    if (input.trim() && !isWaitingForDM) {
       onSubmitAction(input.trim())
       setInput('')
       if (textareaRef.current) {
@@ -327,7 +327,7 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
             onChange={(e) => { setInput(e.target.value); autoResize() }}
             onKeyDown={handleKeyDown}
             placeholder="What do you do? (Enter to send, Shift+Enter for new line)"
-            disabled={disabled}
+            disabled={disabled || isWaitingForDM}
             className="chat-input"
             rows={1}
             maxLength={500}
@@ -338,7 +338,7 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
             </span>
           )}
         </div>
-        <button type="submit" disabled={disabled || !input.trim()} className="chat-submit">
+        <button type="submit" disabled={disabled || isWaitingForDM || !input.trim()} className="chat-submit">
           Send
         </button>
       </form>
