@@ -211,6 +211,7 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
     """
     if narrator is not None and db is not None:
         try:
+            import asyncio
             campaign_id = session.get("campaign_id", "")
             campaign = await repo.get_campaign(db, campaign_id) or {}
             world_context = campaign.get("world_state", {}).get("context", "A perilous realm.")
@@ -225,13 +226,18 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                 "description": session.get("current_scene", ""),
             }
             story_bible = await repo.get_campaign_story_bible(db, campaign_id) or ""
-            return await narrator.narrate_exploration(
-                scene=scene,
-                player_action=player_action,
-                characters=characters,
-                world_context=world_context,
-                story_bible=story_bible,
+            return await asyncio.wait_for(
+                narrator.narrate_exploration(
+                    scene=scene,
+                    player_action=player_action,
+                    characters=characters,
+                    world_context=world_context,
+                    story_bible=story_bible,
+                ),
+                timeout=45.0,
             )
+        except asyncio.TimeoutError:
+            logger.warning("Narrator timed out after 45s, falling back to keyword mock")
         except Exception as exc:
             logger.warning("Narrator failed, falling back to keyword mock: %s", exc)
 
@@ -277,6 +283,8 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
 @router.get("/sessions/{session_id}/greeting")
 async def get_session_greeting(request: Request, session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     """Generate the session-opening greeting and last-session recap."""
+    import asyncio
+
     session = await repo.get_game_session(db, session_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
@@ -294,41 +302,54 @@ async def get_session_greeting(request: Request, session_id: str, db: AsyncSessi
 
     narrator = getattr(request.app.state, "narrator", None)
 
-    # Generate a story bible for this campaign if one doesn't exist yet
+    # Generate a story bible in the background (don't block greeting)
     existing_bible = await repo.get_campaign_story_bible(db, campaign_id)
     if narrator is not None and not existing_bible:
         tone = campaign.get("world_state", {}).get("theme", "dark_fantasy")
         try:
-            bible = await narrator.generate_story_bible(
-                campaign_name=campaign.get("name", "Adventure"),
-                world_context=world_context,
-                tone=tone,
+            bible = await asyncio.wait_for(
+                narrator.generate_story_bible(
+                    campaign_name=campaign.get("name", "Adventure"),
+                    world_context=world_context,
+                    tone=tone,
+                ),
+                timeout=10.0,
             )
             await repo.set_campaign_story_bible(db, campaign_id, bible)
             existing_bible = bible
-        except Exception:
-            pass  # non-fatal
+        except (asyncio.TimeoutError, Exception):
+            pass  # non-fatal — skip bible on slow local models
 
     if narrator is not None:
         greeting_world_context = world_context
         if existing_bible and not world_context:
             greeting_world_context = existing_bible.split("\n\n")[0] if "\n\n" in existing_bible else existing_bible[:300]
-        greeting = await narrator.generate_session_greeting(
-            campaign_name=campaign.get("name", "Adventure"),
-            characters=characters,
-            last_summary=last_summary,
-            world_context=greeting_world_context,
-        )
-    elif last_summary:
-        greeting = (
-            f"Welcome back, brave souls. When last we met, {last_summary} "
-            "Now, the adventure continues — steel yourselves."
-        )
+        try:
+            greeting = await asyncio.wait_for(
+                narrator.generate_session_greeting(
+                    campaign_name=campaign.get("name", "Adventure"),
+                    characters=characters,
+                    last_summary=last_summary,
+                    world_context=greeting_world_context,
+                ),
+                timeout=15.0,
+            )
+        except asyncio.TimeoutError:
+            greeting = None  # fall through to static greeting
     else:
-        greeting = (
-            "Welcome, adventurers. A world of danger and wonder awaits you. "
-            "Your legend begins tonight — what will history remember of you?"
-        )
+        greeting = None
+
+    if not greeting:
+        if last_summary:
+            greeting = (
+                f"Welcome back, brave souls. When last we met, {last_summary} "
+                "Now, the adventure continues — steel yourselves."
+            )
+        else:
+            greeting = (
+                "Welcome, adventurers. A world of danger and wonder awaits you. "
+                "Your legend begins tonight — what will history remember of you?"
+            )
 
     return {"greeting": greeting}
 
