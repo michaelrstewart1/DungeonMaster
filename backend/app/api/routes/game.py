@@ -302,23 +302,23 @@ async def get_session_greeting(request: Request, session_id: str, db: AsyncSessi
 
     narrator = getattr(request.app.state, "narrator", None)
 
-    # Generate a story bible in the background (don't block greeting)
+    # Check for existing story bible (don't generate one here — too slow)
     existing_bible = await repo.get_campaign_story_bible(db, campaign_id)
+
+    # Generate story bible in background (fire-and-forget, don't block greeting)
     if narrator is not None and not existing_bible:
         tone = campaign.get("world_state", {}).get("theme", "dark_fantasy")
-        try:
-            bible = await asyncio.wait_for(
-                narrator.generate_story_bible(
+        async def _gen_bible():
+            try:
+                bible = await narrator.generate_story_bible(
                     campaign_name=campaign.get("name", "Adventure"),
                     world_context=world_context,
                     tone=tone,
-                ),
-                timeout=3.0,
-            )
-            await repo.set_campaign_story_bible(db, campaign_id, bible)
-            existing_bible = bible
-        except (asyncio.TimeoutError, Exception):
-            pass  # non-fatal — skip bible on slow local models
+                )
+                await repo.set_campaign_story_bible(db, campaign_id, bible)
+            except Exception:
+                pass
+        asyncio.create_task(_gen_bible())
 
     if narrator is not None:
         greeting_world_context = world_context
@@ -332,7 +332,7 @@ async def get_session_greeting(request: Request, session_id: str, db: AsyncSessi
                     last_summary=last_summary,
                     world_context=greeting_world_context,
                 ),
-                timeout=5.0,
+                timeout=12.0,
             )
         except asyncio.TimeoutError:
             greeting = None  # fall through to static greeting

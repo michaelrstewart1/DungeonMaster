@@ -453,4 +453,24 @@ test.describe('Overnight Playtest', () => {
       await screenshot(page, '11-mobile-campaign')
     }
   })
+
+  // Cleanup: delete test campaigns after all tests
+  test.afterAll(async () => {
+    const baseURL = process.env.E2E_BASE_URL || 'http://localhost:5173'
+    // API is proxied through nginx on the same host
+    const apiBase = baseURL
+    try {
+      const resp = await fetch(`${apiBase}/api/campaigns`)
+      if (!resp.ok) return
+      const campaigns = await resp.json()
+      for (const campaign of campaigns) {
+        await fetch(`${apiBase}/api/campaigns/${campaign.id}`, { method: 'DELETE' }).catch(() => {})
+      }
+      if (campaigns.length > 0) {
+        console.log(`Cleaned up ${campaigns.length} test campaigns`)
+      }
+    } catch {
+      // Cleanup is best-effort
+    }
+  })
 })

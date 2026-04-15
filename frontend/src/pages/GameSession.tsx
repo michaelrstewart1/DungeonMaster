@@ -398,19 +398,32 @@ export function GameSession() {
           setShowRecap(true)
         }
       } catch { /* no recap available — skip */ }
-      // Fetch the real AI greeting with a client-side timeout
-      let openingText = state.current_scene || 'Welcome, adventurers. Your legend begins tonight.'
+      // Show immediate fallback greeting, then upgrade when AI greeting arrives
+      const fallbackGreeting = state.current_scene || 'Welcome, adventurers. Your legend begins tonight.'
+      setMessages([{ role: 'dm', text: fallbackGreeting, timestamp: Date.now() }])
+      processDMMessage(fallbackGreeting)
+      setLoading(false)
+      
+      // Fetch the real AI greeting in background
       try {
         const greetingPromise = getSessionGreeting(sessionId)
         const timeoutPromise = new Promise<string>((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 8000)
+          setTimeout(() => reject(new Error('timeout')), 20000)
         )
-        openingText = await Promise.race([greetingPromise, timeoutPromise])
-      } catch { /* fallback to current_scene */ }
-      setMessages([{ role: 'dm', text: openingText, timestamp: Date.now() }])
-      processDMMessage(openingText)
-      // Speak the opening after a short delay (let audio WS connect first)
-      setTimeout(() => speakText(openingText), 1500)
+        const aiGreeting = await Promise.race([greetingPromise, timeoutPromise])
+        if (aiGreeting && aiGreeting !== fallbackGreeting) {
+          // Replace the fallback with the real AI greeting
+          setMessages(prev => {
+            const updated = [...prev]
+            if (updated.length > 0 && updated[0].role === 'dm') {
+              updated[0] = { ...updated[0], text: aiGreeting }
+            }
+            return updated
+          })
+          processDMMessage(aiGreeting)
+          speakText(aiGreeting)
+        }
+      } catch { /* keep the fallback greeting */ }
       if (state.combat_state) {
         setCombatants(
           state.combat_state.initiative_order.map((id, idx) => ({
