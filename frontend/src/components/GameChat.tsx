@@ -45,9 +45,17 @@ const COMBAT_ACTIONS: QuickAction[] = [
   { emoji: '🏳️', label: 'Retreat', category: 'utility' },
 ]
 
+interface NPCInfo {
+  name: string
+  disposition?: string
+  location?: string
+}
+
 interface GameChatProps {
   messages: ChatMessage[]
   onSubmitAction: (action: string) => void
+  onTalkToNPC?: (npcName: string, message: string) => void
+  npcs?: NPCInfo[]
   disabled?: boolean
   isWaitingForDM?: boolean
   phase?: GamePhase
@@ -226,10 +234,12 @@ function getQuickActions(phase: GamePhase): QuickAction[] {
   return EXPLORATION_ACTIONS
 }
 
-export function GameChat({ messages, onSubmitAction, disabled = false, isWaitingForDM = false, phase = 'exploration', characterName, characterClass }: GameChatProps) {
+export function GameChat({ messages, onSubmitAction, onTalkToNPC, npcs = [], disabled = false, isWaitingForDM = false, phase = 'exploration', characterName, characterClass }: GameChatProps) {
   const [input, setInput] = useState('')
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [typedMessageCount, setTypedMessageCount] = useState(0)
+  const [npcPickerOpen, setNpcPickerOpen] = useState(false)
+  const [targetNPC, setTargetNPC] = useState<string | null>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const chatContainerRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -290,12 +300,29 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     if (input.trim() && !isWaitingForDM) {
-      onSubmitAction(input.trim())
+      if (targetNPC && onTalkToNPC) {
+        onTalkToNPC(targetNPC, input.trim())
+        setTargetNPC(null)
+      } else {
+        onSubmitAction(input.trim())
+      }
       setInput('')
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto'
       }
     }
+  }
+
+  const handleNPCSelect = (npcName: string) => {
+    setTargetNPC(npcName)
+    setNpcPickerOpen(false)
+    setInput('')
+    textareaRef.current?.focus()
+  }
+
+  const handleCancelNPCTarget = () => {
+    setTargetNPC(null)
+    setInput('')
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -384,7 +411,13 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
             data-category={action.category}
             style={{ animationDelay: `${index * 0.05}s` }}
             disabled={disabled || isWaitingForDM}
-            onClick={() => onSubmitAction(`${action.emoji} ${action.label}`)}
+            onClick={() => {
+              if (action.label === 'Talk to NPC' && onTalkToNPC && npcs.length > 0) {
+                setNpcPickerOpen(!npcPickerOpen)
+              } else {
+                onSubmitAction(`${action.emoji} ${action.label}`)
+              }
+            }}
           >
             <span className="quick-action-emoji">{action.emoji}</span>
             <span className="quick-action-label">{action.label}</span>
@@ -392,14 +425,41 @@ export function GameChat({ messages, onSubmitAction, disabled = false, isWaiting
         ))}
       </div>
 
+      {npcPickerOpen && npcs.length > 0 && (
+        <div className="npc-picker">
+          <div className="npc-picker-header">
+            <span>💬 Who do you want to talk to?</span>
+            <button className="npc-picker-close" onClick={() => setNpcPickerOpen(false)}>✕</button>
+          </div>
+          <div className="npc-picker-list">
+            {npcs.map((npc) => (
+              <button
+                key={npc.name}
+                className="npc-picker-item"
+                onClick={() => handleNPCSelect(npc.name)}
+              >
+                <span className="npc-picker-name">{npc.name}</span>
+                {npc.disposition && <span className={`npc-picker-disposition ${npc.disposition}`}>{npc.disposition}</span>}
+                {npc.location && <span className="npc-picker-location">📍 {npc.location}</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
       <form onSubmit={handleSubmit} className="chat-input-form">
         <div className="chat-input-wrapper">
+          {targetNPC && (
+            <span className="npc-target-badge" onClick={handleCancelNPCTarget} title="Click to cancel">
+              💬 To {targetNPC} ✕
+            </span>
+          )}
           <textarea
             ref={textareaRef}
             value={input}
             onChange={(e) => { setInput(e.target.value); autoResize() }}
             onKeyDown={handleKeyDown}
-            placeholder="What do you do? (Enter to send, Shift+Enter for new line)"
+            placeholder={targetNPC ? `Say something to ${targetNPC}...` : 'What do you do? (Enter to send, Shift+Enter for new line)'}
             disabled={disabled || isWaitingForDM}
             className="chat-input"
             rows={1}

@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { uuid } from '../utils/uuid'
-import { getGameState, submitAction, getCampaign, getSessionGreeting, getSessionRecap, getCharacters } from '../api/client'
+import { getGameState, submitAction, getCampaign, getSessionGreeting, getSessionRecap, getCharacters, talkToNPC, getSessionNPCs } from '../api/client'
 import { GameWebSocket } from '../api/websocket'
 import { GameChat, type ChatMessage } from '../components/GameChat'
 import { DiceRoller } from '../components/DiceRoller'
@@ -83,6 +83,7 @@ export function GameSession() {
   const [showDeathSaves, setShowDeathSaves] = useState(false)
   const [showSpellSlots, setShowSpellSlots] = useState(false)
   const [showNPCJournal, setShowNPCJournal] = useState(false)
+  const [sessionNPCs, setSessionNPCs] = useState<Array<{ name: string; disposition?: string; location?: string }>>([])
   const [rightSidebarOpen, setRightSidebarOpen] = useState(false)
   const [achievements, setAchievements] = useState<Achievement[]>([])
   const [unlockedAchievements, setUnlockedAchievements] = useState<Set<string>>(new Set())
@@ -410,29 +411,74 @@ export function GameSession() {
           setShowRecap(true)
         }
       } catch { /* no recap available — skip */ }
-      // Show typing indicator while the DM greeting loads
-      setLoading(false)
-      setWaitingForDM(true)
-      
-      // Fetch the AI greeting (with fallback)
-      let greeting = ''
-      try {
-        const greetingPromise = getSessionGreeting(sessionId)
-        const timeoutPromise = new Promise<string>((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 20000)
-        )
-        greeting = await Promise.race([greetingPromise, timeoutPromise])
-      } catch { /* AI greeting unavailable — use static fallback */ }
 
-      if (!greeting || !greeting.trim()) {
-        const name = campaignName || 'this realm'
-        greeting = `Welcome, adventurers, to ${name}. The shadows stir and ancient forces take notice of your arrival. Steel yourselves — your legend begins tonight.`
+      // Hydrate chat history from narrative_history if rejoining an existing session
+      const history = state.narrative_history || []
+      const hasHistory = history.length > 1 // More than just the initial scene description
+
+      if (hasHistory) {
+        // Parse narrative_history entries into ChatMessages
+        // Format: "Player: ..." or "DM: ..." or plain scene descriptions
+        const MAX_HISTORY_MESSAGES = 50
+        const historySlice = history.slice(-MAX_HISTORY_MESSAGES)
+        const restoredMessages: ChatMessage[] = []
+
+        for (const entry of historySlice) {
+          if (entry.startsWith('Player: ')) {
+            restoredMessages.push({
+              role: 'player',
+              text: entry.slice('Player: '.length),
+              timestamp: Date.now(),
+            })
+          } else if (entry.startsWith('DM: ')) {
+            restoredMessages.push({
+              role: 'dm',
+              text: entry.slice('DM: '.length),
+              timestamp: Date.now(),
+            })
+          } else {
+            // Scene descriptions or other entries — show as DM narration
+            restoredMessages.push({
+              role: 'dm',
+              text: entry,
+              timestamp: Date.now(),
+            })
+          }
+        }
+
+        setLoading(false)
+        setMessages(restoredMessages)
+        // Process the last DM message for effects/mood
+        const lastDM = restoredMessages.filter(m => m.role === 'dm').pop()
+        if (lastDM) {
+          processDMMessage(lastDM.text)
+        }
+      } else {
+        // Fresh session — show typing indicator while the DM greeting loads
+        setLoading(false)
+        setWaitingForDM(true)
+      
+        // Fetch the AI greeting (with fallback)
+        let greeting = ''
+        try {
+          const greetingPromise = getSessionGreeting(sessionId)
+          const timeoutPromise = new Promise<string>((_, reject) =>
+            setTimeout(() => reject(new Error('timeout')), 20000)
+          )
+          greeting = await Promise.race([greetingPromise, timeoutPromise])
+        } catch { /* AI greeting unavailable — use static fallback */ }
+
+        if (!greeting || !greeting.trim()) {
+          const name = campaignName || 'this realm'
+          greeting = `Welcome, adventurers, to ${name}. The shadows stir and ancient forces take notice of your arrival. Steel yourselves — your legend begins tonight.`
+        }
+
+        setWaitingForDM(false)
+        setMessages([{ role: 'dm', text: greeting, timestamp: Date.now() }])
+        processDMMessage(greeting)
+        speakText(greeting)
       }
 
-      setWaitingForDM(false)
-      setMessages([{ role: 'dm', text: greeting, timestamp: Date.now() }])
-      processDMMessage(greeting)
-      speakText(greeting)
       if (state.combat_state) {
         setCombatants(
           state.combat_state.initiative_order.map((id, idx) => ({
@@ -445,6 +491,12 @@ export function GameSession() {
           }))
         )
       }
+
+      // Load session NPCs for Talk to NPC feature
+      try {
+        const npcResp = await getSessionNPCs(sessionId)
+        setSessionNPCs(npcResp.npcs.map(n => ({ name: n.name, disposition: n.disposition, location: n.location })))
+      } catch { /* NPCs will just be empty */ }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load game state')
     } finally {
@@ -579,6 +631,25 @@ export function GameSession() {
       setWaitingForDM(false)
     }
   }, [sessionId, speakText, detectEffect, detectAtmosphere, processDMMessage, extractCombatLogEntries])
+
+  const handleTalkToNPC = useCallback(async (npcName: string, message: string) => {
+    if (!sessionId) return
+    setMessages((prev) => [...prev, { role: 'player', text: `[To ${npcName}] ${message}`, timestamp: Date.now() }])
+    setWaitingForDM(true)
+    try {
+      const result = await talkToNPC(sessionId, npcName, message)
+      const text = result.narration || `${npcName} says nothing.`
+      setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
+      processDMMessage(text)
+      setAvatarState((prev) => ({ ...prev, expression: 'speaking', isSpeaking: true }))
+      setTimeout(() => setAvatarState((prev) => ({ ...prev, isSpeaking: false, expression: 'neutral' })), 2000)
+      speakText(text)
+    } catch {
+      setMessages((prev) => [...prev, { role: 'dm', text: `${npcName} seems distracted and doesn't respond.`, timestamp: Date.now() }])
+    } finally {
+      setWaitingForDM(false)
+    }
+  }, [sessionId, speakText, processDMMessage])
 
   const handleDiceRoll = useCallback((notation: string) => {
     if (wsRef.current) {
@@ -779,7 +850,7 @@ export function GameSession() {
             </div>
           )}
           <div className={`chat-area ${!mapData ? 'chat-area-full' : ''}`}>
-            <GameChat messages={messages} onSubmitAction={handleSubmitAction} isWaitingForDM={waitingForDM} phase={gameState?.phase === 'combat' ? 'combat' : 'exploration'} characterName={partyCharacters[0]?.name} characterClass={partyCharacters[0]?.class_name} />
+            <GameChat messages={messages} onSubmitAction={handleSubmitAction} onTalkToNPC={handleTalkToNPC} npcs={sessionNPCs} isWaitingForDM={waitingForDM} phase={gameState?.phase === 'combat' ? 'combat' : 'exploration'} characterName={partyCharacters[0]?.name} characterClass={partyCharacters[0]?.class_name} />
           </div>
         </div>
 

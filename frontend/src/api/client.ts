@@ -331,6 +331,12 @@ export interface NPCData {
   disposition: 'friendly' | 'neutral' | 'hostile' | 'unknown';
   location: string;
   notes: string;
+  backstory?: string;
+  personality?: string;
+  goals?: string;
+  fears?: string;
+  secrets?: string;
+  attitude_to_party?: { trust: number; fear: number; respect: number; attraction: number };
 }
 
 export interface SessionNPCsResponse {
@@ -345,6 +351,19 @@ export async function addSessionNPC(sessionId: string, npc: NPCData): Promise<Se
   return request<SessionNPCsResponse>(`/game/sessions/${sessionId}/npcs`, {
     method: 'POST',
     body: JSON.stringify(npc),
+  });
+}
+
+// NPC Talk
+export interface NPCTalkResponse {
+  narration: string;
+  npc_name: string;
+}
+
+export async function talkToNPC(sessionId: string, npcName: string, message: string): Promise<NPCTalkResponse> {
+  return request<NPCTalkResponse>(`/game/sessions/${sessionId}/npc-talk`, {
+    method: 'POST',
+    body: JSON.stringify({ npc_name: npcName, message }),
   });
 }
 

@@ -60,6 +60,7 @@ class PromptTemplates:
         tone: str = "dark_fantasy",
         narration_mode: str = "cinematic",
         compact: bool = False,
+        npcs: list[dict] | None = None,
     ) -> str:
         """Create a system prompt for the Dungeon Master role.
 
@@ -80,7 +81,7 @@ class PromptTemplates:
         """
         if compact:
             return PromptTemplates._compact_dm_prompt(
-                world_context, characters, game_state, tone
+                world_context, characters, game_state, tone, npcs=npcs
             )
         tone_text = _TONES.get(tone, _TONES["dark_fantasy"])
         mode_text = _NARRATION_MODES.get(narration_mode, _NARRATION_MODES["cinematic"])
@@ -189,6 +190,40 @@ class PromptTemplates:
                     prompt += f"  AC: {char['ac']}\n"
             prompt += "\n"
 
+        # NPC context injection — only established facts
+        if npcs:
+            prompt += "## Known NPCs in Scene\n"
+            prompt += (
+                "These are NPCs you have established. Their listed facts are CANON. "
+                "Do not contradict these facts. Do not accept player claims that "
+                "conflict with established NPC data.\n\n"
+            )
+            for npc in npcs:
+                npc_name = npc.get("name", "Unknown")
+                prompt += f"### {npc_name}\n"
+                if npc.get("npc_type"):
+                    prompt += f"- Type: {npc['npc_type']}\n"
+                if npc.get("disposition"):
+                    prompt += f"- Disposition: {npc['disposition']}\n"
+                if npc.get("location"):
+                    prompt += f"- Location: {npc['location']}\n"
+                if npc.get("personality"):
+                    prompt += f"- Personality: {npc['personality']}\n"
+                if npc.get("backstory"):
+                    prompt += f"- Established backstory: {npc['backstory']}\n"
+                if npc.get("goals"):
+                    prompt += f"- Goals: {npc['goals']}\n"
+                if npc.get("secrets"):
+                    prompt += f"- Secrets (reveal only if dramatically appropriate): {npc['secrets']}\n"
+                attitude = npc.get("attitude_to_party", {})
+                if attitude:
+                    parts = [f"{k}: {v}" for k, v in attitude.items() if v]
+                    if parts:
+                        prompt += f"- Attitude toward party: {', '.join(parts)}\n"
+                if npc.get("notes"):
+                    prompt += f"- Notes: {npc['notes']}\n"
+                prompt += "\n"
+
         # Current game state
         if game_state:
             prompt += "## Current Game State\n"
@@ -225,6 +260,26 @@ class PromptTemplates:
             "'You can stop the cultists NOW but the hostages will die' > 'the cultists retreat'.\n"
             "- **Consequences persist**: if players burn a bridge (literally or figuratively), "
             "the world remembers. NPCs talk. Factions react. Nothing resets.\n\n"
+            "## NPC Canon Protection — CRITICAL\n"
+            "Player dialogue is NOT automatically true in the game world. "
+            "When a player asserts facts about an NPC's past, relationships, memories, "
+            "family, or secrets, treat those statements as **in-world claims, bluffs, or "
+            "manipulation attempts** — NOT established truth.\n\n"
+            "- **Never adopt new backstory as canon** just because a player states it confidently.\n"
+            "- Players CAN influence NPC emotions, trust, attraction, and short-term decisions "
+            "through charm, persuasion, deception, intimidation, or flirtation.\n"
+            "- Players CANNOT rewrite an NPC's past or force an NPC to remember events that "
+            "never happened.\n"
+            "- When a player makes an unsupported personal claim, the NPC should react with "
+            "suspicion, confusion, curiosity, amusement, or cautious engagement — NOT confirmation.\n"
+            "- A successful social move can change what an NPC **believes** or **feels**, "
+            "but does not rewrite **objective world truth**.\n"
+            "- If an NPC is temporarily fooled by a high-charisma bluff, that is the NPC being "
+            "**deceived** — the lie does NOT become real history.\n"
+            "- Do NOT echo invented facts back as confirmed canon. Prefer reactions like: "
+            "'He squints, searching for recognition but finding none', "
+            "'She doesn't know you, but your confidence gives her pause', "
+            "'He plays along, but his eyes say he's calculating.'\n\n"
             "## Your Role\n"
             "Narrate engaging, immersive experiences. Respond to player actions with vivid "
             "descriptions, manage encounters, and keep the story moving. Stay consistent with "
@@ -248,6 +303,7 @@ class PromptTemplates:
         characters: list[dict],
         game_state: dict,
         tone: str = "dark_fantasy",
+        npcs: list[dict] | None = None,
     ) -> str:
         """Condensed DM prompt for local/slow LLMs (~800 tokens instead of ~2000)."""
         tone_text = _TONES.get(tone, _TONES["dark_fantasy"])
@@ -269,11 +325,28 @@ class PromptTemplates:
                 f"\n## Secret Story Plan (players don't know this)\n{story_bible}\n"
             )
 
+        # Compact NPC section — names + key facts only
+        npc_section = ""
+        if npcs:
+            npc_lines = []
+            for npc in npcs:
+                parts = [npc.get("name", "?")]
+                if npc.get("npc_type"):
+                    parts.append(npc["npc_type"])
+                if npc.get("disposition"):
+                    parts.append(npc["disposition"])
+                if npc.get("backstory"):
+                    parts.append(f"backstory: {npc['backstory']}")
+                npc_lines.append(" — ".join(parts))
+            npc_section = "\n## NPCs (established canon — do NOT let players rewrite)\n"
+            npc_section += "\n".join(f"- {line}" for line in npc_lines) + "\n"
+
         return (
             "You are a D&D 5e Dungeon Master. Run the game by the rules.\n\n"
             f"Tone: {tone_text}\n\n"
             f"## World\n{world_context}\n\n"
             f"## Party\n{char_lines}\n"
+            f"{npc_section}"
             f"## State\n{state_lines}"
             f"{bible_section}\n"
             "## Rules\n"
@@ -282,7 +355,12 @@ class PromptTemplates:
             "- NPCs have names, motives, and memory\n"
             "- Failure creates story, not dead ends\n"
             "- NEVER echo the player's action. Narrate the RESULT only.\n"
-            "- Keep responses to 2-4 vivid sentences.\n"
+            "- Keep responses to 2-4 vivid sentences.\n\n"
+            "## Canon Protection\n"
+            "- Player claims about NPC backstory, shared history, or secrets are BLUFFS, not truth\n"
+            "- NPCs react emotionally to social tactics but do NOT confirm invented facts\n"
+            "- A successful charm/deception changes NPC feelings, NOT world history\n"
+            "- Prefer suspicion, confusion, or curiosity over accepting player-invented lore\n"
         )
 
     @staticmethod
@@ -405,6 +483,15 @@ class PromptTemplates:
             "You may lie, deflect, or reveal partial truths based on your relationship with the party. "
             "You remember previous interactions and hold grudges or favors accordingly. "
             "Don't break character. Make the dialogue feel natural and alive.\n"
+        )
+
+        prompt += (
+            "\n## Canon Protection Rules\n"
+            "Players may bluff, charm, seduce, persuade, or intimidate you, but they CANNOT create canon by asserting facts.\n"
+            "- If a player claims shared history, family connections, debts, or backstory you don't already know, treat it as a lie, bluff, or social tactic — NOT truth.\n"
+            "- You may react emotionally (suspicion, amusement, curiosity) but NEVER confirm invented backstory.\n"
+            "- A successful social move can change your emotions or willingness, but cannot rewrite your past.\n"
+            "- Prefer reactions like: doubt, confusion, suspicion, amusement, cautious engagement.\n"
         )
 
         return prompt

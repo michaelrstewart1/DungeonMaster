@@ -1,5 +1,5 @@
 """Game session management endpoints."""
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 import logging
 import random
@@ -228,6 +228,8 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                 "description": session.get("current_scene", ""),
             }
             story_bible = await repo.get_campaign_story_bible(db, campaign_id) or ""
+            # Pass known NPCs for canon protection context
+            npcs = session.get("npcs", [])
             result = await asyncio.wait_for(
                 narrator.narrate_exploration(
                     scene=scene,
@@ -235,6 +237,7 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                     characters=characters,
                     world_context=world_context,
                     story_bible=story_bible,
+                    npcs=npcs,
                 ),
                 timeout=45.0,
             )
@@ -409,12 +412,22 @@ async def save_session_summary(
 
 # NPC Journal endpoints
 class NPCData(BaseModel):
-    """NPC data model."""
+    """NPC data model with structured canon and social state."""
     name: str = Field(..., description="NPC name")
     npc_type: str = Field(..., description="NPC type (merchant, guard, wizard, etc.)")
     disposition: str = Field(default="unknown", description="Disposition (friendly, neutral, hostile, unknown)")
     location: str = Field(default="", description="Last known location")
     notes: str = Field(default="", description="Notes about the NPC")
+    # Enriched fields for canon protection and NPC dialogue
+    backstory: str = Field(default="", description="Established backstory (DM canon — players cannot rewrite)")
+    personality: str = Field(default="", description="Personality traits and mannerisms")
+    goals: str = Field(default="", description="What the NPC wants")
+    fears: str = Field(default="", description="What the NPC is afraid of")
+    secrets: str = Field(default="", description="Hidden information (revealed only if dramatically appropriate)")
+    attitude_to_party: Dict[str, Any] = Field(
+        default_factory=lambda: {"trust": 0, "fear": 0, "respect": 0, "attraction": 0},
+        description="Numeric attitude scores toward the party (-10 to 10)",
+    )
 
 
 class SessionNPCsResponse(BaseModel):
@@ -463,6 +476,85 @@ async def add_session_npc(session_id: str, npc: NPCData, db: AsyncSession = Depe
     
     npcs = [NPCData(**n) if isinstance(n, dict) else n for n in session["npcs"]]
     return SessionNPCsResponse(npcs=npcs)
+
+
+class NPCTalkRequest(BaseModel):
+    """Request to talk to an NPC."""
+    npc_name: str = Field(..., description="Name of the NPC to talk to")
+    message: str = Field(..., description="What the player says or does")
+
+
+class NPCTalkResponse(BaseModel):
+    """Response from NPC conversation."""
+    narration: str = Field(..., description="The NPC's response narration")
+    npc_name: str = Field(..., description="Name of the NPC who responded")
+
+
+@router.post("/sessions/{session_id}/npc-talk", response_model=NPCTalkResponse)
+async def talk_to_npc(
+    request: Request,
+    session_id: str,
+    body: NPCTalkRequest,
+    db: AsyncSession = Depends(get_db),
+) -> NPCTalkResponse:
+    """Talk to a specific NPC using the dedicated NPC dialogue pipeline.
+    
+    Routes through narrate_npc_interaction() with the NPC's full structured state,
+    canon protection rules, and personality-driven responses.
+    """
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+
+    # Find the NPC by name (case-insensitive)
+    npcs = session.get("npcs", [])
+    target_npc = None
+    for npc in npcs:
+        npc_name = npc.get("name", "") if isinstance(npc, dict) else npc.name
+        if npc_name.lower() == body.npc_name.lower():
+            target_npc = npc if isinstance(npc, dict) else npc.dict()
+            break
+
+    if target_npc is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"NPC '{body.npc_name}' not found in session. Add them first via the NPC journal.",
+        )
+
+    narrator = getattr(request.app.state, "narrator", None)
+    if narrator is not None:
+        try:
+            import asyncio
+            narration = await asyncio.wait_for(
+                narrator.narrate_npc_interaction(
+                    npc=target_npc,
+                    player_message=body.message,
+                ),
+                timeout=45.0,
+            )
+        except asyncio.TimeoutError:
+            narration = f"{target_npc['name']} regards you thoughtfully but says nothing for the moment."
+        except Exception as exc:
+            logger.warning("NPC dialogue failed: %s", exc)
+            narration = f"{target_npc['name']} seems distracted and doesn't respond clearly."
+    else:
+        # Keyword mock fallback for tests
+        npc_name = target_npc.get("name", "The NPC")
+        disposition = target_npc.get("disposition", "neutral")
+        if disposition == "friendly":
+            narration = f'{npc_name} smiles warmly. "Well met, friend. What brings you here?"'
+        elif disposition == "hostile":
+            narration = f'{npc_name} narrows their eyes. "Speak quickly. My patience is thin."'
+        else:
+            narration = f'{npc_name} regards you with a measured gaze. "What do you want?"'
+
+    # Record in narrative history
+    session["narrative_history"].append(f"Player: [To {target_npc['name']}] {body.message}")
+    session["narrative_history"].append(f"DM: {narration}")
+    session["turn_count"] = session.get("turn_count", 0) + 1
+    await repo.save_game_session(db, session)
+
+    return NPCTalkResponse(narration=narration, npc_name=target_npc["name"])
 
 
 @router.post("/world/generate")

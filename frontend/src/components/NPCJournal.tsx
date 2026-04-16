@@ -7,6 +7,12 @@ export interface NPCData {
   disposition: 'friendly' | 'neutral' | 'hostile' | 'unknown';
   location: string;
   notes: string;
+  backstory?: string;
+  personality?: string;
+  goals?: string;
+  fears?: string;
+  secrets?: string;
+  attitude_to_party?: { trust: number; fear: number; respect: number; attraction: number };
 }
 
 interface NPCJournalProps {

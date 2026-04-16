@@ -266,3 +266,144 @@ class TestGameSessionCombat:
         """Ending combat on non-existent session should return 404."""
         response = await client.post("/api/game/sessions/nonexistent-id/end-combat")
         assert response.status_code == 404
+
+
+class TestNPCTalk:
+    """Tests for POST /api/game/sessions/{id}/npc-talk"""
+
+    async def _create_session_with_npc(self, client: AsyncClient) -> tuple[str, str]:
+        """Helper: create a campaign, session, and add an NPC. Returns (session_id, npc_name)."""
+        campaign_response = await client.post(
+            "/api/campaigns",
+            json={
+                "name": "NPC Talk Campaign",
+                "description": "For NPC talk tests",
+                "character_ids": [],
+                "world_state": {},
+                "dm_settings": {},
+            },
+        )
+        campaign_id = campaign_response.json()["id"]
+
+        session_response = await client.post(
+            "/api/game/sessions",
+            json={
+                "campaign_id": campaign_id,
+                "current_phase": "exploration",
+                "current_scene": "A bustling tavern.",
+            },
+        )
+        session_id = session_response.json()["id"]
+
+        # Add an NPC
+        npc_name = "Kaelrath"
+        await client.post(
+            f"/api/game/sessions/{session_id}/npcs",
+            json={
+                "name": npc_name,
+                "npc_type": "merchant",
+                "disposition": "neutral",
+                "location": "Tavern",
+                "notes": "A mysterious merchant",
+                "personality": "guarded, calculating",
+                "backstory": "A former adventurer turned merchant",
+                "goals": "Profit and information",
+                "fears": "Being recognized from his past",
+                "secrets": "Secretly works for the thieves guild",
+            },
+        )
+        return session_id, npc_name
+
+    async def test_talk_to_npc_returns_200(self, client: AsyncClient):
+        """Talking to an existing NPC should return 200 with narration."""
+        session_id, npc_name = await self._create_session_with_npc(client)
+
+        response = await client.post(
+            f"/api/game/sessions/{session_id}/npc-talk",
+            json={"npc_name": npc_name, "message": "Hello there, friend!"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "narration" in data
+        assert data["npc_name"] == npc_name
+        assert isinstance(data["narration"], str)
+        assert len(data["narration"]) > 0
+
+    async def test_talk_to_npc_case_insensitive(self, client: AsyncClient):
+        """NPC name lookup should be case-insensitive."""
+        session_id, _ = await self._create_session_with_npc(client)
+
+        response = await client.post(
+            f"/api/game/sessions/{session_id}/npc-talk",
+            json={"npc_name": "kaelrath", "message": "Hello!"},
+        )
+        assert response.status_code == 200
+        assert response.json()["npc_name"] == "Kaelrath"
+
+    async def test_talk_to_nonexistent_npc_returns_404(self, client: AsyncClient):
+        """Talking to a non-existent NPC should return 404."""
+        session_id, _ = await self._create_session_with_npc(client)
+
+        response = await client.post(
+            f"/api/game/sessions/{session_id}/npc-talk",
+            json={"npc_name": "Nobody", "message": "Hello?"},
+        )
+        assert response.status_code == 404
+        assert "Nobody" in response.json()["detail"]
+
+    async def test_talk_to_npc_nonexistent_session_returns_404(self, client: AsyncClient):
+        """Talking to NPC in non-existent session should return 404."""
+        response = await client.post(
+            "/api/game/sessions/fake-session/npc-talk",
+            json={"npc_name": "Kaelrath", "message": "Hello!"},
+        )
+        assert response.status_code == 404
+
+    async def test_talk_to_npc_records_history(self, client: AsyncClient):
+        """NPC talk should record in narrative history."""
+        session_id, npc_name = await self._create_session_with_npc(client)
+
+        await client.post(
+            f"/api/game/sessions/{session_id}/npc-talk",
+            json={"npc_name": npc_name, "message": "What do you sell?"},
+        )
+
+        # Check session state for narrative history
+        state = await client.get(f"/api/game/sessions/{session_id}/state")
+        history = state.json()["narrative_history"]
+        # Should have the initial scene + player message + DM response
+        player_entries = [h for h in history if h.startswith("Player:")]
+        dm_entries = [h for h in history if h.startswith("DM:")]
+        assert any(npc_name in e for e in player_entries)
+        assert len(dm_entries) >= 1
+
+    async def test_talk_to_friendly_npc_uses_disposition(self, client: AsyncClient):
+        """Friendly NPC should respond with friendly mock text."""
+        campaign_response = await client.post(
+            "/api/campaigns",
+            json={
+                "name": "Friendly Campaign",
+                "description": "Test",
+                "character_ids": [],
+                "world_state": {},
+                "dm_settings": {},
+            },
+        )
+        campaign_id = campaign_response.json()["id"]
+        session_response = await client.post(
+            "/api/game/sessions",
+            json={"campaign_id": campaign_id, "current_phase": "exploration", "current_scene": "Village"},
+        )
+        session_id = session_response.json()["id"]
+
+        await client.post(
+            f"/api/game/sessions/{session_id}/npcs",
+            json={"name": "Elara", "npc_type": "healer", "disposition": "friendly"},
+        )
+        response = await client.post(
+            f"/api/game/sessions/{session_id}/npc-talk",
+            json={"npc_name": "Elara", "message": "Can you help us?"},
+        )
+        assert response.status_code == 200
+        # Mock fallback uses disposition to vary response
+        assert "Elara" in response.json()["narration"]

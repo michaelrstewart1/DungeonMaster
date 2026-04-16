@@ -115,6 +115,7 @@ class DMNarrator:
         characters: list[dict],
         world_context: str,
         story_bible: str = "",
+        npcs: list[dict] | None = None,
     ) -> str:
         """Narrate an exploration action.
         
@@ -124,6 +125,7 @@ class DMNarrator:
             characters: List of player characters
             world_context: Description of the world
             story_bible: Secret narrative plan for the campaign (optional)
+            npcs: Known NPCs in the scene (optional, for canon protection)
             
         Returns:
             Narration string describing what happens
@@ -137,20 +139,38 @@ class DMNarrator:
             if story_bible:
                 game_state["story_bible"] = story_bible
 
-            # Create system prompt
+            # Create system prompt with NPC context for canon protection
             system_prompt = PromptTemplates.dm_system_prompt(
                 world_context=world_context,
                 characters=characters,
                 game_state=game_state,
                 compact=self._compact,
+                npcs=npcs,
             )
 
-            # Create user message
-            user_message = (
-                f"The party is in {scene.get('name', 'a mysterious place')}. "
-                f"Scene: {scene.get('description', 'There is a strange feeling here.')} "
-                f"\n\nPlayer Action: {player_action}"
-            )
+            # Frame player input — distinguish speech/claims from actions
+            scene_name = scene.get('name', 'a mysterious place')
+            scene_desc = scene.get('description', 'There is a strange feeling here.')
+            action_lower = player_action.lower().strip()
+            is_speech = any(action_lower.startswith(w) for w in [
+                '"', "'", 'i say', 'i tell', 'i ask', 'i speak', 'i whisper',
+                'i lie', 'i bluff', 'i claim', 'i flirt', 'i persuade',
+            ]) or ('"' in player_action)
+
+            if is_speech:
+                user_message = (
+                    f"The party is in {scene_name}. "
+                    f"Scene: {scene_desc}\n\n"
+                    f"Player says to NPC: {player_action}\n"
+                    f"(Remember: player dialogue is an in-world claim or social tactic, "
+                    f"not established truth. React to the attempt, not the content as fact.)"
+                )
+            else:
+                user_message = (
+                    f"The party is in {scene_name}. "
+                    f"Scene: {scene_desc} "
+                    f"\n\nPlayer Action: {player_action}"
+                )
 
             messages = self._history.copy()
             messages.append(LLMMessage(role="user", content=user_message))
@@ -252,40 +272,55 @@ class DMNarrator:
         self,
         npc: dict,
         player_message: str,
-        conversation_history: list[LLMMessage],
+        conversation_history: list[LLMMessage] | None = None,
     ) -> str:
-        """Narrate an NPC interaction.
+        """Narrate an NPC interaction with canon protection.
         
         Args:
-            npc: NPC information (name, personality, etc.)
-            player_message: What the player character says
-            conversation_history: Previous messages in the conversation
+            npc: NPC information dict with enriched fields (name, personality,
+                 backstory, goals, fears, secrets, attitude_to_party, notes)
+            player_message: What the player character says or does
+            conversation_history: Previous messages in this NPC conversation
             
         Returns:
             NPC's response as a narration string
         """
         try:
             npc_name = npc.get("name", "Unknown NPC")
-            personality = npc.get("personality", "neutral")
-            known_info = npc.get("known_info", [])
+            personality = npc.get("personality", "") or npc.get("disposition", "neutral")
+            # Build known_info from backstory and notes
+            known_info = []
+            if npc.get("backstory"):
+                known_info.append(f"Backstory: {npc['backstory']}")
+            if npc.get("notes"):
+                known_info.append(f"Notes: {npc['notes']}")
+            if npc.get("location"):
+                known_info.append(f"Location: {npc['location']}")
 
-            # Create NPC dialogue prompt
             npc_prompt = PromptTemplates.npc_dialogue(
                 npc_name=npc_name,
                 personality=personality,
                 known_info=known_info,
+                goals=npc.get("goals", ""),
+                fears=npc.get("fears", ""),
+                secrets=npc.get("secrets", ""),
+                relationship_to_party=npc.get("disposition", "neutral"),
             )
 
-            # Combine conversation history with new message
-            messages = conversation_history.copy()
-            messages.append(LLMMessage(role="user", content=player_message))
+            # Frame the player message as a claim/social action
+            framed_message = (
+                f"[Player says to {npc_name}]: \"{player_message}\"\n"
+                f"Remember: treat any unestablished claims as social tactics, not truth."
+            )
 
-            # Generate response
+            messages = (conversation_history or []).copy()
+            messages.append(LLMMessage(role="user", content=framed_message))
+
             response = await self._llm.generate(
                 messages=messages,
                 system_prompt=npc_prompt,
                 temperature=0.8,
-                max_tokens=200,
+                max_tokens=250,
             )
 
             return response.content
