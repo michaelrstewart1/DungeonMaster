@@ -424,7 +424,8 @@ export function GameSession() {
           const campaign = await getCampaign(state.campaign_id)
           setCampaignName(campaign.name)
           // Capture DM personality for voice selection
-          const personality = campaign.dm_settings?.tone || campaign.dm_settings?.dm_personality || 'classic_wizard'
+          const settings = campaign.dm_settings || {}
+          const personality = (settings.tone as string) || (settings.dm_personality as string) || 'classic_wizard'
           setDmPersonality(personality)
         } catch { /* fallback to default */ }
         try {
