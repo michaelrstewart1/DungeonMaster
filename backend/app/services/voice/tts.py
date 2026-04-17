@@ -1,10 +1,13 @@
 """Text-to-Speech (TTS) services."""
 import asyncio
+import logging
 import re
 import subprocess
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import AsyncGenerator
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -184,9 +187,22 @@ class PiperTTS(TTSProvider):
 
 
 class OpenAITTS(TTSProvider):
-    """OpenAI TTS API — uses the 'onyx' voice for a deep, wise wizard sound."""
+    """OpenAI TTS API — supports multiple voices for DM narration and NPC dialogue."""
 
     OPENAI_TTS_URL = "https://api.openai.com/v1/audio/speech"
+
+    # DM personality → OpenAI voice mapping
+    DM_VOICE_MAP = {
+        "classic_wizard": "onyx",      # deep, gravelly wizard
+        "dark_lord": "echo",           # cold, menacing
+        "theatrical_bard": "fable",    # expressive, dramatic
+        "trickster": "ash",            # wry, quick
+        "scholarly_sage": "sage",      # measured, thoughtful
+        "battle_commander": "onyx",    # commanding, authoritative
+    }
+
+    # Voice pool for NPCs — cycled per-NPC, persisted by name
+    NPC_VOICE_POOL = ["nova", "shimmer", "coral", "alloy", "ballad", "verse", "echo", "fable"]
 
     def __init__(
         self,
@@ -194,17 +210,12 @@ class OpenAITTS(TTSProvider):
         voice: str = "onyx",
         model: str = "tts-1-hd",
     ) -> None:
-        """Initialize OpenAITTS.
-
-        Args:
-            api_key: OpenAI API key.
-            voice: TTS voice name.  "onyx" = deep/gravelly (wizard).
-            model: TTS model.  "tts-1-hd" gives the best quality.
-        """
         self.voice = voice
         self.model = model
         self._api_key = api_key
-        self._client: object | None = None  # httpx.AsyncClient, lazy-created
+        self._client: object | None = None
+        self._npc_voice_map: dict[str, str] = {}  # NPC name → voice
+        self._npc_voice_idx = 0
 
     def _get_client(self):  # type: ignore[return]
         """Lazy-create (and reuse) an httpx.AsyncClient."""
@@ -223,7 +234,7 @@ class OpenAITTS(TTSProvider):
                 raise ImportError("httpx is required for OpenAITTS.  pip install httpx") from exc
         return self._client
 
-    async def synthesize(self, text: str) -> bytes:
+    async def synthesize(self, text: str, voice: str | None = None) -> bytes:
         """Call OpenAI TTS API and return raw MP3 bytes."""
         if not text or not text.strip():
             raise ValueError("text cannot be empty")
@@ -231,12 +242,12 @@ class OpenAITTS(TTSProvider):
         client = self._get_client()
         response = await client.post(
             self.OPENAI_TTS_URL,
-            json={"model": self.model, "input": text, "voice": self.voice},
+            json={"model": self.model, "input": text, "voice": voice or self.voice},
         )
         response.raise_for_status()
         return response.content
 
-    async def synthesize_stream(self, text: str) -> AsyncGenerator[AudioChunk, None]:
+    async def synthesize_stream(self, text: str, voice: str | None = None) -> AsyncGenerator[AudioChunk, None]:
         """Synthesize sentence-by-sentence and stream AudioChunks back."""
         if not text or not text.strip():
             raise ValueError("text cannot be empty")
@@ -246,8 +257,108 @@ class OpenAITTS(TTSProvider):
             if not sentence.strip():
                 continue
             is_final = i == len(sentences) - 1
-            audio_data = await self.synthesize(sentence)
+            audio_data = await self.synthesize(sentence, voice=voice)
             yield AudioChunk(data=audio_data, sample_rate=24000, is_final=is_final)
+
+    async def synthesize_narration(
+        self, text: str, dm_personality: str = "classic_wizard"
+    ) -> AsyncGenerator[AudioChunk, None]:
+        """Parse narration into DM/NPC segments and synthesize with appropriate voices.
+
+        Detects quoted NPC dialogue (e.g. 'Kaelrath says, "Hello there"')
+        and uses character-specific voices. Everything else uses the DM voice.
+        """
+        dm_voice = self.DM_VOICE_MAP.get(dm_personality, self.voice)
+        segments = self._parse_voice_segments(text)
+
+        for i, (segment_text, segment_voice) in enumerate(segments):
+            if not segment_text.strip():
+                continue
+            voice = segment_voice or dm_voice
+            is_final = i == len(segments) - 1
+            try:
+                audio_data = await self.synthesize(segment_text, voice=voice)
+                yield AudioChunk(data=audio_data, sample_rate=24000, is_final=is_final)
+            except Exception as e:
+                logger.warning("TTS segment failed: %s", e)
+                continue
+
+    def get_npc_voice(self, npc_name: str) -> str:
+        """Get or assign a consistent voice for an NPC."""
+        name_lower = npc_name.lower().strip()
+        if name_lower not in self._npc_voice_map:
+            voice = self.NPC_VOICE_POOL[self._npc_voice_idx % len(self.NPC_VOICE_POOL)]
+            self._npc_voice_map[name_lower] = voice
+            self._npc_voice_idx += 1
+            logger.info("TTS: Assigned voice '%s' to NPC '%s'", voice, npc_name)
+        return self._npc_voice_map[name_lower]
+
+    def _parse_voice_segments(self, text: str) -> list[tuple[str, str | None]]:
+        """Parse narration text into (text, voice) segments.
+
+        Detects patterns like:
+          - 'Kaelrath says, "..."'
+          - '"Hello," Kaelrath replies.'
+          - Kaelrath: "..."
+
+        Returns list of (text_segment, voice_or_None).
+        None voice means use DM voice.
+        """
+        # Pattern: NPC name followed by speech verb and quoted text
+        # Also handles "text," Name verb patterns
+        pattern = re.compile(
+            r'(?:'
+            r'([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)\s+'  # NPC name
+            r'(?:says?|speaks?|replies?|whispers?|shouts?|murmurs?|growls?|laughs?|sneers?|calls?|exclaims?|asks?|mutters?|hisses?|barks?|bellows?|purrs?|rasps?|croons?|snarls?),?\s*'
+            r'"([^"]+)"'  # quoted speech
+            r'|'
+            r'"([^"]+)"\s*'  # quoted speech first
+            r'([A-Z][a-z]+(?:\s[A-Z][a-z]+)?)\s+'  # then NPC name
+            r'(?:says?|speaks?|replies?|whispers?|shouts?|murmurs?|growls?|laughs?|sneers?|calls?|exclaims?|asks?|mutters?|hisses?|barks?|bellows?|purrs?|rasps?|croons?|snarls?)'
+            r'|'
+            r'([A-Z][a-z]+(?:\s[A-Z][a-z]+)?):\s*"([^"]+)"'  # Name: "speech"
+            r')',
+            re.MULTILINE,
+        )
+
+        segments: list[tuple[str, str | None]] = []
+        last_end = 0
+
+        for match in pattern.finditer(text):
+            # Add any narration text before this dialogue
+            if match.start() > last_end:
+                narration = text[last_end:match.start()].strip()
+                if narration:
+                    segments.append((narration, None))
+
+            # Extract NPC name and speech from whichever group matched
+            if match.group(1) and match.group(2):
+                npc_name = match.group(1)
+                speech = match.group(2)
+            elif match.group(3) and match.group(4):
+                npc_name = match.group(4)
+                speech = match.group(3)
+            elif match.group(5) and match.group(6):
+                npc_name = match.group(5)
+                speech = match.group(6)
+            else:
+                continue
+
+            npc_voice = self.get_npc_voice(npc_name)
+            segments.append((speech, npc_voice))
+            last_end = match.end()
+
+        # Add remaining narration
+        if last_end < len(text):
+            remaining = text[last_end:].strip()
+            if remaining:
+                segments.append((remaining, None))
+
+        # If no segments parsed, return the whole text as DM narration
+        if not segments:
+            segments.append((text, None))
+
+        return segments
 
     @staticmethod
     def _split_sentences(text: str) -> list[str]:

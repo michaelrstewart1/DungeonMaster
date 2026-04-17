@@ -213,3 +213,107 @@ class TestTTSProviderInterface:
         """CoquiTTS should implement TTSProvider interface."""
         tts = CoquiTTS()
         assert isinstance(tts, TTSProvider)
+
+
+class TestOpenAITTSMultiVoice:
+    """Tests for OpenAITTS multi-voice features (no API calls)."""
+
+    def test_dm_voice_map_has_all_personalities(self) -> None:
+        """DM_VOICE_MAP should cover all known DM personalities."""
+        from app.services.voice.tts import OpenAITTS
+        expected = {"classic_wizard", "dark_lord", "theatrical_bard", "trickster", "scholarly_sage", "battle_commander"}
+        assert expected == set(OpenAITTS.DM_VOICE_MAP.keys())
+
+    def test_npc_voice_pool_is_nonempty(self) -> None:
+        """NPC_VOICE_POOL should have voices for assignment."""
+        from app.services.voice.tts import OpenAITTS
+        assert len(OpenAITTS.NPC_VOICE_POOL) >= 6
+
+    def test_get_npc_voice_consistency(self) -> None:
+        """Same NPC name should always get the same voice."""
+        from app.services.voice.tts import OpenAITTS
+        tts = OpenAITTS(api_key="test-key")
+        voice1 = tts.get_npc_voice("Kaelrath")
+        voice2 = tts.get_npc_voice("Kaelrath")
+        assert voice1 == voice2
+
+    def test_get_npc_voice_case_insensitive(self) -> None:
+        """NPC voice assignment should be case-insensitive."""
+        from app.services.voice.tts import OpenAITTS
+        tts = OpenAITTS(api_key="test-key")
+        voice1 = tts.get_npc_voice("Kaelrath")
+        voice2 = tts.get_npc_voice("kaelrath")
+        assert voice1 == voice2
+
+    def test_different_npcs_get_different_voices(self) -> None:
+        """Different NPCs should get different voices (until pool wraps)."""
+        from app.services.voice.tts import OpenAITTS
+        tts = OpenAITTS(api_key="test-key")
+        voice1 = tts.get_npc_voice("Kaelrath")
+        voice2 = tts.get_npc_voice("Mira")
+        assert voice1 != voice2
+
+    def test_parse_voice_segments_simple_narration(self) -> None:
+        """Pure narration should return one segment with None voice."""
+        from app.services.voice.tts import OpenAITTS
+        tts = OpenAITTS(api_key="test-key")
+        segments = tts._parse_voice_segments("The tavern is dark and smoky.")
+        assert len(segments) == 1
+        assert segments[0][1] is None
+
+    def test_parse_voice_segments_npc_says(self) -> None:
+        """'NPC says' pattern should extract NPC dialogue."""
+        from app.services.voice.tts import OpenAITTS
+        tts = OpenAITTS(api_key="test-key")
+        text = 'The old man turns to you. Kaelrath says, "Welcome to my shop, adventurer."'
+        segments = tts._parse_voice_segments(text)
+        # Should have narration + NPC dialogue
+        assert len(segments) >= 2
+        # Find the NPC segment
+        npc_segments = [(t, v) for t, v in segments if v is not None]
+        assert len(npc_segments) == 1
+        assert "Welcome to my shop" in npc_segments[0][0]
+
+    def test_parse_voice_segments_colon_pattern(self) -> None:
+        """'NPC: "speech"' pattern should be detected."""
+        from app.services.voice.tts import OpenAITTS
+        tts = OpenAITTS(api_key="test-key")
+        text = 'Mira: "Follow me, quickly!"'
+        segments = tts._parse_voice_segments(text)
+        npc_segments = [(t, v) for t, v in segments if v is not None]
+        assert len(npc_segments) == 1
+        assert "Follow me" in npc_segments[0][0]
+
+    def test_parse_voice_segments_multiple_npcs(self) -> None:
+        """Multiple NPCs should get different voices."""
+        from app.services.voice.tts import OpenAITTS
+        tts = OpenAITTS(api_key="test-key")
+        text = 'Kaelrath says, "Hello." Mira whispers, "Be careful."'
+        segments = tts._parse_voice_segments(text)
+        npc_segments = [(t, v) for t, v in segments if v is not None]
+        assert len(npc_segments) == 2
+        assert npc_segments[0][1] != npc_segments[1][1]
+
+    def test_parse_voice_segments_persistent_npc_voice(self) -> None:
+        """Same NPC in multiple utterances should use same voice."""
+        from app.services.voice.tts import OpenAITTS
+        tts = OpenAITTS(api_key="test-key")
+        text = 'Kaelrath says, "Hello." He pauses. Kaelrath says, "Goodbye."'
+        segments = tts._parse_voice_segments(text)
+        npc_segments = [(t, v) for t, v in segments if v is not None]
+        assert len(npc_segments) == 2
+        assert npc_segments[0][1] == npc_segments[1][1]
+
+    def test_dm_voice_map_returns_valid_voices(self) -> None:
+        """All DM voice mappings should be valid OpenAI voice names."""
+        from app.services.voice.tts import OpenAITTS
+        valid_voices = {"alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse"}
+        for voice in OpenAITTS.DM_VOICE_MAP.values():
+            assert voice in valid_voices, f"{voice} is not a valid OpenAI voice"
+
+    def test_npc_voice_pool_valid_voices(self) -> None:
+        """All NPC pool voices should be valid OpenAI voice names."""
+        from app.services.voice.tts import OpenAITTS
+        valid_voices = {"alloy", "ash", "ballad", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "verse"}
+        for voice in OpenAITTS.NPC_VOICE_POOL:
+            assert voice in valid_voices, f"{voice} is not a valid OpenAI voice"

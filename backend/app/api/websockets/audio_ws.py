@@ -77,12 +77,31 @@ async def websocket_audio_endpoint(websocket: WebSocket, session_id: str):
                     # Handle synthesize
                     elif msg_type == "synthesize":
                         text = data.get("text", "")
+                        voice = data.get("voice")  # optional per-call voice
+                        dm_personality = data.get("dm_personality")  # optional DM personality for multi-voice
                         if text:
                             # Use real TTS from app state when available
                             tts_provider = getattr(websocket.app.state, "tts", _tts)
-                            # Stream audio chunks
-                            async for chunk in tts_provider.synthesize_stream(text):
-                                await websocket.send_bytes(chunk.data)
+
+                            # Multi-voice narration: parse DM vs NPC dialogue
+                            if dm_personality and hasattr(tts_provider, "synthesize_narration"):
+                                async for chunk in tts_provider.synthesize_narration(
+                                    text, dm_personality=dm_personality
+                                ):
+                                    await websocket.send_bytes(chunk.data)
+                            elif voice and hasattr(tts_provider, "synthesize_stream"):
+                                # Single voice override
+                                try:
+                                    async for chunk in tts_provider.synthesize_stream(text, voice=voice):
+                                        await websocket.send_bytes(chunk.data)
+                                except TypeError:
+                                    # Fallback if provider doesn't support voice param
+                                    async for chunk in tts_provider.synthesize_stream(text):
+                                        await websocket.send_bytes(chunk.data)
+                            else:
+                                # Default: stream with provider's default voice
+                                async for chunk in tts_provider.synthesize_stream(text):
+                                    await websocket.send_bytes(chunk.data)
                             # Signal end of audio stream so client can play it
                             await websocket.send_json({"type": "audio_done"})
 

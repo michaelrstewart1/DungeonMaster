@@ -62,6 +62,7 @@ export function GameSession() {
   const [error, setError] = useState<string | null>(null)
   const [wsConnected, setWsConnected] = useState(false)
   const [campaignName, setCampaignName] = useState<string>('Game Session')
+  const [dmPersonality, setDmPersonality] = useState<string>('classic_wizard')
   const [waitingForDM, setWaitingForDM] = useState(false)
   const [sessionTime, setSessionTime] = useState(0)
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
@@ -94,9 +95,11 @@ export function GameSession() {
   const audioWsRef = useRef<WebSocket | null>(null)
   const audioChunksRef = useRef<Uint8Array[]>([])
   const isMutedRef = useRef(false)
+  const dmPersonalityRef = useRef('classic_wizard')
 
   // Keep ref in sync for WS callback closure
   useEffect(() => { partyCharsRef.current = partyCharacters }, [partyCharacters])
+  useEffect(() => { dmPersonalityRef.current = dmPersonality }, [dmPersonality])
 
   // Auto-expand right sidebar when combat starts
   useEffect(() => {
@@ -146,7 +149,7 @@ export function GameSession() {
     const ws = audioWsRef.current
     if (ws && ws.readyState === WebSocket.OPEN) {
       audioChunksRef.current = []
-      ws.send(JSON.stringify({ type: 'synthesize', text }))
+      ws.send(JSON.stringify({ type: 'synthesize', text, dm_personality: dmPersonalityRef.current }))
       // Set a timeout — if no audio chunks arrive, fall back to browser TTS
       setTimeout(() => {
         if (audioChunksRef.current.length === 0 && !isMutedRef.current) {
@@ -420,6 +423,9 @@ export function GameSession() {
         try {
           const campaign = await getCampaign(state.campaign_id)
           setCampaignName(campaign.name)
+          // Capture DM personality for voice selection
+          const personality = campaign.dm_settings?.tone || campaign.dm_settings?.dm_personality || 'classic_wizard'
+          setDmPersonality(personality)
         } catch { /* fallback to default */ }
         try {
           const chars = await getCharacters(state.campaign_id)
