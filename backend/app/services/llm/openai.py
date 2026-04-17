@@ -42,7 +42,7 @@ class OpenAIProvider(LLMProvider):
     """
 
     API_BASE = "https://api.openai.com/v1"
-    DEFAULT_MODEL = "gpt-4o"
+    DEFAULT_MODEL = "gpt-4.1-mini"
 
     def __init__(self, api_key: str, model: str = DEFAULT_MODEL):
         """Initialize the OpenAI provider.
