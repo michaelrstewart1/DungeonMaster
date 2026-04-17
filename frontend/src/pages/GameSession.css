@@ -9,7 +9,17 @@
   height: 100vh;
   overflow: hidden;
   background: var(--bg-darkest);
+  border-top: 3px solid var(--gold-dim);
+  transition: border-color 0.5s ease;
 }
+
+/* Phase-colored top strip */
+.game-session[data-phase="exploration"] { border-top-color: var(--gold); }
+.game-session[data-phase="combat"] { border-top-color: #c94444; }
+.game-session[data-phase="rest"] { border-top-color: #5b8dd9; }
+.game-session[data-phase="shopping"] { border-top-color: #7ec87e; }
+.game-session[data-phase="dialogue"] { border-top-color: #a082d0; }
+.game-session[data-phase="lobby"] { border-top-color: var(--gold-dim); }
 
 /* Header — Upgraded (Iteration 13) */
 .game-header {
@@ -125,19 +135,25 @@
 }
 
 .phase-badge {
-  padding: 0.25rem 0.85rem;
+  padding: 0.3rem 1rem;
   border-radius: 4px;
-  font-size: 0.75rem;
+  font-size: 0.85rem;
   font-family: var(--font-display);
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.1em;
   background: linear-gradient(135deg, var(--gold-bg) 0%, rgba(212, 168, 70, 0.15) 100%);
   color: var(--gold);
   border: 1px solid var(--gold-border);
-  box-shadow: 0 0 10px rgba(212, 168, 70, 0.1);
+  box-shadow: 0 0 12px rgba(212, 168, 70, 0.15);
   text-shadow: 0 0 8px rgba(212, 168, 70, 0.2);
   position: relative;
+  animation: phasePulse 3s ease-in-out infinite;
+}
+
+@keyframes phasePulse {
+  0%, 100% { box-shadow: 0 0 12px rgba(212, 168, 70, 0.15); }
+  50% { box-shadow: 0 0 18px rgba(212, 168, 70, 0.3); }
 }
 
 /* Phase-specific badge coloring */
@@ -460,7 +476,67 @@
   background: var(--bg-darkest);
 }
 
-/* Map area — Atmospheric (Iteration 16) */
+/* ──────────────────────────────────────────────────────────── */
+/* SCENE PANEL — Theater of the Mind (no battle map loaded)    */
+/* ──────────────────────────────────────────────────────────── */
+.scene-panel {
+  position: relative;
+  height: clamp(180px, 28vh, 320px);
+  flex-shrink: 0;
+  overflow: hidden;
+  border-bottom: 1px solid var(--border);
+}
+
+/* Override the global fixed-position SceneArt to be inline here */
+.scene-panel .scene-art-container {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+}
+
+.scene-panel .scene-art {
+  opacity: 0.4;
+}
+
+.scene-panel-label {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 1.2rem;
+  background: rgba(10, 10, 16, 0.75);
+  border: 1px solid var(--gold-border);
+  border-radius: 999px;
+  z-index: 2;
+  backdrop-filter: blur(4px);
+}
+
+.scene-panel-icon {
+  font-size: 1rem;
+}
+
+.scene-panel-name {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--gold-light);
+}
+
+/* Vignette overlay for the scene panel */
+.scene-panel::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg, transparent 40%, var(--bg-darkest) 100%),
+    radial-gradient(ellipse at center, transparent 50%, rgba(10, 10, 16, 0.6) 100%);
+  pointer-events: none;
+  z-index: 1;
+}
 .map-area {
   position: relative;
   flex: 3;
@@ -567,15 +643,13 @@
 
 /* Chat area — Upgraded (Iteration 14) */
 .chat-area {
-  flex: 2;
+  flex: 1;
   min-height: 200px;
-  max-height: 380px;
-  border-top: 1px solid var(--border);
   overflow: hidden;
   position: relative;
 }
 
-/* When no map is loaded, chat takes full height */
+/* Kept for backward compat but no longer needed — chat always flex:1 now */
 .chat-area-full {
   border-top: none;
   flex: 1;
@@ -2516,6 +2590,12 @@
   color: var(--red-light);
   border-color: rgba(201, 68, 68, 0.3);
   box-shadow: 0 0 10px rgba(201, 68, 68, 0.1);
+  animation: combatPhasePulse 2s ease-in-out infinite;
+}
+
+@keyframes combatPhasePulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(201, 68, 68, 0.1); }
+  50% { box-shadow: 0 0 20px rgba(201, 68, 68, 0.4); }
 }
 
 .phase-badge[data-phase="exploration"] {
@@ -3072,8 +3152,8 @@
 
 .quick-actions {
   display: flex;
-  gap: 0.5rem;
-  padding: 0.5rem 0.75rem;
+  gap: 0.6rem;
+  padding: 0.6rem 0.75rem;
   overflow-x: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--gold-dim) transparent;
@@ -3099,14 +3179,14 @@
 .quick-action-btn {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  padding: 0.4rem 0.85rem;
+  gap: 0.5rem;
+  padding: 0.55rem 1.1rem;
   border: 1px solid var(--gold-border);
   border-radius: 999px;
   background: rgba(18, 18, 26, 0.8);
   color: var(--gold-light);
   font-family: var(--font-body);
-  font-size: 0.8rem;
+  font-size: 0.9rem;
   cursor: pointer;
   white-space: nowrap;
   transition: all 0.25s ease;
@@ -3114,6 +3194,10 @@
   animation: quickActionFadeIn 0.3s ease both;
   position: relative;
   overflow: hidden;
+}
+
+.quick-action-emoji {
+  font-size: 1.15rem;
 }
 
 /* Shimmer sweep on hover */

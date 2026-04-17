@@ -85,7 +85,7 @@ export function GameSession() {
   const [showSpellSlots, setShowSpellSlots] = useState(false)
   const [showNPCJournal, setShowNPCJournal] = useState(false)
   const [sessionNPCs, setSessionNPCs] = useState<Array<{ name: string; disposition?: string; location?: string }>>([])
-  const [rightSidebarOpen, setRightSidebarOpen] = useState(false)
+  const [rightSidebarOpen, setRightSidebarOpen] = useState(true)
   const [achievements, setAchievements] = useState<Achievement[]>([])
   const [unlockedAchievements, setUnlockedAchievements] = useState<Set<string>>(new Set())
   const turnCounterRef = useRef(0)
@@ -803,7 +803,7 @@ export function GameSession() {
   }
 
   return (
-    <div className="game-session">
+    <div className="game-session" data-phase={gameState?.phase || 'exploration'}>
       {showRecap && (
         <SessionRecap
           campaignName={campaignName}
@@ -826,7 +826,7 @@ export function GameSession() {
           <h1>{campaignName}</h1>
         </div>
         <div className="session-info">
-          {gameState && <span className="phase-badge">{gameState.phase}</span>}
+          {gameState && <span className="phase-badge" data-phase={gameState.phase}>{gameState.phase}</span>}
           <span className="session-timer" title="Session duration">⏱ {formatTime(sessionTime)}</span>
           <button
             className={`btn-adventure-log ${adventureEntries.length > 0 ? 'has-updates' : ''}`}
@@ -902,7 +902,7 @@ export function GameSession() {
 
         {/* Main content */}
         <div className="game-main-content">
-          {mapData && (
+          {mapData ? (
             <div className="map-area">
               <BattleMap
                 map={mapData}
@@ -921,8 +921,20 @@ export function GameSession() {
                 onSelect={setSelectedToken}
               />
             </div>
+          ) : (
+            <div className="scene-panel" aria-hidden="true">
+              <div className="scene-panel-art">
+                <SceneArt sceneType={currentScene} />
+              </div>
+              <div className="scene-panel-label">
+                <span className="scene-panel-icon">
+                  {currentScene === 'tavern' ? '🍺' : currentScene === 'dungeon' ? '⛓️' : currentScene === 'forest' ? '🌲' : currentScene === 'cave' ? '🕯️' : currentScene === 'castle' ? '🏰' : currentScene === 'battlefield' ? '⚔️' : '✦'}
+                </span>
+                <span className="scene-panel-name">{currentScene}</span>
+              </div>
+            </div>
           )}
-          <div className={`chat-area ${!mapData ? 'chat-area-full' : ''}`}>
+          <div className={`chat-area ${!mapData ? '' : ''}`}>
             <GameChat messages={messages} onSubmitAction={handleSubmitAction} onTalkToNPC={handleTalkToNPC} npcs={sessionNPCs} isWaitingForDM={waitingForDM} phase={gameState?.phase === 'combat' ? 'combat' : 'exploration'} characterName={partyCharacters[0]?.name} characterClass={partyCharacters[0]?.class_name} />
           </div>
         </div>
