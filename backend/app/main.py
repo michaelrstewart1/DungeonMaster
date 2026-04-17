@@ -86,17 +86,24 @@ def _init_app_state(app: FastAPI) -> None:
         try:
             llm = OpenAIProvider(api_key=settings.openai_api_key)
             narrator = DMNarrator(llm=llm, max_history=30)
-            tts = OpenAITTS(
-                api_key=settings.openai_api_key,
-                voice=settings.openai_tts_voice,
-                model=settings.openai_tts_model,
-            )
-            logger.info("AI DM: GPT-4o narrator + OpenAI TTS (voice=%s) ready", settings.openai_tts_voice)
+            logger.info("AI DM: OpenAI narrator ready (model=gpt-4.1-mini)")
         except Exception as exc:  # pragma: no cover
             logger.warning("AI DM: could not init OpenAI services (%s) — using fallbacks", exc)
 
     if narrator is None:
         logger.warning("AI DM: No LLM provider active (provider=%s) — using keyword fallbacks", provider)
+
+    # TTS is independent of the narrator LLM — use OpenAI TTS whenever key is available
+    if settings.openai_api_key:
+        try:
+            tts = OpenAITTS(
+                api_key=settings.openai_api_key,
+                voice=settings.openai_tts_voice,
+                model=settings.openai_tts_model,
+            )
+            logger.info("TTS: OpenAI TTS ready (voice=%s)", settings.openai_tts_voice)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("TTS: could not init OpenAI TTS (%s) — using FakeTTS", exc)
 
     app.state.narrator = narrator
     app.state.tts = tts

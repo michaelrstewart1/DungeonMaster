@@ -140,14 +140,37 @@ export function GameSession() {
     }
   }, [])
 
-  // Play DM text via TTS audio websocket
+  // Play DM text via TTS audio websocket, with browser fallback
   const speakText = useCallback((text: string) => {
     if (isMutedRef.current) return
     const ws = audioWsRef.current
     if (ws && ws.readyState === WebSocket.OPEN) {
       audioChunksRef.current = []
       ws.send(JSON.stringify({ type: 'synthesize', text }))
+      // Set a timeout — if no audio chunks arrive, fall back to browser TTS
+      setTimeout(() => {
+        if (audioChunksRef.current.length === 0 && !isMutedRef.current) {
+          browserSpeak(text)
+        }
+      }, 2000)
+    } else {
+      browserSpeak(text)
     }
+  }, [])
+
+  // Browser-native TTS fallback (free, no API key needed)
+  const browserSpeak = useCallback((text: string) => {
+    if (!window.speechSynthesis) return
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(text)
+    utterance.rate = 0.9
+    utterance.pitch = 0.8
+    // Prefer a deep English voice for DM narration
+    const voices = window.speechSynthesis.getVoices()
+    const preferred = voices.find(v => /daniel|james|google uk male|male/i.test(v.name) && /en/i.test(v.lang))
+      || voices.find(v => /en/i.test(v.lang) && !/female/i.test(v.name))
+    if (preferred) utterance.voice = preferred
+    window.speechSynthesis.speak(utterance)
   }, [])
 
   // Session timer
