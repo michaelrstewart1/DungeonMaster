@@ -10,87 +10,118 @@ export interface NPCDialogueProps {
   onClose: () => void
 }
 
-/** Parse a DM message for NPC dialogue: returns name, type, and quoted speech or null. */
-export function parseNPCDialogue(text: string): { npcName: string; npcType: NPCType; dialogue: string } | null {
-  // Extract quoted speech (smart quotes and straight quotes)
-  const quoteMatch = text.match(/[""\u201C]([^""\u201D]+)[""\u201D]/)
-  if (!quoteMatch) return null
-
-  const dialogue = quoteMatch[1]
-  const lower = text.toLowerCase()
-
-  let npcName = ''
-  const beforeQuote = text.slice(0, text.indexOf(quoteMatch[0]))
-  const afterQuote = text.slice(text.indexOf(quoteMatch[0]) + quoteMatch[0].length)
-
-  // Pattern 1: NAME says/whispers/etc "speech"  (right before the quote)
-  const sayBefore = beforeQuote.match(/([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+(?:says?|speaks?|replies?|responds?|whispers?|shouts?|exclaims?|mutters?|growls?|announces?|echoes?|hisses?|murmurs?|asks?|barks?|snarls?|purrs?|rasps?|croons?|bellows?|calls?|sneers?)\s*[:,]?\s*$/)
-  if (sayBefore) {
-    npcName = sayBefore[1].trim()
-  }
-
-  // Pattern 2: "speech" says/whispers NAME  (right after the quote)
-  if (!npcName) {
-    const sayAfter = afterQuote.match(/^\s*(?:says?|speaks?|replies?|responds?|whispers?|shouts?|exclaims?|mutters?|growls?|announces?)\s+(?:the\s+)?([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)/)
-    if (sayAfter) {
-      npcName = sayAfter[1].trim()
+/** Parse a DM message for NPC dialogue: returns name, type, and quoted speech or null.
+ *  Pass playerNames to exclude player characters from being detected as NPCs. */
+export function parseNPCDialogue(text: string, playerNames?: string[]): { npcName: string; npcType: NPCType; dialogue: string } | null {
+  // Build set of player name variants for filtering
+  const playerNameSet = new Set<string>()
+  if (playerNames) {
+    for (const name of playerNames) {
+      playerNameSet.add(name.toLowerCase())
+      // Also add first name only
+      const first = name.split(/\s+/)[0]
+      if (first) playerNameSet.add(first.toLowerCase())
     }
   }
 
-  // Pattern 3: The NAME says/speaks "speech"
-  if (!npcName) {
-    const thePattern = beforeQuote.match(/[Tt]he\s+([A-Z]?[a-zA-Z]+(?:\s+[a-zA-Z]+)?)\s+(?:says?|speaks?|replies?|responds?|whispers?|shouts?)\s*[:,]?\s*$/)
-    if (thePattern) {
-      npcName = thePattern[1].trim()
-      npcName = npcName.charAt(0).toUpperCase() + npcName.slice(1)
+  // Find ALL quoted segments in the text
+  const quoteRegex = /[""\u201C]([^""\u201D]+)[""\u201D]/g
+  let quoteMatch: RegExpExecArray | null
+
+  while ((quoteMatch = quoteRegex.exec(text)) !== null) {
+    const dialogue = quoteMatch[1]
+    const quoteStart = quoteMatch.index
+    const quoteEnd = quoteStart + quoteMatch[0].length
+    const beforeQuote = text.slice(0, quoteStart)
+    const afterQuote = text.slice(quoteEnd)
+
+    // Skip quotes where the DM is echoing the player back ("You said...", "You've just said...")
+    const beforeTrimmed = beforeQuote.trimEnd().toLowerCase()
+    if (/you(?:'ve)?\s+(?:just\s+)?(?:said|told|asked|replied|responded|shouted|yelled|declared)\s*[:,]?\s*$/.test(beforeTrimmed)) {
+      continue
     }
-  }
-
-  // Pattern 4: NAME: "speech"
-  if (!npcName) {
-    const colonPattern = beforeQuote.match(/([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?):\s*$/)
-    if (colonPattern) {
-      npcName = colonPattern[1].trim()
+    // Skip "your character said" patterns
+    if (/your\s+character\s+(?:just\s+)?(?:said|told|asked)\s*[:,]?\s*$/.test(beforeTrimmed)) {
+      continue
     }
-  }
 
-  // Pattern 5: Contextual — find closest capitalized name in the paragraph before the quote
-  // Handles patterns like "Kaelrath shivers... 'Brave enough?'"
-  if (!npcName) {
-    // Look for capitalized names in the preceding text (not common English words)
-    const commonWords = new Set([
-      'The', 'This', 'That', 'There', 'They', 'Their', 'Then', 'These',
-      'His', 'Her', 'He', 'She', 'It', 'Its', 'You', 'Your', 'We', 'Our',
-      'With', 'From', 'Into', 'Back', 'But', 'And', 'For', 'Not', 'Will',
-      'Are', 'Was', 'Were', 'Been', 'Have', 'Has', 'Had', 'Can', 'Could',
-      'Would', 'Should', 'May', 'Might', 'Must', 'Shall', 'Each', 'Every',
-      'Some', 'Any', 'All', 'Most', 'Many', 'Much', 'Few', 'Several',
-      'When', 'Where', 'While', 'What', 'Which', 'Who', 'Whom', 'How',
-      'Here', 'Now', 'Still', 'Just', 'Only', 'Even', 'Also', 'Very',
-      'Once', 'Upon', 'After', 'Before', 'Against', 'Beyond', 'Between',
-      'Above', 'Below', 'Over', 'Under', 'Through', 'During', 'Without',
-      'OOC', 'DM', 'PC', 'NPC',
-    ])
-    // Match capitalized words that look like proper nouns (not at sentence start after period)
-    const nameMatches = [...beforeQuote.matchAll(/(?:^|[.!?]\s+|,\s+|\n)?\b([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]+)?)\b/g)]
-    const candidates = nameMatches
-      .map(m => m[1])
-      .filter(n => !commonWords.has(n) && !commonWords.has(n.split(' ')[0]))
-    if (candidates.length > 0) {
-      // Use the last (closest to the quote) candidate
-      npcName = candidates[candidates.length - 1]
+    let npcName = ''
+
+    // Pattern 1: NAME says/whispers/etc "speech"  (right before the quote)
+    const sayBefore = beforeQuote.match(/([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+(?:says?|speaks?|replies?|responds?|whispers?|shouts?|exclaims?|mutters?|growls?|announces?|echoes?|hisses?|murmurs?|asks?|barks?|snarls?|purrs?|rasps?|croons?|bellows?|calls?|sneers?)\s*[:,]?\s*$/)
+    if (sayBefore) {
+      npcName = sayBefore[1].trim()
     }
+
+    // Pattern 2: "speech" says/whispers NAME  (right after the quote)
+    if (!npcName) {
+      const sayAfter = afterQuote.match(/^\s*(?:says?|speaks?|replies?|responds?|whispers?|shouts?|exclaims?|mutters?|growls?|announces?|echoes?|hisses?)\s+(?:the\s+)?([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)/)
+      if (sayAfter) {
+        npcName = sayAfter[1].trim()
+      }
+    }
+
+    // Pattern 3: The NAME says/speaks "speech"
+    if (!npcName) {
+      const thePattern = beforeQuote.match(/[Tt]he\s+([A-Z]?[a-zA-Z]+(?:\s+[a-zA-Z]+)?)\s+(?:says?|speaks?|replies?|responds?|whispers?|shouts?)\s*[:,]?\s*$/)
+      if (thePattern) {
+        npcName = thePattern[1].trim()
+        npcName = npcName.charAt(0).toUpperCase() + npcName.slice(1)
+      }
+    }
+
+    // Pattern 4: NAME: "speech"
+    if (!npcName) {
+      const colonPattern = beforeQuote.match(/([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?):\s*$/)
+      if (colonPattern) {
+        npcName = colonPattern[1].trim()
+      }
+    }
+
+    // Pattern 5: Contextual — ONLY within the same sentence as the quote
+    // Look for a name + action verb close to the quote (same sentence)
+    if (!npcName) {
+      // Get the last sentence before the quote (split on period/exclamation/newline)
+      const lastSentence = beforeQuote.split(/[.!?\n]/).pop() || ''
+      // Look for NAME + verb pattern in that sentence only
+      const contextMatch = lastSentence.match(/([A-Z][a-z]{2,}(?:\s+[A-Z][a-z]+)?)\s+(?:\w+\s+){0,4}$/)
+      if (contextMatch) {
+        const candidate = contextMatch[1]
+        const commonWords = new Set([
+          'The', 'This', 'That', 'There', 'They', 'Their', 'Then', 'These',
+          'His', 'Her', 'He', 'She', 'It', 'Its', 'You', 'Your', 'We', 'Our',
+          'With', 'From', 'Into', 'Back', 'But', 'And', 'For', 'Not', 'Will',
+          'Are', 'Was', 'Were', 'Been', 'Have', 'Has', 'Had', 'Can', 'Could',
+          'Would', 'Should', 'May', 'Might', 'Must', 'Shall', 'Each', 'Every',
+          'Some', 'Any', 'All', 'Most', 'Many', 'Much', 'Few', 'Several',
+          'When', 'Where', 'While', 'What', 'Which', 'Who', 'Whom', 'How',
+          'Here', 'Now', 'Still', 'Just', 'Only', 'Even', 'Also', 'Very',
+          'Once', 'Upon', 'After', 'Before', 'Against', 'Beyond', 'Between',
+          'Above', 'Below', 'Over', 'Under', 'Through', 'During', 'Without',
+          'OOC', 'DM', 'PC', 'NPC', 'So', 'Let',
+        ])
+        if (!commonWords.has(candidate) && !commonWords.has(candidate.split(' ')[0])) {
+          npcName = candidate
+        }
+      }
+    }
+
+    // Skip if no name found (don't show "Unknown NPC" — it's confusing)
+    if (!npcName) continue
+
+    // Skip if this is a player character name
+    if (playerNameSet.has(npcName.toLowerCase()) || playerNameSet.has(npcName.split(/\s+/)[0].toLowerCase())) {
+      continue
+    }
+
+    // Skip common false positives (pronouns used as sentence starters that sneak through)
+    if (/^(He|She|It|They|We|You|I)$/i.test(npcName)) continue
+
+    const npcType = detectNPCType(text.toLowerCase())
+    return { npcName, npcType, dialogue }
   }
 
-  // If still no name found, fall back
-  if (!npcName) {
-    npcName = 'Unknown NPC'
-  }
-
-  // Detect NPC type from context words
-  const npcType = detectNPCType(lower)
-
-  return { npcName, npcType, dialogue }
+  return null
 }
 
 function detectNPCType(lower: string): NPCType {

@@ -266,7 +266,8 @@ export function GameSession() {
     }
 
     // Detect NPC dialogue from quoted speech
-    const npc = parseNPCDialogue(text)
+    const playerNames = partyCharsRef.current.map(c => c.name)
+    const npc = parseNPCDialogue(text, playerNames)
     if (npc) {
       setNpcDialogue(npc)
     }
