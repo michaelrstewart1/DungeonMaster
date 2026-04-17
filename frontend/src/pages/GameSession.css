@@ -162,7 +162,7 @@
 /* Game body layout */
 .game-body {
   display: grid;
-  grid-template-columns: 220px 1fr 280px;
+  grid-template-columns: 280px 1fr 280px;
   grid-template-rows: 1fr;
   flex: 1;
   overflow: hidden;
@@ -170,7 +170,7 @@
 }
 
 .game-body.right-collapsed {
-  grid-template-columns: 220px 1fr 44px;
+  grid-template-columns: 280px 1fr 44px;
 }
 
 /* Left sidebar */
@@ -567,9 +567,9 @@
 
 /* Chat area — Upgraded (Iteration 14) */
 .chat-area {
-  flex: 1;
-  min-height: 150px;
-  max-height: 280px;
+  flex: 2;
+  min-height: 200px;
+  max-height: 380px;
   border-top: 1px solid var(--border);
   overflow: hidden;
   position: relative;
@@ -7583,8 +7583,8 @@
 
 .mini-map {
   position: relative;
-  width: 150px;
-  height: 150px;
+  width: 200px;
+  height: 200px;
   background: var(--gold-bg);
   border: 2px solid var(--gold-dim);
   border-radius: 8px;
