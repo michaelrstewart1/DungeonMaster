@@ -438,9 +438,28 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                 "The shadows seem to embrace you as you move in silence. "
                 "For now, you remain unseen — but these depths have eyes of their own.")
 
-    return ("The cavern seems to respond to your presence — "
-            "shadows shift along the walls, and you hear a distant sound, like stone grinding "
-            "against stone. Something has taken notice of you.")
+    if words & {'help', 'assist', 'aid', 'support', 'protect', 'defend', 'save', 'rescue'}:
+        return ("Your offer of aid hangs in the air. There is a moment of consideration — "
+                "perhaps surprise, perhaps calculation — before a response comes. "
+                "'Very well. If you mean what you say, then listen carefully...'")
+
+    if words & {'wait', 'follow', 'come', 'lead', 'continue', 'ready', 'agree', 'accept', 'yes', 'tell'}:
+        return ("There is a measured pause as your words are weighed. "
+                "Then, with a nod of acknowledgment, the conversation shifts. "
+                "'Then let us not waste time. There is much to discuss and little daylight left.'")
+
+    # Context-aware default: check if recent history involves NPC dialogue
+    history = session.get("narrative_history", [])
+    recent = " ".join(history[-4:]).lower() if history else ""
+    if any(marker in recent for marker in ["says,", "replies,", "responds,", "voice", "eyes you", "pauses"]):
+        return ("Your words land with weight. There is a flicker of something — "
+                "respect, perhaps, or wariness — before the response comes. "
+                "'Interesting. You are bolder than most who pass through here. "
+                "We shall see if your actions match your words.'")
+
+    return ("The world around you seems to shift subtly in response to your presence. "
+            "Somewhere in the distance, a sound echoes — a reminder that you are not alone "
+            "in this place, and that every choice carries consequence.")
 
 
 @router.get("/sessions/{session_id}/greeting")
