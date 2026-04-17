@@ -29,13 +29,15 @@ logger = logging.getLogger(__name__)
 def _init_app_state(app: FastAPI) -> None:
     """Initialize narrator and TTS on app startup.
 
-    Supports OpenAI (cloud) and Ollama (local) LLM providers based on config.
+    Supports Gemini, OpenAI, Anthropic, and Ollama LLM providers based on config.
     Falls back to None / FakeTTS so unit-tests still pass without network calls.
     """
     from app.config import settings
     from app.services.llm.narrator import DMNarrator
     from app.services.llm.openai import OpenAIProvider
     from app.services.llm.ollama import OllamaProvider
+    from app.services.llm.gemini import GeminiProvider
+    from app.services.llm.anthropic import AnthropicProvider
     from app.services.voice.tts import FakeTTS, OpenAITTS
 
     narrator = None
@@ -43,7 +45,29 @@ def _init_app_state(app: FastAPI) -> None:
 
     provider = settings.llm_provider.lower()
 
-    if provider == "ollama":
+    if provider == "gemini" and settings.gemini_api_key:
+        try:
+            llm = GeminiProvider(
+                api_key=settings.gemini_api_key,
+                model=settings.gemini_model,
+            )
+            narrator = DMNarrator(llm=llm, max_history=30)
+            logger.info(
+                "AI DM: Gemini narrator ready (model=%s)",
+                settings.gemini_model,
+            )
+        except Exception as exc:  # pragma: no cover
+            logger.warning("AI DM: could not init Gemini (%s) — using fallbacks", exc)
+
+    elif provider == "anthropic" and settings.anthropic_api_key:
+        try:
+            llm = AnthropicProvider(api_key=settings.anthropic_api_key)
+            narrator = DMNarrator(llm=llm, max_history=30)
+            logger.info("AI DM: Anthropic narrator ready")
+        except Exception as exc:  # pragma: no cover
+            logger.warning("AI DM: could not init Anthropic (%s) — using fallbacks", exc)
+
+    elif provider == "ollama":
         try:
             llm = OllamaProvider(
                 base_url=settings.ollama_base_url,

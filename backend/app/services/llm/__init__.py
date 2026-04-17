@@ -18,6 +18,7 @@ from .base import (
 from .anthropic import AnthropicProvider
 from .openai import OpenAIProvider
 from .ollama import OllamaProvider
+from .gemini import GeminiProvider
 from .prompts import PromptTemplates
 
 __all__ = [
@@ -30,5 +31,6 @@ __all__ = [
     "AnthropicProvider",
     "OpenAIProvider",
     "OllamaProvider",
+    "GeminiProvider",
     "PromptTemplates",
 ]
