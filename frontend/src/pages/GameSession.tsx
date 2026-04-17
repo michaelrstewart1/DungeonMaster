@@ -94,6 +94,7 @@ export function GameSession() {
   const wsRef = useRef<GameWebSocket | null>(null)
   const audioWsRef = useRef<WebSocket | null>(null)
   const audioChunksRef = useRef<Uint8Array[]>([])
+  const audioQueueRef = useRef<Blob[]>([])
   const isMutedRef = useRef(false)
   const dmPersonalityRef = useRef('classic_wizard')
 
@@ -143,37 +144,39 @@ export function GameSession() {
     }
   }, [])
 
-  // Play DM text via TTS audio websocket, with browser fallback
+  // Play queued audio segments sequentially (multi-voice narration produces multiple segments)
+  const playNextAudio = useCallback(() => {
+    if (audioQueueRef.current.length === 0) return
+    const blob = audioQueueRef.current[0]
+    const url = URL.createObjectURL(blob)
+    const audio = new Audio(url)
+    audio.onended = () => {
+      URL.revokeObjectURL(url)
+      audioQueueRef.current.shift()
+      playNextAudio()
+    }
+    audio.onerror = () => {
+      URL.revokeObjectURL(url)
+      audioQueueRef.current.shift()
+      playNextAudio()
+    }
+    audio.play().catch(() => {
+      audioQueueRef.current.shift()
+      playNextAudio()
+    })
+  }, [])
+
+  // Play DM text via TTS audio websocket (multi-voice: DM + NPC voices)
   const speakText = useCallback((text: string) => {
     if (isMutedRef.current) return
+    // Cancel any browser speech that might be lingering
+    window.speechSynthesis?.cancel()
     const ws = audioWsRef.current
     if (ws && ws.readyState === WebSocket.OPEN) {
       audioChunksRef.current = []
+      audioQueueRef.current = []
       ws.send(JSON.stringify({ type: 'synthesize', text, dm_personality: dmPersonalityRef.current }))
-      // Set a timeout — if no audio chunks arrive, fall back to browser TTS
-      setTimeout(() => {
-        if (audioChunksRef.current.length === 0 && !isMutedRef.current) {
-          browserSpeak(text)
-        }
-      }, 2000)
-    } else {
-      browserSpeak(text)
     }
-  }, [])
-
-  // Browser-native TTS fallback (free, no API key needed)
-  const browserSpeak = useCallback((text: string) => {
-    if (!window.speechSynthesis) return
-    window.speechSynthesis.cancel()
-    const utterance = new SpeechSynthesisUtterance(text)
-    utterance.rate = 0.9
-    utterance.pitch = 0.8
-    // Prefer a deep English voice for DM narration
-    const voices = window.speechSynthesis.getVoices()
-    const preferred = voices.find(v => /daniel|james|google uk male|male/i.test(v.name) && /en/i.test(v.lang))
-      || voices.find(v => /en/i.test(v.lang) && !/female/i.test(v.name))
-    if (preferred) utterance.voice = preferred
-    window.speechSynthesis.speak(utterance)
   }, [])
 
   // Session timer
@@ -552,10 +555,10 @@ export function GameSession() {
     audioWs.binaryType = 'arraybuffer'
     audioWs.onmessage = (event) => {
       if (event.data instanceof ArrayBuffer) {
-        // Accumulate audio chunks
+        // Accumulate audio chunks for current voice segment
         audioChunksRef.current.push(new Uint8Array(event.data))
       } else {
-        // JSON message — check for audio_done signal
+        // JSON message — audio_done fires once per voice segment
         try {
           const msg = JSON.parse(event.data as string)
           if (msg.type === 'audio_done' && audioChunksRef.current.length > 0) {
@@ -564,11 +567,12 @@ export function GameSession() {
             let offset = 0
             for (const chunk of audioChunksRef.current) { merged.set(chunk, offset); offset += chunk.length }
             audioChunksRef.current = []
+            // Queue segment for sequential playback (multi-voice sends multiple segments)
             const blob = new Blob([merged], { type: 'audio/mpeg' })
-            const url = URL.createObjectURL(blob)
-            const audio = new Audio(url)
-            audio.onended = () => URL.revokeObjectURL(url)
-            audio.play().catch(() => {})
+            audioQueueRef.current.push(blob)
+            if (audioQueueRef.current.length === 1) {
+              playNextAudio()
+            }
           }
         } catch { /* ignore non-JSON */ }
       }
