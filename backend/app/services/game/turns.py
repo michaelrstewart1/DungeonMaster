@@ -40,7 +40,7 @@ class TurnManager:
         self.current_combatant_index = 0
         self.combat_round = 0
 
-    async def process_player_action(self, action: dict) -> TurnResult:
+    async def process_player_action(self, action: dict, session_history: list[str] | None = None) -> TurnResult:
         """
         Process a player action through the full pipeline.
         
@@ -71,7 +71,7 @@ class TurnManager:
             action_result = None
 
         # Get narration
-        narration = await self._get_narration(action, action_result)
+        narration = await self._get_narration(action, action_result, session_history)
 
         turn_result = TurnResult(
             turn_number=self.turn_number,
@@ -237,7 +237,7 @@ class TurnManager:
             description=f"You say: \"{text}\""
         )
 
-    async def _get_narration(self, action: dict, action_result: Optional[ActionResult]) -> str:
+    async def _get_narration(self, action: dict, action_result: Optional[ActionResult], session_history: list[str] | None = None) -> str:
         """Get narration from the DMNarrator."""
         try:
             # Build context for narration
@@ -258,7 +258,8 @@ class TurnManager:
                 scene=scene,
                 player_action=player_action,
                 characters=characters,
-                world_context=world_context
+                world_context=world_context,
+                session_history=session_history,
             )
 
             return narration

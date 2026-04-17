@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { uuid } from '../utils/uuid'
-import { getGameState, submitAction, getCampaign, getSessionGreeting, getSessionRecap, getCharacters, talkToNPC, getSessionNPCs } from '../api/client'
+import { getGameState, submitAction, getCampaign, getSessionGreeting, getSessionRecap, getCharacters, talkToNPC, getSessionNPCs, getMapState } from '../api/client'
 import { GameWebSocket } from '../api/websocket'
 import { GameChat, type ChatMessage } from '../components/GameChat'
 import { DiceRoller } from '../components/DiceRoller'
@@ -53,7 +53,7 @@ export function GameSession() {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [combatants, setCombatants] = useState<CombatantDisplay[]>([])
   const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null)
-  const [mapData, _setMapData] = useState<GameMap | null>(null)
+  const [mapData, setMapData] = useState<GameMap | null>(null)
   const [avatarState, setAvatarState] = useState({ expression: 'neutral', isSpeaking: false, amplitude: 0 })
   const [audioState, setAudioState] = useState({ micOn: false, muted: false })
   const [selectedToken, setSelectedToken] = useState<string | null>(null)
@@ -497,6 +497,12 @@ export function GameSession() {
         const npcResp = await getSessionNPCs(sessionId)
         setSessionNPCs(npcResp.npcs.map(n => ({ name: n.name, disposition: n.disposition, location: n.location })))
       } catch { /* NPCs will just be empty */ }
+
+      // Load map if one exists for this session
+      try {
+        const map = await getMapState(sessionId)
+        if (map) setMapData(map)
+      } catch { /* no map — BattleMap panel stays hidden */ }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load game state')
     } finally {
@@ -547,7 +553,7 @@ export function GameSession() {
           setGameState(msg.payload as GameState)
           break
         case 'turn_result': {
-          const result = msg.payload as { narration?: string; narrative?: string; mood?: string; dice_results?: DiceResult[] }
+          const result = msg.payload as { narration?: string; narrative?: string; mood?: string; dice_results?: DiceResult[]; detected_scene?: string; detected_npcs?: Array<{name: string; npc_type: string}>; environment?: Record<string, string> }
           const text = result.narration || result.narrative || 'The DM ponders...'
           setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
           processDMMessage(text)
@@ -557,11 +563,25 @@ export function GameSession() {
           speakText(text)
           detectEffect(text)
           detectAtmosphere(result.mood, text)
-          setCurrentScene(detectScene(text))
-          // Check for NPC mentions
-          const npcMention = detectNPCMention(text)
-          if (npcMention) {
-            // NPC detected — journal will pick it up
+          // Prefer server-detected scene; fall back to client-side
+          if (result.detected_scene) {
+            setCurrentScene(result.detected_scene as SceneType)
+          } else {
+            setCurrentScene(detectScene(text))
+          }
+          // Environment is handled by EnvironmentPanel's own polling
+          // Auto-add server-detected NPCs to journal
+          if (result.detected_npcs?.length) {
+            setSessionNPCs(prev => {
+              const existing = new Set(prev.map(n => n.name.toLowerCase()))
+              const newNpcs = result.detected_npcs!.filter(n => !existing.has(n.name.toLowerCase()))
+              if (newNpcs.length === 0) return prev
+              return [...prev, ...newNpcs.map(n => ({
+                name: n.name,
+                disposition: 'neutral',
+                location: '',
+              }))]
+            })
           }
           // Check achievements
           turnCounterRef.current++
@@ -624,7 +644,25 @@ export function GameSession() {
       speakText(text)
       detectEffect(text)
       detectAtmosphere(result.mood, text)
-      setCurrentScene(detectScene(text))
+      // Prefer server-detected scene; fall back to client-side
+      if (result.detected_scene) {
+        setCurrentScene(result.detected_scene as SceneType)
+      } else {
+        setCurrentScene(detectScene(text))
+      }
+      // Auto-add server-detected NPCs
+      if (result.detected_npcs?.length) {
+        setSessionNPCs(prev => {
+          const existing = new Set(prev.map(n => n.name.toLowerCase()))
+          const newNpcs = result.detected_npcs!.filter((n: {name: string}) => !existing.has(n.name.toLowerCase()))
+          if (newNpcs.length === 0) return prev
+          return [...prev, ...newNpcs.map((n: {name: string}) => ({
+            name: n.name,
+            disposition: 'neutral',
+            location: '',
+          }))]
+        })
+      }
     } catch {
       setMessages((prev) => [...prev, { role: 'dm', text: 'Failed to send action. Try again.', timestamp: Date.now() }])
     } finally {

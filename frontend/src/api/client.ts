@@ -237,6 +237,16 @@ export async function getSessionRecap(sessionId: string): Promise<SessionRecapDa
   return request<SessionRecapData>(`/game/sessions/${sessionId}/recap`);
 }
 
+// Map
+export async function getMapState(sessionId: string): Promise<import('../types').GameMap | null> {
+  try {
+    return await request<import('../types').GameMap>(`/maps/${sessionId}`);
+  } catch {
+    // 404 means no map exists for this session — not an error
+    return null;
+  }
+}
+
 // Party Inventory / Loot
 export interface LootItemData {
   name: string;

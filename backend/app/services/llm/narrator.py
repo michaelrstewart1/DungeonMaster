@@ -91,8 +91,9 @@ class DMNarrator:
     """Dungeon Master Narrator for D&D 5e AI.
     
     The narrator uses an LLM provider to generate contextual narration for
-    the game. It maintains conversation history for consistency and uses
-    prompt templates to guide the LLM's responses.
+    the game. It is effectively stateless — callers pass in session history
+    rather than relying on the narrator's internal state. This prevents
+    history leakage between different game sessions.
     """
 
     def __init__(self, llm: LLMProvider, max_history: int = 20):
@@ -100,13 +101,38 @@ class DMNarrator:
         
         Args:
             llm: An LLMProvider instance to use for generating narration
-            max_history: Maximum number of messages to maintain in history
+            max_history: Maximum number of LLM messages to use as context
         """
         self._llm = llm
         self._max_history = max_history
+        # Legacy shared history — kept for backward compat but no longer
+        # the primary context source.  Callers should pass session_history.
         self._history: list[LLMMessage] = []
         # Use compact prompts for local models (Ollama) to reduce latency
         self._compact = hasattr(llm, '_base_url')  # Ollama has _base_url
+
+    @staticmethod
+    def _build_context_from_narrative(
+        narrative_history: list[str],
+        max_messages: int = 20,
+    ) -> list[LLMMessage]:
+        """Convert a session's narrative_history strings into LLMMessages.
+
+        The session stores entries as 'Player: ...' / 'DM: ...' strings.
+        This converts the most recent entries into properly-roled messages
+        so the LLM has session-specific conversational context.
+        """
+        messages: list[LLMMessage] = []
+        # Take the tail to stay within token budget
+        for entry in narrative_history[-max_messages:]:
+            if entry.startswith("Player: "):
+                messages.append(LLMMessage(role="user", content=entry[8:]))
+            elif entry.startswith("DM: "):
+                messages.append(LLMMessage(role="assistant", content=entry[4:]))
+            else:
+                # Scene descriptions or other entries — treat as assistant context
+                messages.append(LLMMessage(role="assistant", content=entry))
+        return messages
 
     async def narrate_exploration(
         self,
@@ -116,6 +142,7 @@ class DMNarrator:
         world_context: str,
         story_bible: str = "",
         npcs: list[dict] | None = None,
+        session_history: list[str] | None = None,
     ) -> str:
         """Narrate an exploration action.
         
@@ -126,6 +153,7 @@ class DMNarrator:
             world_context: Description of the world
             story_bible: Secret narrative plan for the campaign (optional)
             npcs: Known NPCs in the scene (optional, for canon protection)
+            session_history: Session's narrative_history strings for context
             
         Returns:
             Narration string describing what happens
@@ -172,7 +200,13 @@ class DMNarrator:
                     f"\n\nPlayer Action: {player_action}"
                 )
 
-            messages = self._history.copy()
+            # Use session-specific history when available; fall back to legacy
+            if session_history is not None:
+                messages = self._build_context_from_narrative(
+                    session_history, self._max_history
+                )
+            else:
+                messages = self._history.copy()
             messages.append(LLMMessage(role="user", content=user_message))
 
             max_tokens = 200 if self._compact else 500
@@ -208,6 +242,7 @@ class DMNarrator:
         combat_state: dict,
         action_result: dict,
         characters: list[dict],
+        session_history: list[str] | None = None,
     ) -> str:
         """Narrate a combat action.
         
@@ -215,6 +250,7 @@ class DMNarrator:
             combat_state: Current combat state (round, initiative, current turn)
             action_result: Result of the action (what happened)
             characters: List of characters in combat
+            session_history: Session's narrative_history strings for context
             
         Returns:
             Narration string describing the combat action
@@ -245,7 +281,12 @@ class DMNarrator:
                 f"Action: {action_text}"
             )
 
-            messages = self._history.copy()
+            if session_history is not None:
+                messages = self._build_context_from_narrative(
+                    session_history, self._max_history
+                )
+            else:
+                messages = self._history.copy()
             messages.append(LLMMessage(role="user", content=user_message))
 
             # Generate narration
@@ -333,12 +374,14 @@ class DMNarrator:
         self,
         scene_description: str,
         player_action: str,
+        session_history: list[str] | None = None,
     ) -> str:
         """Narrate an environmental description or interaction.
         
         Args:
             scene_description: Description of the environment
             player_action: What the player is doing with the environment
+            session_history: Session's narrative_history strings for context
             
         Returns:
             Narration of the environmental interaction
@@ -349,7 +392,12 @@ class DMNarrator:
                 f"Player Action: {player_action}"
             )
 
-            messages = self._history.copy()
+            if session_history is not None:
+                messages = self._build_context_from_narrative(
+                    session_history, self._max_history
+                )
+            else:
+                messages = self._history.copy()
             messages.append(LLMMessage(role="user", content=user_message))
 
             system_prompt = (
@@ -378,11 +426,12 @@ class DMNarrator:
             logger.error(f"Error in narrate_environment: {e}")
             return FALLBACK_NARRATIONS["environment"]
 
-    async def describe_scene(self, scene_data: dict) -> str:
+    async def describe_scene(self, scene_data: dict, session_history: list[str] | None = None) -> str:
         """Generate an initial description for a new scene.
         
         Args:
             scene_data: Information about the scene to describe
+            session_history: Session's narrative_history strings for context
             
         Returns:
             Initial scene description
@@ -399,7 +448,12 @@ class DMNarrator:
 
             user_message = f"Describe the scene: {scene_name}"
 
-            messages = self._history.copy()
+            if session_history is not None:
+                messages = self._build_context_from_narrative(
+                    session_history, self._max_history
+                )
+            else:
+                messages = self._history.copy()
             messages.append(LLMMessage(role="user", content=user_message))
 
             system_prompt = (
@@ -595,6 +649,7 @@ class DMNarrator:
         characters: list[dict],
         player_action: str,
         boss_at_half_hp: bool = False,
+        session_history: list[str] | None = None,
     ) -> str:
         """Narrate a boss encounter turn with all 5 dynamic encounter principles.
 
@@ -607,6 +662,7 @@ class DMNarrator:
             characters: Player character list
             player_action: What the player just did
             boss_at_half_hp: True when boss is below 50% HP
+            session_history: Session's narrative_history strings for context
 
         Returns:
             Cinematic boss encounter narration
@@ -624,7 +680,12 @@ class DMNarrator:
             round_num = combat_state.get("round_number", 1)
             user_message = f"Round {round_num}: {player_action}"
 
-            messages = self._history.copy()
+            if session_history is not None:
+                messages = self._build_context_from_narrative(
+                    session_history, self._max_history
+                )
+            else:
+                messages = self._history.copy()
             messages.append(LLMMessage(role="user", content=user_message))
 
             response = await self._llm.generate(

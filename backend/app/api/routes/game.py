@@ -3,6 +3,7 @@ from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
 import logging
 import random
+import re
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
@@ -48,6 +49,11 @@ class PlayerActionResponse(BaseModel):
     # Metadata for frontend effects
     mood: Optional[str] = Field(default=None, description="Scene mood after this action")
     effects: List[str] = Field(default_factory=list, description="Suggested screen effects: nat20, damage, spell, levelup, boss")
+    # Environment & scene sync
+    environment: Optional[Dict[str, str]] = Field(default=None, description="Current environment state (time_of_day, weather, etc.)")
+    detected_scene: Optional[str] = Field(default=None, description="Detected scene type: tavern, dungeon, forest, etc.")
+    # NPC auto-detection
+    detected_npcs: List[Dict[str, str]] = Field(default_factory=list, description="NPCs detected in narration [{name, npc_type}]")
 
 
 class WorldGenerateRequest(BaseModel):
@@ -169,6 +175,15 @@ async def submit_player_action(
     # Auto-advance time and potentially change weather
     _advance_time(session)
 
+    # Auto-detect NPCs from narration
+    detected_npcs = _extract_npcs_from_narration(narration)
+    _merge_detected_npcs(session, detected_npcs)
+
+    # Detect scene type from narration
+    detected_scene = _detect_scene_type(narration)
+    if detected_scene:
+        session["detected_scene"] = detected_scene
+
     await repo.save_game_session(db, session)
 
     return PlayerActionResponse(
@@ -177,6 +192,9 @@ async def submit_player_action(
         phase=session["current_phase"],
         mood=mood_obj.atmosphere,
         effects=effects,
+        environment=session.get("environment"),
+        detected_scene=detected_scene,
+        detected_npcs=detected_npcs,
     )
 
 
@@ -201,6 +219,125 @@ def _detect_effects(narration: str, player_action: str) -> List[str]:
         effects.append("boss")
 
     return list(set(effects))
+
+
+# ── Speech verbs for NPC name extraction ──
+_SPEECH_VERBS = r"(?:says?|speaks?|replies?|responds?|whispers?|shouts?|exclaims?|mutters?|growls?|announces?|asks?|calls?|declares?)"
+
+# Generic NPC roles that should NOT be auto-saved as named NPCs
+_GENERIC_ROLES = {
+    "guard", "guards", "soldier", "merchant", "innkeeper", "bartender",
+    "barkeep", "stranger", "figure", "man", "woman", "villager", "peasant",
+    "servant", "thief", "bandit", "goblin", "orc", "skeleton", "zombie",
+    "warrior", "mage", "priest", "cleric", "old man", "old woman",
+    "boy", "girl", "child", "vendor", "trader", "traveler", "patron",
+}
+
+
+def _extract_npcs_from_narration(narration: str) -> list[dict]:
+    """Extract named NPCs from DM narration text.
+    
+    Looks for speech patterns like 'Name says "..."' or '"..." replies Name'
+    and returns only proper-noun names (not generic roles like 'the guard').
+    """
+    found: dict[str, str] = {}  # name_lower -> {name, npc_type}
+    lower = narration.lower()
+
+    # Pattern 1: Name VERB "..." — e.g. Kaelrath says "Hello"
+    for m in re.finditer(
+        rf'([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+{_SPEECH_VERBS}\s*[:,]?\s*["\u201c]',
+        narration,
+    ):
+        name = m.group(1).strip()
+        if name.lower() not in _GENERIC_ROLES and len(name) > 1:
+            found.setdefault(name.lower(), {"name": name, "npc_type": _detect_npc_type(lower)})
+
+    # Pattern 2: "..." VERB Name — e.g. "Hello" says Kaelrath
+    for m in re.finditer(
+        rf'["\u201d]\s+{_SPEECH_VERBS}\s+(?:the\s+)?([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)',
+        narration,
+    ):
+        name = m.group(1).strip()
+        if name.lower() not in _GENERIC_ROLES and len(name) > 1:
+            found.setdefault(name.lower(), {"name": name, "npc_type": _detect_npc_type(lower)})
+
+    # Pattern 3: Proper noun introductions — e.g. "introduces himself as Lord Voss"
+    for m in re.finditer(
+        r'(?:introduces?\s+(?:himself|herself|themselves)\s+as|(?:name\s+is|called|known\s+as))\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)',
+        narration,
+    ):
+        name = m.group(1).strip()
+        if name.lower() not in _GENERIC_ROLES and len(name) > 1:
+            found.setdefault(name.lower(), {"name": name, "npc_type": _detect_npc_type(lower)})
+
+    return list(found.values())
+
+
+def _detect_npc_type(lower: str) -> str:
+    """Detect NPC type from contextual keywords in narration text."""
+    if re.search(r'\b(?:merchant|shop|buy|sell|wares|vendor|trader|goods|price|coin)\b', lower):
+        return "merchant"
+    if re.search(r'\b(?:guard|soldier|patrol|captain|watch|sentry|knight|warrior)\b', lower):
+        return "guard"
+    if re.search(r'\b(?:wizard|mage|sorcerer|archmage|conjurer|enchanter|warlock|witch)\b', lower):
+        return "wizard"
+    if re.search(r'\b(?:inn|tavern|bartender|barkeep|innkeeper|ale|brew|drink)\b', lower):
+        return "innkeeper"
+    if re.search(r'\b(?:hooded|shadow|stranger|cloaked|mysterious|dark figure|enigma)\b', lower):
+        return "mysterious"
+    if re.search(r'\b(?:lord|lady|king|queen|prince|princess|noble|duke|duchess|baron|countess|regent)\b', lower):
+        return "noble"
+    return "default"
+
+
+# Scene type keywords — ported from frontend SceneArt.detectScene()
+_SCENE_PATTERNS: list[tuple[str, str]] = [
+    (r'\b(?:tavern|inn|bar|pub|ale\s*house|drinking|barkeep|bartender)\b', "tavern"),
+    (r'\b(?:dungeon|underground|crypt|tomb|catacomb|sewer|cell|prison)\b', "dungeon"),
+    (r'\b(?:forest|woods|grove|glade|thicket|treeline|canopy|clearing)\b', "forest"),
+    (r'\b(?:cave|cavern|grotto|stalactite|stalagmite|underground)\b', "cave"),
+    (r'\b(?:castle|fortress|keep|citadel|battlements|portcullis|throne)\b', "castle"),
+    (r'\b(?:temple|shrine|altar|chapel|cathedral|holy|sacred|sanctum)\b', "temple"),
+    (r'\b(?:market|bazaar|stall|vendor|merchant|square|plaza|fountain)\b', "market"),
+    (r'\b(?:ship|boat|sail|deck|harbor|port|dock|maritime|anchor|mast)\b', "ship"),
+    (r'\b(?:mountain|peak|summit|cliff|ridge|highland|crag|alpine)\b', "mountain"),
+    (r'\b(?:swamp|marsh|bog|fen|mire|wetland|murky|stagnant)\b', "swamp"),
+    (r'\b(?:desert|sand|dune|oasis|arid|scorching|wasteland)\b', "desert"),
+    (r'\b(?:village|hamlet|cottage|farm|homestead|rural|pastoral)\b', "village"),
+    (r'\b(?:camp|campfire|tent|bivouac|encampment|bedroll)\b', "camp"),
+    (r'\b(?:road|path|trail|highway|journey|travel|crossroad)\b', "road"),
+    (r'\b(?:battlefield|war|siege|army|troops|carnage|fallen)\b', "battlefield"),
+]
+
+
+def _detect_scene_type(text: str) -> str | None:
+    """Detect the scene type from narration text using keyword matching."""
+    lower = text.lower()
+    for pattern, scene_type in _SCENE_PATTERNS:
+        if re.search(pattern, lower):
+            return scene_type
+    return None
+
+
+def _merge_detected_npcs(session: dict, detected: list[dict]) -> None:
+    """Merge newly detected named NPCs into the session's NPC list.
+    
+    Only adds NPCs whose names aren't already present (case-insensitive).
+    """
+    if not detected:
+        return
+    npcs = session.setdefault("npcs", [])
+    existing_names = {n.get("name", "").lower() for n in npcs}
+    for npc in detected:
+        if npc["name"].lower() not in existing_names:
+            npcs.append({
+                "name": npc["name"],
+                "npc_type": npc.get("npc_type", "default"),
+                "disposition": "neutral",
+                "location": "",
+                "notes": "Auto-detected from narration",
+            })
+            existing_names.add(npc["name"].lower())
 
 
 async def _generate_dm_response(player_action: str, session: dict, narrator=None, db=None) -> str:
@@ -238,6 +375,7 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                     world_context=world_context,
                     story_bible=story_bible,
                     npcs=npcs,
+                    session_history=session.get("narrative_history", []),
                 ),
                 timeout=45.0,
             )

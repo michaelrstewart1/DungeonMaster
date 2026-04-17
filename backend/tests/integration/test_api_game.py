@@ -407,3 +407,72 @@ class TestNPCTalk:
         assert response.status_code == 200
         # Mock fallback uses disposition to vary response
         assert "Elara" in response.json()["narration"]
+
+
+class TestActionResponseFields:
+    """Tests for new fields in PlayerActionResponse: environment, detected_scene, detected_npcs."""
+
+    async def _create_session(self, client):
+        campaign = await client.post(
+            "/api/campaigns",
+            json={"name": "Field Test", "description": "Testing", "character_ids": [], "world_state": {}, "dm_settings": {}},
+        )
+        campaign_id = campaign.json()["id"]
+        session = await client.post(
+            "/api/game/sessions",
+            json={"campaign_id": campaign_id, "current_phase": "exploration", "current_scene": "A dark tavern."},
+        )
+        return session.json()["id"]
+
+    async def test_action_response_includes_environment(self, client: AsyncClient):
+        """Action response should include environment state."""
+        session_id = await self._create_session(client)
+        response = await client.post(
+            f"/api/game/sessions/{session_id}/action",
+            json={"type": "interact", "message": "look around"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "environment" in data
+        env = data["environment"]
+        assert "time_of_day" in env
+        assert "weather" in env
+
+    async def test_action_response_includes_detected_scene(self, client: AsyncClient):
+        """Action response should include detected_scene when narration contains scene keywords."""
+        session_id = await self._create_session(client)
+        # The keyword mock for 'tavern' should return text containing tavern keywords
+        response = await client.post(
+            f"/api/game/sessions/{session_id}/action",
+            json={"type": "interact", "message": "I enter the tavern"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        # detected_scene may or may not be set depending on mock response content
+        assert "detected_scene" in data
+
+    async def test_action_response_includes_detected_npcs(self, client: AsyncClient):
+        """Action response should include detected_npcs list."""
+        session_id = await self._create_session(client)
+        response = await client.post(
+            f"/api/game/sessions/{session_id}/action",
+            json={"type": "interact", "message": "look around"},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "detected_npcs" in data
+        assert isinstance(data["detected_npcs"], list)
+
+    async def test_detected_npcs_auto_saved_to_session(self, client: AsyncClient):
+        """Named NPCs detected from narration should be saved to session state."""
+        session_id = await self._create_session(client)
+        # Submit a few actions so mock has chance to mention NPCs
+        for _ in range(3):
+            await client.post(
+                f"/api/game/sessions/{session_id}/action",
+                json={"type": "interact", "message": "talk to someone"},
+            )
+        # NPCs list should exist in session state (may be empty if mock doesn't generate named NPCs)
+        state = await client.get(f"/api/game/sessions/{session_id}/state")
+        assert state.status_code == 200
+

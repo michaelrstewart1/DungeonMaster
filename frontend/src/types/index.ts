@@ -124,6 +124,10 @@ export interface TurnResult {
   narration: string;
   phase: string;
   mood?: 'dark' | 'warm' | 'peaceful' | 'combat' | 'mystical' | 'neutral';
+  effects?: string[];
+  environment?: Record<string, string>;
+  detected_scene?: string;
+  detected_npcs?: Array<{ name: string; npc_type: string }>;
   action_result?: {
     action_type: string;
     success: boolean;

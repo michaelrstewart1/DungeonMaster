@@ -5,6 +5,12 @@ from datetime import datetime
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 import app.repository as repo
+from app.api.routes.game import (
+    _extract_npcs_from_narration,
+    _merge_detected_npcs,
+    _detect_scene_type,
+    _advance_time,
+)
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
 
@@ -93,6 +99,7 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
             elif message_type == "action":
                 character_id = message.get("character_id")
                 action = message.get("action")
+                session_data = None  # may be loaded below
 
                 narrator = getattr(websocket.app.state, "narrator", None)
                 if narrator is not None:
@@ -122,6 +129,7 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                                     characters=characters,
                                     world_context=world_context,
                                     story_bible=story_bible,
+                                    session_history=session_data.get("narrative_history", []),
                                 )
                                 # Safety: strip any echoed action
                                 narration = _strip_action_echo(narration, action or "")
@@ -138,6 +146,9 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     "action": action,
                     "narration": narration,
                     "timestamp": datetime.now().isoformat(),
+                    "environment": session_data.get("environment") if session_data else None,
+                    "detected_scene": _detect_scene_type(narration),
+                    "detected_npcs": _extract_npcs_from_narration(narration),
                 }
                 await manager.broadcast(session_id, turn_result)
 
@@ -152,6 +163,15 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                                 session_data.setdefault("narrative_history", []).append(f"Player: {player_text}")
                                 session_data["narrative_history"].append(f"DM: {narration}")
                                 session_data["turn_count"] = session_data.get("turn_count", 0) + 1
+                                # Auto-detect and merge NPCs
+                                detected = _extract_npcs_from_narration(narration)
+                                _merge_detected_npcs(session_data, detected)
+                                # Detect and store scene type
+                                scene_type = _detect_scene_type(narration)
+                                if scene_type:
+                                    session_data["detected_scene"] = scene_type
+                                # Advance environment
+                                _advance_time(session_data)
                                 await repo.save_game_session(db, session_data)
                                 await db.commit()
                     except Exception:
