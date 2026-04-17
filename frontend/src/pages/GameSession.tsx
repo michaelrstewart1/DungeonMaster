@@ -486,6 +486,8 @@ export function GameSession() {
         const lastDM = restoredMessages.filter(m => m.role === 'dm').pop()
         if (lastDM) {
           processDMMessage(lastDM.text)
+          // Restore scene from last narration so the scene panel matches
+          setCurrentScene(detectScene(lastDM.text))
         }
       } else {
         // Fresh session — show typing indicator while the DM greeting loads
@@ -735,16 +737,24 @@ export function GameSession() {
       const sides = parseInt(match[2])
       const rolls = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1)
       const total = rolls.reduce((a, b) => a + b, 0)
-      setLastDiceResult({
+      const result: DiceResult = {
         notation,
         rolls,
         modifier: 0,
         total,
         is_critical: sides === 20 && rolls[0] === 20,
         is_fumble: sides === 20 && rolls[0] === 1,
-      })
+      }
+      setLastDiceResult(result)
+
+      // Auto-submit the roll result to the DM so the game progresses
+      const charName = partyCharacters[0]?.name || 'Player'
+      const dieLabel = `d${sides}`
+      const critNote = result.is_critical ? ' (Natural 20!)' : result.is_fumble ? ' (Natural 1!)' : ''
+      const rollMsg = `🎲 ${charName} rolls ${dieLabel}: ${total}${critNote}`
+      handleSubmitAction(rollMsg)
     }
-  }, [])
+  }, [partyCharacters, handleSubmitAction])
 
   const handleCellClick = useCallback((x: number, y: number) => {
     if (selectedToken && wsRef.current) {

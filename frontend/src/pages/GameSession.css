@@ -7667,8 +7667,8 @@
 
 .mini-map {
   position: relative;
-  width: 200px;
-  height: 200px;
+  width: 100%;
+  aspect-ratio: 1;
   background: var(--gold-bg);
   border: 2px solid var(--gold-dim);
   border-radius: 8px;
