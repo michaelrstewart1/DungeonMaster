@@ -1,9 +1,7 @@
 import { useMemo } from 'react'
 
-export type SceneType = 'tavern' | 'dungeon' | 'forest' | 'cave' | 'castle' | 'battlefield'
-
 interface MiniMapProps {
-  sceneType: SceneType
+  sceneType: string
   className?: string
 }
 
@@ -15,7 +13,7 @@ interface MiniMapProps {
 export function MiniMap({ sceneType, className = '' }: MiniMapProps) {
   // Generate a stable unique class suffix for CSS specificity
   const mapLayoutClass = useMemo(() => {
-    const layouts: Record<SceneType, string> = {
+    const layouts: Record<string, string> = {
       tavern: 'mini-map-tavern',
       dungeon: 'mini-map-dungeon',
       forest: 'mini-map-forest',
@@ -23,7 +21,7 @@ export function MiniMap({ sceneType, className = '' }: MiniMapProps) {
       castle: 'mini-map-castle',
       battlefield: 'mini-map-battlefield',
     }
-    return layouts[sceneType]
+    return layouts[sceneType] || 'mini-map-tavern'
   }, [sceneType])
 
   return (

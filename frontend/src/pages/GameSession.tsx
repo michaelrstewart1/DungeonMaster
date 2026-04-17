@@ -24,7 +24,6 @@ import { SessionRecap } from '../components/SessionRecap'
 import PartyInventory from '../components/PartyInventory'
 import LevelUpModal from '../components/LevelUpModal'
 import { SceneArt, detectScene } from '../components/SceneArt'
-import type { SceneType } from '../components/SceneArt'
 import { generateSceneImage } from '../api/client'
 import { EncounterPanel } from '../components/EncounterPanel'
 import { DeathSaveTracker } from '../components/DeathSaveTracker'
@@ -82,7 +81,7 @@ export function GameSession() {
   const [recapText, setRecapText] = useState('')
   const [showInventory, setShowInventory] = useState(false)
   const [showLevelUp, setShowLevelUp] = useState(false)
-  const [currentScene, setCurrentScene] = useState<SceneType>('tavern')
+  const [currentScene, setCurrentScene] = useState<string>('tavern')
   const [sceneImageUrl, setSceneImageUrl] = useState<string | null>(null)
   const [sceneImageCache, setSceneImageCache] = useState<Map<string, string>>(new Map())
   const sceneImageRequestRef = useRef<string | null>(null)
@@ -642,7 +641,7 @@ export function GameSession() {
           detectAtmosphere(result.mood, text)
           // Prefer server-detected scene; fall back to client-side
           if (result.detected_scene) {
-            setCurrentScene(result.detected_scene as SceneType)
+            setCurrentScene(result.detected_scene)
           } else {
             setCurrentScene(detectScene(text))
           }
@@ -738,7 +737,7 @@ export function GameSession() {
       detectAtmosphere(result.mood, text)
       // Prefer server-detected scene; fall back to client-side
       if (result.detected_scene) {
-        setCurrentScene(result.detected_scene as SceneType)
+        setCurrentScene(result.detected_scene)
       } else {
         setCurrentScene(detectScene(text))
       }
@@ -780,36 +779,6 @@ export function GameSession() {
       setWaitingForDM(false)
     }
   }, [sessionId, speakText, processDMMessage])
-
-  const handleDiceRoll = useCallback((notation: string) => {
-    if (wsRef.current) {
-      wsRef.current.send({ type: 'dice_roll', notation })
-    }
-    // Local fallback for immediate feedback
-    const match = notation.match(/(\d+)d(\d+)/)
-    if (match) {
-      const count = parseInt(match[1])
-      const sides = parseInt(match[2])
-      const rolls = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1)
-      const total = rolls.reduce((a, b) => a + b, 0)
-      const result: DiceResult = {
-        notation,
-        rolls,
-        modifier: 0,
-        total,
-        is_critical: sides === 20 && rolls[0] === 20,
-        is_fumble: sides === 20 && rolls[0] === 1,
-      }
-      setLastDiceResult(result)
-
-      // Auto-submit the roll result to the DM so the game progresses
-      const charName = partyCharacters[0]?.name || 'Player'
-      const dieLabel = `d${sides}`
-      const critNote = result.is_critical ? ' (Natural 20!)' : result.is_fumble ? ' (Natural 1!)' : ''
-      const rollMsg = `🎲 ${charName} rolls ${dieLabel}: ${total}${critNote}`
-      handleSubmitAction(rollMsg)
-    }
-  }, [partyCharacters, handleSubmitAction])
 
   const handleCellClick = useCallback((x: number, y: number) => {
     if (selectedToken && wsRef.current) {
