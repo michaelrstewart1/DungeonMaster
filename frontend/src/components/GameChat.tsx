@@ -257,12 +257,22 @@ export function GameChat({ messages, onSubmitAction, onTalkToNPC, npcs = [], dis
 
   // When a new DM message arrives, it's the one that gets the typewriter effect.
   // All prior DM messages are considered already typed.
+  // If the newest message is a player message, mark ALL DM messages as typed
+  // to prevent re-animating the previous DM response.
   useEffect(() => {
-    if (messages.length > prevMessageCount.current) {
-      // Mark all DM messages except the very last one as typed
-      const lastDmIdx = dmMessageIndices.length - 1
-      if (lastDmIdx >= 0 && messages[dmMessageIndices[lastDmIdx]].role === 'dm') {
+    const added = messages.length - prevMessageCount.current
+    if (added > 0) {
+      const newestMsg = messages[messages.length - 1]
+      if (added > 2) {
+        // Bulk load (history hydration) — skip typewriter for all messages
+        setTypedMessageCount(dmMessageIndices.length)
+      } else if (newestMsg?.role === 'dm') {
+        // New DM message: mark all prior DM messages as typed, typewrite only the latest
+        const lastDmIdx = dmMessageIndices.length - 1
         setTypedMessageCount(lastDmIdx)
+      } else {
+        // Player message (or other): mark ALL DM messages as already typed
+        setTypedMessageCount(dmMessageIndices.length)
       }
     }
     prevMessageCount.current = messages.length
