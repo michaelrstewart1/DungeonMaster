@@ -6,8 +6,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
 import { useGameSocket } from '../hooks/useGameSocket';
+import { DiceRoller } from '../components/DiceRoller';
 import BattleMap from '../components/BattleMap';
-import type { Character, GameState, GameMap } from '../types';
+import type { Character, GameState, GameMap, DiceResult } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -19,18 +20,47 @@ interface NarrativeEntry {
   timestamp: string;
 }
 
+type GamePhase = 'exploration' | 'combat';
+
+interface QuickAction {
+  emoji: string;
+  label: string;
+}
+
+const EXPLORATION_ACTIONS: QuickAction[] = [
+  { emoji: '🔍', label: 'Look Around' },
+  { emoji: '🚪', label: 'Open Door' },
+  { emoji: '💬', label: 'Talk to NPC' },
+  { emoji: '🎒', label: 'Check Inventory' },
+  { emoji: '⚔️', label: 'Draw Weapon' },
+  { emoji: '🏕️', label: 'Set Up Camp' },
+];
+
+const COMBAT_ACTIONS: QuickAction[] = [
+  { emoji: '⚔️', label: 'Attack' },
+  { emoji: '🛡️', label: 'Defend' },
+  { emoji: '🔮', label: 'Cast Spell' },
+  { emoji: '🏃', label: 'Dodge' },
+  { emoji: '💊', label: 'Use Potion' },
+  { emoji: '🏳️', label: 'Retreat' },
+];
+
 export function PlayerView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const playerName = sessionStorage.getItem('playerName') || 'Adventurer';
-  const { connected, messages, sendChat, sendAction } = useGameSocket(sessionId);
+  const characterId = sessionStorage.getItem('characterId') || undefined;
+  const { connected, messages, sendChat, sendAction, joinAsPlayer } = useGameSocket(sessionId);
 
   const [character, setCharacter] = useState<Character | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [narrative, setNarrative] = useState<NarrativeEntry[]>([]);
   const [actionText, setActionText] = useState('');
   const [isMyTurn, setIsMyTurn] = useState(false);
-  const [tab, setTab] = useState<'play' | 'sheet' | 'map'>('play');
+  const [tab, setTab] = useState<'play' | 'sheet' | 'map' | 'dice'>('play');
   const [gameMap, setGameMap] = useState<GameMap | null>(null);
+  const [phase, setPhase] = useState<GamePhase>('exploration');
+  const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null);
+  const [waitingForDM, setWaitingForDM] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
 
   // Push-to-talk state
@@ -41,6 +71,13 @@ export function PlayerView() {
   const audioChunksRef = useRef<Blob[]>([]);
   const audioWsRef = useRef<WebSocket | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+
+  // Identify ourselves to the game session on connect
+  useEffect(() => {
+    if (connected && playerName) {
+      joinAsPlayer(playerName, characterId);
+    }
+  }, [connected, playerName, characterId, joinAsPlayer]);
 
   // Connect to audio WebSocket for STT
   useEffect(() => {
@@ -95,14 +132,13 @@ export function PlayerView() {
       .then((data) => setGameState(data))
       .catch(() => {});
 
-    const charId = sessionStorage.getItem('characterId');
-    if (charId) {
-      fetch(`${API_BASE}/characters/${charId}`)
+    if (characterId) {
+      fetch(`${API_BASE}/characters/${characterId}`)
         .then((r) => r.json())
         .then(setCharacter)
         .catch(() => {});
     }
-  }, [sessionId]);
+  }, [sessionId, characterId]);
 
   // Process incoming WebSocket messages
   useEffect(() => {
@@ -120,7 +156,7 @@ export function PlayerView() {
           timestamp: new Date().toISOString(),
         },
       ]);
-      // Update turn status if included in result
+      setWaitingForDM(false);
       if (p.current_turn && character) {
         setIsMyTurn(p.current_turn === character.id);
       }
@@ -143,6 +179,8 @@ export function PlayerView() {
     if (last.type === 'game_state' as string) {
       const gs = last.payload as GameState;
       setGameState(gs);
+      if (gs.phase === 'combat') setPhase('combat');
+      else setPhase('exploration');
       if (character) {
         const ct = (gs as GameState & { current_turn?: string }).current_turn;
         setIsMyTurn(ct === character.id);
@@ -154,6 +192,8 @@ export function PlayerView() {
       if (p.current_turn && character) {
         setIsMyTurn(p.current_turn === character.id);
       }
+      if (p.phase === 'combat') setPhase('combat');
+      else if (p.phase) setPhase('exploration');
     }
 
     if (last.type === 'vision_update' as string) {
@@ -193,19 +233,17 @@ export function PlayerView() {
 
       recorder.onstop = async () => {
         const blob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        // Send audio to backend for STT
         const ws = audioWsRef.current;
         if (ws && ws.readyState === WebSocket.OPEN && blob.size > 0) {
           setIsTranscribing(true);
           const buffer = await blob.arrayBuffer();
           ws.send(buffer);
         }
-        // Stop all mic tracks
         stream.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
       };
 
-      recorder.start(250); // collect chunks every 250ms
+      recorder.start(250);
       setIsRecording(true);
     } catch (err) {
       console.error('Microphone access denied:', err);
@@ -221,15 +259,16 @@ export function PlayerView() {
     setIsRecording(false);
   }, []);
 
-  function handleSendAction() {
-    const text = actionText.trim();
-    if (!text) return;
-    sendAction(character?.id || 'unknown', text);
+  function handleSendAction(text?: string) {
+    const msg = (text || actionText).trim();
+    if (!msg) return;
+    sendAction(character?.id || 'unknown', msg);
     setNarrative((prev) => [
       ...prev,
-      { id: uuid(), text, type: 'action', sender: playerName, timestamp: new Date().toISOString() },
+      { id: uuid(), text: msg, type: 'action', sender: playerName, timestamp: new Date().toISOString() },
     ]);
     setActionText('');
+    setWaitingForDM(true);
   }
 
   function handleSendChat() {
@@ -239,6 +278,32 @@ export function PlayerView() {
     setActionText('');
   }
 
+  function handleDiceRoll(notation: string) {
+    const match = notation.match(/(\d+)d(\d+)/);
+    if (match) {
+      const count = parseInt(match[1]);
+      const sides = parseInt(match[2]);
+      const rolls = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
+      const total = rolls.reduce((a, b) => a + b, 0);
+      const result: DiceResult = {
+        notation,
+        rolls,
+        modifier: 0,
+        total,
+        is_critical: sides === 20 && rolls[0] === 20,
+        is_fumble: sides === 20 && rolls[0] === 1,
+      };
+      setLastDiceResult(result);
+
+      // Auto-submit to DM
+      const charName = character?.name || playerName;
+      const critNote = result.is_critical ? ' (Natural 20!)' : result.is_fumble ? ' (Natural 1!)' : '';
+      const rollMsg = `🎲 ${charName} rolls d${sides}: ${total}${critNote}`;
+      handleSendAction(rollMsg);
+    }
+  }
+
+  const quickActions = phase === 'combat' ? COMBAT_ACTIONS : EXPLORATION_ACTIONS;
   const hpPct = character ? Math.round((character.hp / (character.max_hp || character.hp)) * 100) : 100;
 
   return (
@@ -252,7 +317,7 @@ export function PlayerView() {
 
       {/* Top bar */}
       <div className="pv-topbar">
-        <span className="pv-name">{playerName}</span>
+        <span className="pv-name">{character?.name || playerName}</span>
         <span className={`pv-connection ${connected ? 'pv-online' : 'pv-offline'}`}>
           {connected ? '🟢' : '🔴'}
         </span>
@@ -285,6 +350,9 @@ export function PlayerView() {
         <button className={`pv-tab ${tab === 'play' ? 'pv-tab-active' : ''}`} onClick={() => setTab('play')}>
           ⚔️ Play
         </button>
+        <button className={`pv-tab ${tab === 'dice' ? 'pv-tab-active' : ''}`} onClick={() => setTab('dice')}>
+          🎲 Dice
+        </button>
         <button className={`pv-tab ${tab === 'sheet' ? 'pv-tab-active' : ''}`} onClick={() => setTab('sheet')}>
           📜 Sheet
         </button>
@@ -293,7 +361,7 @@ export function PlayerView() {
         </button>
       </div>
 
-      {/* Play tab — narrative feed + action input */}
+      {/* Play tab — narrative feed + quick actions + input */}
       {tab === 'play' && (
         <div className="pv-play-tab">
           <div className="pv-narrative-feed" ref={feedRef}>
@@ -306,6 +374,26 @@ export function PlayerView() {
                 <span className="pv-entry-text">{entry.text}</span>
               </div>
             ))}
+            {waitingForDM && (
+              <div className="pv-narrative-entry pv-entry-system">
+                <span className="pv-entry-text">🎲 DM is composing...</span>
+              </div>
+            )}
+          </div>
+
+          {/* Quick Actions */}
+          <div className="pv-quick-actions">
+            {quickActions.map((action) => (
+              <button
+                key={action.label}
+                className="pv-quick-action-btn"
+                onClick={() => handleSendAction(`${action.emoji} ${action.label}`)}
+                disabled={waitingForDM}
+              >
+                <span>{action.emoji}</span>
+                <span>{action.label}</span>
+              </button>
+            ))}
           </div>
 
           <div className="pv-action-bar">
@@ -316,8 +404,9 @@ export function PlayerView() {
               onChange={(e) => setActionText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendAction()}
               placeholder={isTranscribing ? 'Transcribing...' : isMyTurn ? "It's your turn! What do you do?" : 'What do you do?'}
+              disabled={waitingForDM}
             />
-            <button className="pv-action-btn" onClick={handleSendAction} disabled={!actionText.trim()}>
+            <button className="pv-action-btn" onClick={() => handleSendAction()} disabled={!actionText.trim() || waitingForDM}>
               ⚔️
             </button>
             <button className="pv-chat-btn" onClick={handleSendChat} disabled={!actionText.trim()}>
@@ -361,6 +450,13 @@ export function PlayerView() {
               <div className="pv-ptt-pulse-ring" />
             )}
           </div>
+        </div>
+      )}
+
+      {/* Dice tab */}
+      {tab === 'dice' && (
+        <div className="pv-dice-tab">
+          <DiceRoller onRoll={handleDiceRoll} lastResult={lastDiceResult ?? undefined} />
         </div>
       )}
 

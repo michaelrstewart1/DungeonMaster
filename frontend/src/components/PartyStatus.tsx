@@ -41,9 +41,10 @@ function getConditionColor(condition: string): string {
 
 interface PartyStatusProps {
   characters: Character[]
+  connectedCharacterIds?: Set<string>
 }
 
-export function PartyStatus({ characters }: PartyStatusProps) {
+export function PartyStatus({ characters, connectedCharacterIds }: PartyStatusProps) {
   if (characters.length === 0) return null
 
   return (
@@ -66,6 +67,12 @@ export function PartyStatus({ characters }: PartyStatusProps) {
                   />
                 ) : (
                   <span className="party-member-placeholder">{char.name[0]?.toUpperCase()}</span>
+                )}
+                {connectedCharacterIds && (
+                  <span
+                    className={`party-member-connection ${connectedCharacterIds.has(char.id) ? 'connected' : 'disconnected'}`}
+                    title={connectedCharacterIds.has(char.id) ? 'Player connected' : 'Not connected'}
+                  />
                 )}
               </div>
               <div className="party-member-info">

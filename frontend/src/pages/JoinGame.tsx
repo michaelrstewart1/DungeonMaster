@@ -4,6 +4,15 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
+interface SimpleCharacter {
+  id: string;
+  name: string;
+  race: string;
+  class_name: string;
+  level: number;
+  portrait_url?: string;
+}
+
 export function JoinGame() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -11,8 +20,11 @@ export function JoinGame() {
   const [playerName, setPlayerName] = useState('');
   const [error, setError] = useState('');
   const [joining, setJoining] = useState(false);
+  const [phase, setPhase] = useState<'join' | 'pick-character'>('join');
+  const [sessionId, setSessionId] = useState('');
+  const [characters, setCharacters] = useState<SimpleCharacter[]>([]);
 
-  // Auto-join if code is in URL
+  // Auto-join if code + name are both in URL
   useEffect(() => {
     const code = searchParams.get('code');
     const name = searchParams.get('name');
@@ -45,17 +57,71 @@ export function JoinGame() {
       }
 
       const data = await res.json();
-      // Store player info in sessionStorage for the player view
       sessionStorage.setItem('playerName', finalName);
       sessionStorage.setItem('playerId', data.player_id);
       sessionStorage.setItem('sessionId', data.session_id);
+      setSessionId(data.session_id);
 
+      // Fetch available characters for this campaign
+      if (data.campaign_id) {
+        try {
+          const charRes = await fetch(`${API_BASE}/characters?campaign_id=${data.campaign_id}`);
+          if (charRes.ok) {
+            const chars = await charRes.json();
+            if (Array.isArray(chars) && chars.length > 0) {
+              setCharacters(chars);
+              setPhase('pick-character');
+              return;
+            }
+          }
+        } catch { /* fall through to direct navigate */ }
+      }
+
+      // No characters to pick — go straight to player view
       navigate(`/play/${data.session_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to join');
     } finally {
       setJoining(false);
     }
+  }
+
+  function selectCharacter(charId: string) {
+    sessionStorage.setItem('characterId', charId);
+    navigate(`/play/${sessionId}`);
+  }
+
+  // Character picker phase
+  if (phase === 'pick-character') {
+    return (
+      <div className="join-game-page">
+        <div className="join-game-card join-game-card-wide">
+          <h1>Choose Your Character</h1>
+          <p className="join-game-subtitle">Select the character you'll be playing</p>
+          <div className="character-picker-grid">
+            {characters.map((c) => (
+              <button
+                key={c.id}
+                className="character-picker-card"
+                onClick={() => selectCharacter(c.id)}
+              >
+                <div className="character-picker-portrait">
+                  {c.portrait_url ? (
+                    <img src={c.portrait_url} alt={c.name} />
+                  ) : (
+                    <span className="character-picker-initial">{c.name[0]}</span>
+                  )}
+                </div>
+                <div className="character-picker-info">
+                  <strong>{c.name}</strong>
+                  <span>Lvl {c.level} {c.race} {c.class_name}</span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -104,3 +170,4 @@ export function JoinGame() {
     </div>
   );
 }
+

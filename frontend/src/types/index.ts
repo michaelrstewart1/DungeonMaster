@@ -100,6 +100,8 @@ export interface GameState {
   narrative_history: string[];
   combat_state: CombatState | null;
   active_effects: Record<string, unknown>[];
+  detected_scene?: string;
+  scene_image_url?: string;
 }
 
 // Game Session

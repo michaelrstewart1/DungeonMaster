@@ -187,6 +187,10 @@ def create_app() -> FastAPI:
     os.makedirs(portraits_dir, exist_ok=True)
     app.mount("/api/portraits", StaticFiles(directory=portraits_dir), name="portraits")
 
+    scenes_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "generated_scenes")
+    os.makedirs(scenes_dir, exist_ok=True)
+    app.mount("/api/scene-images", StaticFiles(directory=scenes_dir), name="scene-images")
+
     return app
 
 

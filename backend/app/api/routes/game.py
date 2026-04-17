@@ -1,17 +1,22 @@
 """Game session management endpoints."""
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
+import hashlib
 import logging
+import os
 import random
 import re
+import urllib.parse
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+import httpx
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.schemas import GameStateResponse, CombatState
 from app.models.enums import GamePhase
 from app.api import storage
+from app.config import settings
 from app.db import get_db
 import app.repository as repo
 
@@ -1885,3 +1890,179 @@ async def narrate_tts(session_id: str, body: NarrateTTSRequest, request: Request
         media_type="audio/mpeg",
         headers={"Content-Disposition": "inline; filename=narration.mp3"},
     )
+
+
+# ─── Scene Image Generation ─────────────────────────────────────────────
+
+SCENE_IMAGES_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "generated_scenes")
+os.makedirs(SCENE_IMAGES_DIR, exist_ok=True)
+
+# Curated prompts per scene type for high-quality, consistent backgrounds
+_SCENE_PROMPTS: dict[str, str] = {
+    "tavern": "interior of a medieval fantasy tavern, warm firelight, wooden beams, mugs of ale on tables, cozy atmosphere",
+    "dungeon": "dark underground dungeon corridor, stone walls, flickering torchlight, iron chains, ominous shadows",
+    "forest": "ancient enchanted forest at twilight, massive trees, dappled moonlight, mystical fog between trunks",
+    "cave": "vast underground cavern with glowing crystals, stalactites, underground river, bioluminescent fungi",
+    "castle": "grand medieval castle throne room, tall stone pillars, stained glass windows, banners hanging from walls",
+    "battlefield": "aftermath of a medieval battle, scorched earth, broken weapons, smoke rising, dramatic sky",
+    "temple": "ancient stone temple interior, divine light streaming through cracks, altar with offerings, mystical runes",
+    "market": "bustling medieval fantasy marketplace, colorful stalls, exotic wares, crowded cobblestone street",
+    "ship": "deck of a fantasy sailing ship at sea, billowing sails, stormy horizon, wooden railing and rigging",
+    "mountain": "dramatic mountain pass at dawn, jagged peaks, narrow trail along cliff edge, clouds below",
+    "swamp": "murky fantasy swamp, gnarled dead trees, green fog, glowing eyes in darkness, still dark water",
+    "desert": "vast fantasy desert with ancient ruins half-buried in sand, scorching sun, heat shimmer",
+    "village": "quiet medieval village at dusk, thatched cottages, dirt road, smoke from chimneys, lantern light",
+    "camp": "adventurer campsite in wilderness at night, campfire, bedrolls, starry sky, surrounding darkness",
+    "road": "winding dirt road through rolling hills, distant mountains, dramatic clouds, lone waystone marker",
+}
+
+_SCENE_STYLE_SUFFIX = (
+    "wide panoramic landscape, dark fantasy digital painting, atmospheric, "
+    "dramatic cinematic lighting, muted earth tones, painterly style, "
+    "no text, no characters, no watermark, no UI elements"
+)
+
+
+def _scene_cache_key(scene_type: str) -> str:
+    """Deterministic cache key from scene type."""
+    return hashlib.sha256(scene_type.encode()).hexdigest()[:16]
+
+
+def _get_cached_scene_path(scene_type: str) -> str | None:
+    """Return filesystem path if cached image exists."""
+    key = _scene_cache_key(scene_type)
+    for ext in (".jpg", ".png"):
+        path = os.path.join(SCENE_IMAGES_DIR, f"{key}{ext}")
+        if os.path.exists(path):
+            return path
+    return None
+
+
+async def _generate_scene_dalle(scene_type: str) -> str | None:
+    """Generate scene image via OpenAI DALL-E 3. Returns file path or None."""
+    if not settings.openai_api_key:
+        return None
+
+    prompt_body = _SCENE_PROMPTS.get(scene_type, f"fantasy {scene_type} environment")
+    prompt = f"{prompt_body}, {_SCENE_STYLE_SUFFIX}"
+
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            resp = await client.post(
+                "https://api.openai.com/v1/images/generations",
+                headers={
+                    "Authorization": f"Bearer {settings.openai_api_key}",
+                    "Content-Type": "application/json",
+                },
+                json={
+                    "model": "dall-e-3",
+                    "prompt": prompt,
+                    "n": 1,
+                    "size": "1792x1024",
+                    "quality": "standard",
+                    "response_format": "url",
+                },
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            image_url = data["data"][0]["url"]
+
+            # Download the image
+            img_resp = await client.get(image_url)
+            img_resp.raise_for_status()
+
+            key = _scene_cache_key(scene_type)
+            path = os.path.join(SCENE_IMAGES_DIR, f"{key}.jpg")
+            with open(path, "wb") as f:
+                f.write(img_resp.content)
+
+            logger.info("DALL-E scene image generated for '%s' (%d bytes)", scene_type, len(img_resp.content))
+            return path
+    except Exception as e:
+        logger.warning("DALL-E scene generation failed for '%s': %s", scene_type, e)
+        return None
+
+
+async def _generate_scene_pollinations(scene_type: str) -> str | None:
+    """Generate scene image via Pollinations.ai (free, no API key). Returns file path or None."""
+    prompt_body = _SCENE_PROMPTS.get(scene_type, f"fantasy {scene_type} environment")
+    prompt = f"{prompt_body}, {_SCENE_STYLE_SUFFIX}"
+    encoded = urllib.parse.quote(prompt)
+    seed = int(hashlib.sha256(scene_type.encode()).hexdigest()[:8], 16)
+    url = f"https://image.pollinations.ai/prompt/{encoded}?width=1792&height=1024&seed={seed}&nologo=true"
+
+    try:
+        async with httpx.AsyncClient(timeout=90.0, follow_redirects=True) as client:
+            resp = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
+            resp.raise_for_status()
+
+            if len(resp.content) < 5000:
+                logger.warning("Pollinations returned suspiciously small image for '%s'", scene_type)
+                return None
+
+            key = _scene_cache_key(scene_type)
+            path = os.path.join(SCENE_IMAGES_DIR, f"{key}.jpg")
+            with open(path, "wb") as f:
+                f.write(resp.content)
+
+            logger.info("Pollinations scene image generated for '%s' (%d bytes)", scene_type, len(resp.content))
+            return path
+    except Exception as e:
+        logger.warning("Pollinations scene generation failed for '%s': %s", scene_type, e)
+        return None
+
+
+class SceneImageRequest(BaseModel):
+    """Request to generate a scene background image."""
+    scene_type: str = Field(..., description="Scene type: tavern, dungeon, forest, etc.")
+    description: Optional[str] = Field(default=None, description="Optional scene description for context")
+
+
+class SceneImageResponse(BaseModel):
+    """Response with the scene image URL."""
+    image_url: str = Field(..., description="URL to the scene background image")
+    scene_type: str = Field(..., description="Scene type this image represents")
+    cached: bool = Field(default=False, description="Whether this was served from cache")
+
+
+@router.post("/sessions/{session_id}/scene-image", response_model=SceneImageResponse)
+async def generate_scene_image(
+    session_id: str,
+    body: SceneImageRequest,
+    db: AsyncSession = Depends(get_db),
+) -> SceneImageResponse:
+    """Generate (or return cached) AI scene background image."""
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+
+    scene_type = body.scene_type.strip().lower()
+    if not scene_type:
+        raise HTTPException(status_code=400, detail="scene_type is required")
+
+    key = _scene_cache_key(scene_type)
+
+    # Check cache first
+    cached_path = _get_cached_scene_path(scene_type)
+    if cached_path:
+        url = f"/api/scene-images/{key}.jpg"
+        # Persist in session for reload
+        session["scene_image_url"] = url
+        await repo.save_game_session(db, session)
+        return SceneImageResponse(image_url=url, scene_type=scene_type, cached=True)
+
+    # Generate: try DALL-E first, fall back to Pollinations
+    path = await _generate_scene_dalle(scene_type)
+    if not path:
+        path = await _generate_scene_pollinations(scene_type)
+
+    if not path:
+        raise HTTPException(status_code=502, detail="Image generation failed — both providers unavailable")
+
+    url = f"/api/scene-images/{key}.jpg"
+
+    # Persist in session for reload
+    session["scene_image_url"] = url
+    await repo.save_game_session(db, session)
+
+    return SceneImageResponse(image_url=url, scene_type=scene_type, cached=False)

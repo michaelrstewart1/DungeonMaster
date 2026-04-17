@@ -40,7 +40,7 @@ function settleRotation(faceIndex: number): string {
 }
 
 interface DiceRollerProps {
-  onRoll: (notation: string) => void
+  onRoll?: (notation: string) => void
   lastResult?: DiceResult
 }
 
@@ -78,7 +78,7 @@ export function DiceRoller({ onRoll, lastResult }: DiceRollerProps) {
   }, [])
 
   const handleRoll = useCallback((die: DieType) => {
-    if (rolling) return
+    if (rolling || !onRoll) return
     setRolling(true)
     setActiveDie(die)
     setShowResult(false)
@@ -153,7 +153,7 @@ export function DiceRoller({ onRoll, lastResult }: DiceRollerProps) {
         role="button"
         tabIndex={0}
       >
-        <span className="dice-roller-title">⚔ Dice Roller</span>
+        <span className="dice-roller-title">🎲 {onRoll ? 'Dice Roller' : 'Dice Log'}</span>
         {showResult && lastResult && collapsed && (
           <span className="dice-roller-preview">{lastResult.notation}: {lastResult.total}</span>
         )}
@@ -162,8 +162,10 @@ export function DiceRoller({ onRoll, lastResult }: DiceRollerProps) {
 
       {!collapsed && (
         <>
-          {/* Dice Selection */}
-          <div className="dice-buttons">
+          {/* Dice Selection — only shown when interactive */}
+          {onRoll && (
+            <>
+              <div className="dice-buttons">
         {DICE_TYPES.map((die, idx) => (
           <button
             key={die}
@@ -199,6 +201,8 @@ export function DiceRoller({ onRoll, lastResult }: DiceRollerProps) {
           aria-label="Increase modifier"
         >+</button>
       </div>
+            </>
+          )}
 
       {/* 3D Dice Stage */}
       <div className={`dice-stage ${rolling ? 'dice-stage-active' : ''}`}>

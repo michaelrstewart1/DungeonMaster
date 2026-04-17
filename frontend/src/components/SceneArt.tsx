@@ -1,16 +1,21 @@
-import { useMemo } from 'react'
+import { useMemo, useState, useCallback } from 'react'
 
 export type SceneType = 'tavern' | 'dungeon' | 'forest' | 'cave' | 'castle' | 'battlefield'
+  | 'temple' | 'market' | 'ship' | 'mountain' | 'swamp' | 'desert' | 'village' | 'camp' | 'road'
 
 interface SceneArtProps {
-  sceneType?: SceneType
+  sceneType?: SceneType | string
+  /** AI-generated background image URL — fades in over the procedural CSS art */
+  backgroundImageUrl?: string
+  /** When true, renders only the generated image (no CSS art), used for full-screen bg */
+  imageOnly?: boolean
 }
 
 /**
  * Detects the scene type from DM narration text
  * Analyzes keywords to determine the appropriate atmospheric backdrop
  */
-export function detectScene(text: string): SceneType {
+export function detectScene(text: string): SceneType | string {
   const lowerText = text.toLowerCase()
 
   // Tavern keywords
@@ -281,9 +286,29 @@ function BattlefieldScene() {
   )
 }
 
-export function SceneArt({ sceneType = 'tavern' }: SceneArtProps) {
+export function SceneArt({ sceneType = 'tavern', backgroundImageUrl, imageOnly }: SceneArtProps) {
+  const [imageLoaded, setImageLoaded] = useState(false)
+  const [currentImageUrl, setCurrentImageUrl] = useState<string | null>(null)
+  const [prevImageUrl, setPrevImageUrl] = useState<string | null>(null)
+
+  // Cross-fade: when new URL arrives, move current to prev, start loading new
+  if (backgroundImageUrl && backgroundImageUrl !== currentImageUrl && backgroundImageUrl !== prevImageUrl) {
+    if (currentImageUrl) {
+      setPrevImageUrl(currentImageUrl)
+    }
+    setCurrentImageUrl(backgroundImageUrl)
+    setImageLoaded(false)
+  }
+
+  const handleImageLoad = useCallback(() => {
+    setImageLoaded(true)
+    // After fade completes, clear the old image
+    setTimeout(() => setPrevImageUrl(null), 2500)
+  }, [])
+
   const scene = useMemo(() => {
-    switch (sceneType) {
+    const type = sceneType as SceneType
+    switch (type) {
       case 'tavern':
         return <TavernScene />
       case 'dungeon':
@@ -297,13 +322,60 @@ export function SceneArt({ sceneType = 'tavern' }: SceneArtProps) {
       case 'battlefield':
         return <BattlefieldScene />
       default:
+        // For types without CSS art (temple, market, etc.), use tavern as fallback
         return <TavernScene />
     }
   }, [sceneType])
 
+  // Image-only mode: just render the generated image with fade (used for full-screen background)
+  if (imageOnly) {
+    return (
+      <div className="scene-art-container scene-art-image-only" aria-hidden="true">
+        {/* Previous image (fading out) */}
+        {prevImageUrl && (
+          <img
+            src={prevImageUrl}
+            alt=""
+            className="scene-art-bg-image scene-art-bg-prev"
+          />
+        )}
+        {/* Current image (fading in) */}
+        {currentImageUrl && (
+          <img
+            src={currentImageUrl}
+            alt=""
+            className={`scene-art-bg-image ${imageLoaded ? 'scene-art-bg-visible' : 'scene-art-bg-loading'}`}
+            onLoad={handleImageLoad}
+          />
+        )}
+        {/* Dark overlay for text readability */}
+        <div className="scene-art-image-overlay" />
+      </div>
+    )
+  }
+
   return (
     <div className="scene-art-container" aria-hidden="true">
-      {scene}
+      {/* AI-generated background image layer (behind CSS art) */}
+      {prevImageUrl && (
+        <img
+          src={prevImageUrl}
+          alt=""
+          className="scene-art-bg-image scene-art-bg-prev"
+        />
+      )}
+      {currentImageUrl && (
+        <img
+          src={currentImageUrl}
+          alt=""
+          className={`scene-art-bg-image ${imageLoaded ? 'scene-art-bg-visible' : 'scene-art-bg-loading'}`}
+          onLoad={handleImageLoad}
+        />
+      )}
+      {/* CSS procedural art as overlay */}
+      <div className={`scene-art-css-layer ${currentImageUrl && imageLoaded ? 'scene-art-css-dimmed' : ''}`}>
+        {scene}
+      </div>
     </div>
   )
 }

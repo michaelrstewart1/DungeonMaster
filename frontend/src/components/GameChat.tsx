@@ -61,6 +61,7 @@ interface GameChatProps {
   phase?: GamePhase
   characterName?: string
   characterClass?: string
+  displayOnly?: boolean
 }
 
 type MessageMood = 'danger' | 'magic' | 'nature' | 'social' | 'dark' | 'neutral'
@@ -234,7 +235,7 @@ function getQuickActions(phase: GamePhase): QuickAction[] {
   return EXPLORATION_ACTIONS
 }
 
-export function GameChat({ messages, onSubmitAction, onTalkToNPC, npcs = [], disabled = false, isWaitingForDM = false, phase = 'exploration', characterName, characterClass }: GameChatProps) {
+export function GameChat({ messages, onSubmitAction, onTalkToNPC, npcs = [], disabled = false, isWaitingForDM = false, phase = 'exploration', characterName, characterClass, displayOnly = false }: GameChatProps) {
   const [input, setInput] = useState('')
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [typedMessageCount, setTypedMessageCount] = useState(0)
@@ -417,79 +418,83 @@ export function GameChat({ messages, onSubmitAction, onTalkToNPC, npcs = [], dis
         </button>
       )}
 
-      <div className={`quick-actions ${isWaitingForDM ? 'waiting' : ''}`}>
-        {getQuickActions(phase).map((action, index) => (
-          <button
-            key={action.label}
-            type="button"
-            className="quick-action-btn"
-            data-category={action.category}
-            style={{ animationDelay: `${index * 0.05}s` }}
-            disabled={disabled || isWaitingForDM}
-            onClick={() => {
-              if (action.label === 'Talk to NPC' && onTalkToNPC && npcs.length > 0) {
-                setNpcPickerOpen(!npcPickerOpen)
-              } else {
-                onSubmitAction(`${action.emoji} ${action.label}`)
-              }
-            }}
-          >
-            <span className="quick-action-emoji">{action.emoji}</span>
-            <span className="quick-action-label">{action.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {npcPickerOpen && npcs.length > 0 && (
-        <div className="npc-picker">
-          <div className="npc-picker-header">
-            <span>💬 Who do you want to talk to?</span>
-            <button className="npc-picker-close" onClick={() => setNpcPickerOpen(false)}>✕</button>
-          </div>
-          <div className="npc-picker-list">
-            {npcs.map((npc) => (
+      {!displayOnly && (
+        <>
+          <div className={`quick-actions ${isWaitingForDM ? 'waiting' : ''}`}>
+            {getQuickActions(phase).map((action, index) => (
               <button
-                key={npc.name}
-                className="npc-picker-item"
-                onClick={() => handleNPCSelect(npc.name)}
+                key={action.label}
+                type="button"
+                className="quick-action-btn"
+                data-category={action.category}
+                style={{ animationDelay: `${index * 0.05}s` }}
+                disabled={disabled || isWaitingForDM}
+                onClick={() => {
+                  if (action.label === 'Talk to NPC' && onTalkToNPC && npcs.length > 0) {
+                    setNpcPickerOpen(!npcPickerOpen)
+                  } else {
+                    onSubmitAction(`${action.emoji} ${action.label}`)
+                  }
+                }}
               >
-                <span className="npc-picker-name">{npc.name}</span>
-                {npc.disposition && <span className={`npc-picker-disposition ${npc.disposition}`}>{npc.disposition}</span>}
-                {npc.location && <span className="npc-picker-location">📍 {npc.location}</span>}
+                <span className="quick-action-emoji">{action.emoji}</span>
+                <span className="quick-action-label">{action.label}</span>
               </button>
             ))}
           </div>
-        </div>
-      )}
 
-      <form onSubmit={handleSubmit} className="chat-input-form">
-        <div className="chat-input-wrapper">
-          {targetNPC && (
-            <span className="npc-target-badge" onClick={handleCancelNPCTarget} title="Click to cancel">
-              💬 To {targetNPC} ✕
-            </span>
+          {npcPickerOpen && npcs.length > 0 && (
+            <div className="npc-picker">
+              <div className="npc-picker-header">
+                <span>💬 Who do you want to talk to?</span>
+                <button className="npc-picker-close" onClick={() => setNpcPickerOpen(false)}>✕</button>
+              </div>
+              <div className="npc-picker-list">
+                {npcs.map((npc) => (
+                  <button
+                    key={npc.name}
+                    className="npc-picker-item"
+                    onClick={() => handleNPCSelect(npc.name)}
+                  >
+                    <span className="npc-picker-name">{npc.name}</span>
+                    {npc.disposition && <span className={`npc-picker-disposition ${npc.disposition}`}>{npc.disposition}</span>}
+                    {npc.location && <span className="npc-picker-location">📍 {npc.location}</span>}
+                  </button>
+                ))}
+              </div>
+            </div>
           )}
-          <textarea
-            ref={textareaRef}
-            value={input}
-            onChange={(e) => { setInput(e.target.value); autoResize() }}
-            onKeyDown={handleKeyDown}
-            placeholder={targetNPC ? `Say something to ${targetNPC}...` : 'What do you do? (Enter to send, Shift+Enter for new line)'}
-            disabled={disabled || isWaitingForDM}
-            className="chat-input"
-            rows={1}
-            maxLength={500}
-          />
-          {input.length > 400 && (
-            <span className={`chat-char-count ${input.length > 480 ? 'warn' : ''}`}>
-              {input.length}/500
-            </span>
-          )}
-        </div>
-        <button type="submit" disabled={disabled || isWaitingForDM || !input.trim()} className="chat-submit">
-          Send
-        </button>
-      </form>
+
+          <form onSubmit={handleSubmit} className="chat-input-form">
+            <div className="chat-input-wrapper">
+              {targetNPC && (
+                <span className="npc-target-badge" onClick={handleCancelNPCTarget} title="Click to cancel">
+                  💬 To {targetNPC} ✕
+                </span>
+              )}
+              <textarea
+                ref={textareaRef}
+                value={input}
+                onChange={(e) => { setInput(e.target.value); autoResize() }}
+                onKeyDown={handleKeyDown}
+                placeholder={targetNPC ? `Say something to ${targetNPC}...` : 'What do you do? (Enter to send, Shift+Enter for new line)'}
+                disabled={disabled || isWaitingForDM}
+                className="chat-input"
+                rows={1}
+                maxLength={500}
+              />
+              {input.length > 400 && (
+                <span className={`chat-char-count ${input.length > 480 ? 'warn' : ''}`}>
+                  {input.length}/500
+                </span>
+              )}
+            </div>
+            <button type="submit" disabled={disabled || isWaitingForDM || !input.trim()} className="chat-submit">
+              Send
+            </button>
+          </form>
+        </>
+      )}
     </div>
   )
 }

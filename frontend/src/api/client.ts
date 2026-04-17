@@ -410,4 +410,22 @@ export async function distributeLoot(
   });
 }
 
+// Scene Image Generation
+export interface SceneImageResponse {
+  image_url: string;
+  scene_type: string;
+  cached: boolean;
+}
+
+export async function generateSceneImage(
+  sessionId: string,
+  sceneType: string,
+  description?: string
+): Promise<SceneImageResponse> {
+  return request<SceneImageResponse>(`/game/sessions/${sessionId}/scene-image`, {
+    method: 'POST',
+    body: JSON.stringify({ scene_type: sceneType, description }),
+  });
+}
+
 export { ApiError };

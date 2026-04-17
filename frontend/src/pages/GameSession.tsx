@@ -25,6 +25,7 @@ import PartyInventory from '../components/PartyInventory'
 import LevelUpModal from '../components/LevelUpModal'
 import { SceneArt, detectScene } from '../components/SceneArt'
 import type { SceneType } from '../components/SceneArt'
+import { generateSceneImage } from '../api/client'
 import { EncounterPanel } from '../components/EncounterPanel'
 import { DeathSaveTracker } from '../components/DeathSaveTracker'
 import { SpellSlotTracker } from '../components/SpellSlotTracker'
@@ -33,6 +34,7 @@ import { AchievementToast, checkAchievements } from '../components/AchievementTo
 import type { Achievement } from '../components/AchievementToast'
 import { NPCJournal } from '../components/NPCJournal'
 import { EnvironmentPanel } from '../components/EnvironmentPanel'
+import { PlayerConnect } from '../components/PlayerConnect'
 import type { GameState, GameMap, DiceResult, Character } from '../types'
 import './GameSession.css'
 
@@ -81,6 +83,9 @@ export function GameSession() {
   const [showInventory, setShowInventory] = useState(false)
   const [showLevelUp, setShowLevelUp] = useState(false)
   const [currentScene, setCurrentScene] = useState<SceneType>('tavern')
+  const [sceneImageUrl, setSceneImageUrl] = useState<string | null>(null)
+  const [sceneImageCache, setSceneImageCache] = useState<Map<string, string>>(new Map())
+  const sceneImageRequestRef = useRef<string | null>(null)
   const [showDeathSaves, setShowDeathSaves] = useState(false)
   const [showSpellSlots, setShowSpellSlots] = useState(false)
   const [showNPCJournal, setShowNPCJournal] = useState(false)
@@ -88,6 +93,8 @@ export function GameSession() {
   const [rightSidebarOpen, setRightSidebarOpen] = useState(true)
   const [achievements, setAchievements] = useState<Achievement[]>([])
   const [unlockedAchievements, setUnlockedAchievements] = useState<Set<string>>(new Set())
+  const [connectedPlayers, setConnectedPlayers] = useState<Array<{ id: string; name: string; character_id?: string }>>([])
+  const [wsConnectionCount, setWsConnectionCount] = useState(0)
   const turnCounterRef = useRef(0)
   const partyCharsRef = useRef<Character[]>([])
 
@@ -108,6 +115,33 @@ export function GameSession() {
       setRightSidebarOpen(true)
     }
   }, [gameState?.phase])
+
+  // Generate scene background image when scene type changes
+  useEffect(() => {
+    if (!sessionId || !currentScene) return
+
+    // Check frontend cache first
+    const cached = sceneImageCache.get(currentScene)
+    if (cached) {
+      setSceneImageUrl(cached)
+      return
+    }
+
+    // Prevent duplicate requests for the same scene
+    if (sceneImageRequestRef.current === currentScene) return
+    sceneImageRequestRef.current = currentScene
+
+    generateSceneImage(sessionId, currentScene)
+      .then((resp) => {
+        setSceneImageUrl(resp.image_url)
+        setSceneImageCache(prev => new Map(prev).set(resp.scene_type, resp.image_url))
+        sceneImageRequestRef.current = null
+      })
+      .catch((err) => {
+        console.warn('Scene image generation failed:', err)
+        sceneImageRequestRef.current = null
+      })
+  }, [currentScene, sessionId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Detect screen effect from DM narration text
   const detectEffect = useCallback((text: string) => {
@@ -422,6 +456,12 @@ export function GameSession() {
     try {
       const state = await getGameState(sessionId)
       setGameState(state)
+      // Hydrate scene image URL from persisted state (instant on reload)
+      if (state.scene_image_url) {
+        setSceneImageUrl(state.scene_image_url)
+        const sceneType = state.detected_scene || 'tavern'
+        setSceneImageCache(prev => new Map(prev).set(sceneType, state.scene_image_url!))
+      }
       // Fetch campaign name for the header
       if (state.campaign_id) {
         try {
@@ -637,12 +677,27 @@ export function GameSession() {
           break
         }
         case 'player_joined': {
+          const joinPayload = msg.payload as { player_id: string; connection_count?: number }
+          setWsConnectionCount(joinPayload.connection_count ?? 0)
           const heroName = partyCharsRef.current[0]?.name || 'A new adventurer'
           setMessages((prev) => [...prev, { role: 'dm', text: `${heroName} has joined the party!`, timestamp: Date.now() }])
           break
         }
         case 'player_left': {
+          const leftPayload = msg.payload as { player_id: string; connection_count?: number }
+          setWsConnectionCount(leftPayload.connection_count ?? 0)
+          setConnectedPlayers(prev => prev.filter(p => p.id !== leftPayload.player_id))
           setMessages((prev) => [...prev, { role: 'dm', text: 'An adventurer has departed.', timestamp: Date.now() }])
+          break
+        }
+        case 'player_update' as string: {
+          const updatePayload = msg.payload as { players?: Array<{ id: string; name: string; character_id?: string }>; connection_count?: number }
+          if (updatePayload.players) {
+            setConnectedPlayers(updatePayload.players)
+          }
+          if (updatePayload.connection_count !== undefined) {
+            setWsConnectionCount(updatePayload.connection_count)
+          }
           break
         }
         case 'error': {
@@ -822,7 +877,7 @@ export function GameSession() {
         />
       )}
       <AtmosphericBackground atmosphere={atmosphere} />
-      <SceneArt sceneType={currentScene} />
+      <SceneArt sceneType={currentScene} backgroundImageUrl={sceneImageUrl ?? undefined} imageOnly />
       <ScreenEffects
         activeEffect={activeEffect}
         onEffectComplete={() => setActiveEffect(null)}
@@ -905,7 +960,8 @@ export function GameSession() {
             onMicToggle={handleMicToggle}
             onMuteToggle={handleMuteToggle}
           />
-          <PartyStatus characters={partyCharacters} />
+          <PartyStatus characters={partyCharacters} connectedCharacterIds={new Set(connectedPlayers.filter(p => p.character_id).map(p => p.character_id!))} />
+          <PlayerConnect sessionId={sessionId || ''} connectedCount={wsConnectionCount} partySize={partyCharacters.length} />
           <MiniMap sceneType={currentScene} />
           <EnvironmentPanel sessionId={sessionId || ''} />
         </aside>
@@ -934,18 +990,22 @@ export function GameSession() {
           ) : (
             <div className="scene-panel" aria-hidden="true">
               <div className="scene-panel-art">
-                <SceneArt sceneType={currentScene} />
+                {sceneImageUrl ? (
+                  <img src={sceneImageUrl} alt={currentScene} className="scene-panel-generated-img" />
+                ) : (
+                  <SceneArt sceneType={currentScene} />
+                )}
               </div>
               <div className="scene-panel-label">
                 <span className="scene-panel-icon">
-                  {currentScene === 'tavern' ? '🍺' : currentScene === 'dungeon' ? '⛓️' : currentScene === 'forest' ? '🌲' : currentScene === 'cave' ? '🕯️' : currentScene === 'castle' ? '🏰' : currentScene === 'battlefield' ? '⚔️' : '✦'}
+                  {currentScene === 'tavern' ? '🍺' : currentScene === 'dungeon' ? '⛓️' : currentScene === 'forest' ? '🌲' : currentScene === 'cave' ? '🕯️' : currentScene === 'castle' ? '🏰' : currentScene === 'battlefield' ? '⚔️' : currentScene === 'temple' ? '🛕' : currentScene === 'market' ? '🏪' : currentScene === 'ship' ? '⛵' : currentScene === 'mountain' ? '🏔️' : currentScene === 'swamp' ? '🌿' : currentScene === 'desert' ? '🏜️' : currentScene === 'village' ? '🏘️' : currentScene === 'camp' ? '🏕️' : currentScene === 'road' ? '🛤️' : '✦'}
                 </span>
                 <span className="scene-panel-name">{currentScene}</span>
               </div>
             </div>
           )}
           <div className={`chat-area ${!mapData ? '' : ''}`}>
-            <GameChat messages={messages} onSubmitAction={handleSubmitAction} onTalkToNPC={handleTalkToNPC} npcs={sessionNPCs} isWaitingForDM={waitingForDM} phase={gameState?.phase === 'combat' ? 'combat' : 'exploration'} characterName={partyCharacters[0]?.name} characterClass={partyCharacters[0]?.class_name} />
+            <GameChat messages={messages} onSubmitAction={handleSubmitAction} onTalkToNPC={handleTalkToNPC} npcs={sessionNPCs} isWaitingForDM={waitingForDM} phase={gameState?.phase === 'combat' ? 'combat' : 'exploration'} characterName={partyCharacters[0]?.name} characterClass={partyCharacters[0]?.class_name} displayOnly />
           </div>
         </div>
 
@@ -961,7 +1021,7 @@ export function GameSession() {
           <div className="sidebar-content">
             <InitiativeTracker combatants={combatants} />
             <CombatLog entries={combatLogEntries} isInCombat={gameState?.phase === 'combat'} />
-            <DiceRoller onRoll={handleDiceRoll} lastResult={lastDiceResult ?? undefined} />
+            <DiceRoller lastResult={lastDiceResult ?? undefined} />
             <EncounterPanel sessionId={sessionId || ''} partyLevel={partyCharacters[0]?.level || 1} />
           </div>
         </aside>
