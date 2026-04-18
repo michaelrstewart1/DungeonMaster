@@ -187,34 +187,83 @@ class PiperTTS(TTSProvider):
 
 
 class OpenAITTS(TTSProvider):
-    """OpenAI TTS API — supports multiple voices for DM narration and NPC dialogue."""
+    """OpenAI TTS API — gpt-4o-mini-tts with dramatic instructions for fantasy narration."""
 
     OPENAI_TTS_URL = "https://api.openai.com/v1/audio/speech"
 
-    # DM personality → OpenAI voice mapping
-    DM_VOICE_MAP = {
-        "classic_wizard": "onyx",      # deep, gravelly wizard
-        "dark_lord": "echo",           # cold, menacing
-        "theatrical_bard": "fable",    # expressive, dramatic
-        "trickster": "ash",            # wry, quick
-        "scholarly_sage": "sage",      # measured, thoughtful
-        "battle_commander": "onyx",    # commanding, authoritative
+    # DM personality → (voice, dramatic instructions)
+    DM_VOICE_MAP: dict[str, tuple[str, str]] = {
+        "classic_wizard": ("ash", (
+            "You are the voice of an ancient, powerful wizard narrating a Dungeons & Dragons adventure. "
+            "Speak with deep gravitas and theatrical weight. Use dramatic pauses before revealing key details. "
+            "Let wonder and mystery drip from every word. When describing danger, lower your voice to a near-whisper. "
+            "When describing triumph, let your voice swell with pride. You are telling an epic tale by firelight."
+        )),
+        "dark_lord": ("echo", (
+            "You are a menacing, cold narrator — like a dark lord recounting events with cruel amusement. "
+            "Speak slowly and deliberately, savoring each word. Your tone is sinister and foreboding. "
+            "Pause before threats. Let malice seep into descriptions of danger. "
+            "Even mundane descriptions carry an undertone of dread."
+        )),
+        "theatrical_bard": ("fable", (
+            "You are a flamboyant, theatrical bard performing a grand tale for a captivated audience. "
+            "Your voice is rich, expressive, and full of emotion — you go big on every moment. "
+            "Gasp at surprises, whisper conspiracies, boom with heroic declarations. "
+            "Every sentence is a performance. You live for the drama."
+        )),
+        "trickster": ("ash", (
+            "You are a wry, mischievous trickster narrating with sly amusement. "
+            "Your pacing is quick and playful, with unexpected pauses for comic timing. "
+            "You find everything slightly amusing. Lean into irony and wit. "
+            "Even danger gets a sardonic twist."
+        )),
+        "scholarly_sage": ("sage", (
+            "You are a wise, ancient sage recounting events with measured gravitas. "
+            "Speak thoughtfully, as if choosing each word with great care. "
+            "Your tone carries the weight of centuries of knowledge. "
+            "Pause to let important revelations land. Convey awe when describing the arcane or divine."
+        )),
+        "battle_commander": ("onyx", (
+            "You are a grizzled battle commander narrating with commanding authority. "
+            "Your voice is powerful and decisive. Descriptions of combat are sharp and intense. "
+            "You bark out action sequences with urgency. In quiet moments, your voice carries "
+            "the weariness and resolve of a veteran who has seen too many wars."
+        )),
     }
 
-    # Voice pool for NPCs — cycled per-NPC, persisted by name
-    NPC_VOICE_POOL = ["nova", "shimmer", "coral", "alloy", "ballad", "verse", "echo", "fable"]
+    # Default dramatic instructions when no personality matches
+    DEFAULT_DM_INSTRUCTIONS = (
+        "You are a dramatic fantasy narrator for a Dungeons & Dragons game. "
+        "Speak with theatrical gravitas. Use dramatic pacing — pause before reveals, "
+        "whisper in moments of tension, swell with energy during action and triumph. "
+        "You are telling an epic tale. Make every word count."
+    )
+
+    # NPC voice pool with character archetypes for varied delivery
+    NPC_VOICE_POOL: list[tuple[str, str]] = [
+        ("nova", "Speak as a confident, warm female character in a fantasy world. Be expressive and natural."),
+        ("shimmer", "Speak as a mysterious, ethereal character. Your voice carries otherworldly elegance."),
+        ("coral", "Speak as a bold, passionate character. You feel deeply and express yourself with fire."),
+        ("alloy", "Speak as a gruff, no-nonsense character. Short sentences, direct, and rough around the edges."),
+        ("ballad", "Speak as a gentle, wise character. Your words carry calm authority and kindness."),
+        ("verse", "Speak as a young, eager character. You are enthusiastic and full of wonder."),
+        ("echo", "Speak as a cold, calculating character. Every word is measured and deliberate."),
+        ("fable", "Speak as a theatrical, larger-than-life character. You love being the center of attention."),
+    ]
 
     def __init__(
         self,
         api_key: str,
         voice: str = "onyx",
-        model: str = "tts-1-hd",
+        model: str = "gpt-4o-mini-tts",
+        speed: float = 0.9,
     ) -> None:
         self.voice = voice
         self.model = model
+        self.speed = speed
         self._api_key = api_key
         self._client: object | None = None
-        self._npc_voice_map: dict[str, str] = {}  # NPC name → voice
+        self._npc_voice_map: dict[str, tuple[str, str]] = {}  # NPC name → (voice, instructions)
         self._npc_voice_idx = 0
 
     def _get_client(self):  # type: ignore[return]
@@ -234,20 +283,38 @@ class OpenAITTS(TTSProvider):
                 raise ImportError("httpx is required for OpenAITTS.  pip install httpx") from exc
         return self._client
 
-    async def synthesize(self, text: str, voice: str | None = None) -> bytes:
+    async def synthesize(
+        self,
+        text: str,
+        voice: str | None = None,
+        instructions: str | None = None,
+        speed: float | None = None,
+    ) -> bytes:
         """Call OpenAI TTS API and return raw MP3 bytes."""
         if not text or not text.strip():
             raise ValueError("text cannot be empty")
 
+        payload: dict = {
+            "model": self.model,
+            "input": text,
+            "voice": voice or self.voice,
+            "speed": speed or self.speed,
+        }
+        # gpt-4o-mini-tts supports instructions for style control
+        if instructions and "gpt-4o" in self.model:
+            payload["instructions"] = instructions
+
         client = self._get_client()
-        response = await client.post(
-            self.OPENAI_TTS_URL,
-            json={"model": self.model, "input": text, "voice": voice or self.voice},
-        )
+        response = await client.post(self.OPENAI_TTS_URL, json=payload)
         response.raise_for_status()
         return response.content
 
-    async def synthesize_stream(self, text: str, voice: str | None = None) -> AsyncGenerator[AudioChunk, None]:
+    async def synthesize_stream(
+        self,
+        text: str,
+        voice: str | None = None,
+        instructions: str | None = None,
+    ) -> AsyncGenerator[AudioChunk, None]:
         """Synthesize sentence-by-sentence and stream AudioChunks back."""
         if not text or not text.strip():
             raise ValueError("text cannot be empty")
@@ -257,52 +324,64 @@ class OpenAITTS(TTSProvider):
             if not sentence.strip():
                 continue
             is_final = i == len(sentences) - 1
-            audio_data = await self.synthesize(sentence, voice=voice)
+            audio_data = await self.synthesize(sentence, voice=voice, instructions=instructions)
             yield AudioChunk(data=audio_data, sample_rate=24000, is_final=is_final)
 
     async def synthesize_narration(
         self, text: str, dm_personality: str = "classic_wizard"
     ) -> AsyncGenerator[AudioChunk, None]:
-        """Parse narration into DM/NPC segments and synthesize with appropriate voices.
+        """Parse narration into DM/NPC segments and synthesize with dramatic voices.
 
-        Detects quoted NPC dialogue (e.g. 'Kaelrath says, "Hello there"')
-        and uses character-specific voices. Everything else uses the DM voice.
+        DM narration uses personality-specific voice + instructions.
+        NPC dialogue uses character-specific voice + archetype instructions.
         """
-        dm_voice = self.DM_VOICE_MAP.get(dm_personality, self.voice)
+        dm_voice, dm_instructions = self.DM_VOICE_MAP.get(
+            dm_personality, (self.voice, self.DEFAULT_DM_INSTRUCTIONS)
+        )
         segments = self._parse_voice_segments(text)
 
-        for i, (segment_text, segment_voice) in enumerate(segments):
+        for i, (segment_text, segment_npc) in enumerate(segments):
             if not segment_text.strip():
                 continue
-            voice = segment_voice or dm_voice
             is_final = i == len(segments) - 1
+
+            if segment_npc:
+                # NPC dialogue — use character voice + archetype instructions
+                npc_voice, npc_instructions = self.get_npc_voice(segment_npc)
+                voice = npc_voice
+                instructions = npc_instructions
+            else:
+                # DM narration
+                voice = dm_voice
+                instructions = dm_instructions
+
             try:
-                audio_data = await self.synthesize(segment_text, voice=voice)
+                audio_data = await self.synthesize(segment_text, voice=voice, instructions=instructions)
                 yield AudioChunk(data=audio_data, sample_rate=24000, is_final=is_final)
             except Exception as e:
                 logger.warning("TTS segment failed: %s", e)
                 continue
 
-    def get_npc_voice(self, npc_name: str) -> str:
-        """Get or assign a consistent voice for an NPC."""
+    def get_npc_voice(self, npc_name: str) -> tuple[str, str]:
+        """Get or assign a consistent voice + instructions for an NPC."""
         name_lower = npc_name.lower().strip()
         if name_lower not in self._npc_voice_map:
-            voice = self.NPC_VOICE_POOL[self._npc_voice_idx % len(self.NPC_VOICE_POOL)]
-            self._npc_voice_map[name_lower] = voice
+            voice, instructions = self.NPC_VOICE_POOL[self._npc_voice_idx % len(self.NPC_VOICE_POOL)]
+            self._npc_voice_map[name_lower] = (voice, instructions)
             self._npc_voice_idx += 1
             logger.info("TTS: Assigned voice '%s' to NPC '%s'", voice, npc_name)
         return self._npc_voice_map[name_lower]
 
     def _parse_voice_segments(self, text: str) -> list[tuple[str, str | None]]:
-        """Parse narration text into (text, voice) segments.
+        """Parse narration text into (text, npc_name_or_None) segments.
 
         Detects patterns like:
           - 'Kaelrath says, "..."'
           - '"Hello," Kaelrath replies.'
           - Kaelrath: "..."
 
-        Returns list of (text_segment, voice_or_None).
-        None voice means use DM voice.
+        Returns list of (text_segment, npc_name_or_None).
+        None means DM narration.
         """
         # Pattern: NPC name followed by speech verb and quoted text
         # Also handles "text," Name verb patterns
@@ -344,8 +423,7 @@ class OpenAITTS(TTSProvider):
             else:
                 continue
 
-            npc_voice = self.get_npc_voice(npc_name)
-            segments.append((speech, npc_voice))
+            segments.append((speech, npc_name))
             last_end = match.end()
 
         # Add remaining narration

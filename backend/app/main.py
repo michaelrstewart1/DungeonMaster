@@ -100,8 +100,10 @@ def _init_app_state(app: FastAPI) -> None:
                 api_key=settings.openai_api_key,
                 voice=settings.openai_tts_voice,
                 model=settings.openai_tts_model,
+                speed=settings.openai_tts_speed,
             )
-            logger.info("TTS: OpenAI TTS ready (voice=%s)", settings.openai_tts_voice)
+            logger.info("TTS: OpenAI TTS ready (model=%s, voice=%s, speed=%.1f)",
+                         settings.openai_tts_model, settings.openai_tts_voice, settings.openai_tts_speed)
         except Exception as exc:  # pragma: no cover
             logger.warning("TTS: could not init OpenAI TTS (%s) — using FakeTTS", exc)
 

@@ -30,9 +30,10 @@ class Settings(BaseSettings):
     stt_model: str = "base.en"
     tts_engine: str = "piper"  # piper, xtts, openai
 
-    # OpenAI TTS (wizard voice)
+    # OpenAI TTS — gpt-4o-mini-tts supports 'instructions' for dramatic narration
     openai_tts_voice: str = "onyx"   # onyx = deep, gravelly, perfect for wizard DM
-    openai_tts_model: str = "tts-1-hd"  # HD model for best quality
+    openai_tts_model: str = "gpt-4o-mini-tts"  # supports instructions for dramatic delivery
+    openai_tts_speed: float = 0.9  # slightly slower for dramatic weight
 
     model_config = {"env_prefix": "DM_", "env_file": ".env"}
 
