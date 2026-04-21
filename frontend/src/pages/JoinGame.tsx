@@ -141,6 +141,8 @@ export function JoinGame() {
               placeholder="e.g. Cohen, Brody, Kit"
               maxLength={30}
               autoFocus
+              autoComplete="nickname"
+              spellCheck={false}
             />
           </label>
 
@@ -153,6 +155,10 @@ export function JoinGame() {
               onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
               placeholder="ABCD"
               maxLength={6}
+              autoCapitalize="characters"
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
             />
           </label>
 

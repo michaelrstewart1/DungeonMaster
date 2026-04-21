@@ -11,6 +11,7 @@
 /* Fullscreen mode for game session — no navbar/footer, 100vh */
 .app-fullscreen {
   height: 100vh;
+  height: 100dvh;
   overflow: hidden;
 }
 
@@ -3734,6 +3735,7 @@
 
 .dice-btn {
   padding: 0.6rem 0.25rem;
+  min-height: 44px;
   background: linear-gradient(180deg, var(--bg-light) 0%, var(--bg-dark) 100%);
   border: 1px solid var(--gold-border);
   border-radius: 8px;
@@ -3748,6 +3750,8 @@
   text-transform: uppercase;
   letter-spacing: 0.05em;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04), 0 2px 4px rgba(0, 0, 0, 0.2);
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .dice-btn:hover {
@@ -6242,11 +6246,12 @@
 /* ─── Join Game Page ─── */
 .join-game-page {
   min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   align-items: center;
   justify-content: center;
   background: radial-gradient(ellipse at center, #1a1a2e 0%, #0d0d14 70%);
-  padding: 1rem;
+  padding: max(1rem, env(safe-area-inset-top)) max(1rem, env(safe-area-inset-right)) max(1rem, env(safe-area-inset-bottom)) max(1rem, env(safe-area-inset-left));
 }
 
 .join-game-card {
@@ -6341,6 +6346,8 @@
   font-weight: 700;
   cursor: pointer;
   transition: transform 0.2s, box-shadow 0.2s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .join-game-btn:hover:not(:disabled) {
@@ -6382,6 +6389,8 @@
   align-items: center;
   gap: 0.5rem;
   transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .character-picker-card:hover {
@@ -6653,12 +6662,14 @@
 
 /* ─── Player View (Mobile) ─── */
 .player-view {
-  min-height: 100vh;
+  flex: 1;
+  min-height: 0;
   background: #0d0d14;
   color: #e0e0e8;
   display: flex;
   flex-direction: column;
   font-family: 'Crimson Text', serif;
+  overflow: hidden;
 }
 
 .pv-topbar {
@@ -6666,6 +6677,7 @@
   align-items: center;
   gap: 0.5rem;
   padding: 0.6rem 1rem;
+  padding-top: max(0.6rem, env(safe-area-inset-top));
   background: rgba(30, 30, 50, 0.95);
   border-bottom: 1px solid var(--gold-border, rgba(212, 168, 70, 0.25));
 }
@@ -6747,6 +6759,8 @@
   display: flex;
   background: rgba(20, 20, 35, 0.95);
   border-bottom: 1px solid var(--gold-border, rgba(212, 168, 70, 0.2));
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
 }
 
 .pv-tab {
@@ -6755,11 +6769,14 @@
   border: none;
   color: var(--text-dim, #8a8aa0);
   padding: 0.6rem;
+  min-height: 44px;
   font-family: 'Cinzel', serif;
   font-size: 0.8rem;
   cursor: pointer;
   border-bottom: 2px solid transparent;
   transition: color 0.2s, border-color 0.2s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .pv-tab-active {
@@ -6782,6 +6799,8 @@
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
 }
 
 .pv-narrative-empty {
@@ -6861,6 +6880,10 @@
   font-size: 1.1rem;
   cursor: pointer;
   transition: background 0.2s;
+  min-height: 44px;
+  min-width: 44px;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .pv-action-btn:hover:not(:disabled), .pv-chat-btn:hover:not(:disabled) {
@@ -7045,7 +7068,7 @@
   position: relative;
   display: flex;
   justify-content: center;
-  padding: 0.6rem 0.75rem 0.9rem;
+  padding: 0.6rem 0.75rem max(0.9rem, env(safe-area-inset-bottom));
   background: rgba(15, 15, 28, 0.95);
   border-top: 1px solid rgba(212, 168, 70, 0.1);
 }
@@ -7183,6 +7206,8 @@
   min-height: 52px;
   transition: border-color 0.15s, background 0.15s;
   line-height: 1.2;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .pv-quick-action-btn span:first-child {

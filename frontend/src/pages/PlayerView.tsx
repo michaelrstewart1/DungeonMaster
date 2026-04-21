@@ -211,9 +211,14 @@ export function PlayerView() {
     }
   }, [messages, character]);
 
-  // Auto-scroll feed
+  // Auto-scroll feed — only when user is already near the bottom
   useEffect(() => {
-    feedRef.current?.scrollTo({ top: feedRef.current.scrollHeight, behavior: 'smooth' });
+    const feed = feedRef.current;
+    if (!feed) return;
+    const isNearBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 100;
+    if (isNearBottom) {
+      feed.scrollTo({ top: feed.scrollHeight, behavior: 'smooth' });
+    }
   }, [narrative]);
 
   // Push-to-talk handlers
@@ -257,6 +262,21 @@ export function PlayerView() {
       recorder.stop();
     }
     setIsRecording(false);
+  }, []);
+
+  // Stop recording if page is hidden (phone notification, call, app switch)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.hidden) {
+        const recorder = mediaRecorderRef.current;
+        if (recorder && recorder.state !== 'inactive') {
+          recorder.stop();
+          setIsRecording(false);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
   function handleSendAction(text?: string) {
@@ -405,6 +425,10 @@ export function PlayerView() {
               onKeyDown={(e) => e.key === 'Enter' && handleSendAction()}
               placeholder={isTranscribing ? 'Transcribing...' : isMyTurn ? "It's your turn! What do you do?" : 'What do you do?'}
               disabled={waitingForDM}
+              autoComplete="off"
+              autoCorrect="off"
+              spellCheck={false}
+              inputMode="text"
             />
             <button className="pv-action-btn" onClick={() => handleSendAction()} disabled={!actionText.trim() || waitingForDM}>
               ⚔️
@@ -421,6 +445,7 @@ export function PlayerView() {
               onPointerDown={(e) => { e.preventDefault(); startRecording(); }}
               onPointerUp={(e) => { e.preventDefault(); stopRecording(); }}
               onPointerLeave={() => { if (isRecording) stopRecording(); }}
+              onPointerCancel={() => { if (isRecording) stopRecording(); }}
               onContextMenu={(e) => e.preventDefault()}
               disabled={micPermission === 'denied'}
               aria-label="Push to talk"
