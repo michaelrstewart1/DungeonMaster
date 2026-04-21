@@ -221,11 +221,13 @@ class DMNarrator:
             )
             logger.info("LLM response received (%d chars)", len(response.content))
 
-            # Update history
-            self._add_to_history(
-                LLMMessage(role="user", content=user_message),
-                LLMMessage(role="assistant", content=response.content),
-            )
+            # Only update global fallback history when session_history wasn't provided;
+            # production always passes session_history so we avoid cross-session leakage.
+            if session_history is None:
+                self._add_to_history(
+                    LLMMessage(role="user", content=user_message),
+                    LLMMessage(role="assistant", content=response.content),
+                )
 
             raw = response.content
             stripped = _strip_action_echo(raw, player_action)
@@ -297,11 +299,11 @@ class DMNarrator:
                 max_tokens=300,
             )
 
-            # Update history
-            self._add_to_history(
-                LLMMessage(role="user", content=user_message),
-                LLMMessage(role="assistant", content=response.content),
-            )
+            if session_history is None:
+                self._add_to_history(
+                    LLMMessage(role="user", content=user_message),
+                    LLMMessage(role="assistant", content=response.content),
+                )
 
             return response.content
 
@@ -414,11 +416,11 @@ class DMNarrator:
                 max_tokens=300,
             )
 
-            # Update history
-            self._add_to_history(
-                LLMMessage(role="user", content=user_message),
-                LLMMessage(role="assistant", content=response.content),
-            )
+            if session_history is None:
+                self._add_to_history(
+                    LLMMessage(role="user", content=user_message),
+                    LLMMessage(role="assistant", content=response.content),
+                )
 
             return response.content
 
@@ -470,11 +472,11 @@ class DMNarrator:
                 max_tokens=400,
             )
 
-            # Update history
-            self._add_to_history(
-                LLMMessage(role="user", content=user_message),
-                LLMMessage(role="assistant", content=response.content),
-            )
+            if session_history is None:
+                self._add_to_history(
+                    LLMMessage(role="user", content=user_message),
+                    LLMMessage(role="assistant", content=response.content),
+                )
 
             return response.content
 
@@ -694,10 +696,11 @@ class DMNarrator:
                 temperature=0.85,
                 max_tokens=400,
             )
-            self._add_to_history(
-                LLMMessage(role="user", content=user_message),
-                LLMMessage(role="assistant", content=response.content),
-            )
+            if session_history is None:
+                self._add_to_history(
+                    LLMMessage(role="user", content=user_message),
+                    LLMMessage(role="assistant", content=response.content),
+                )
             return response.content
         except Exception as e:
             logger.error("Error in narrate_boss_encounter: %s", e)

@@ -6353,6 +6353,88 @@
   cursor: not-allowed;
 }
 
+/* Wider card variant for character picker phase */
+.join-game-card.join-game-card-wide {
+  max-width: 640px;
+  max-height: calc(100vh - 2rem);
+  overflow-y: auto;
+}
+
+/* ─── Character Picker (mobile join flow) ─── */
+.character-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.character-picker-card {
+  background: rgba(20, 20, 40, 0.9);
+  border: 1px solid var(--gold-border, rgba(212, 168, 70, 0.3));
+  border-radius: 10px;
+  padding: 0.85rem 0.65rem;
+  cursor: pointer;
+  text-align: center;
+  color: #e0e0e8;
+  font-family: 'Crimson Text', serif;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  transition: border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+}
+
+.character-picker-card:hover {
+  border-color: var(--gold);
+  transform: translateY(-3px);
+  box-shadow: 0 6px 20px rgba(212, 168, 70, 0.2);
+}
+
+.character-picker-portrait {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid var(--gold-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(212, 168, 70, 0.07);
+  flex-shrink: 0;
+}
+
+.character-picker-portrait img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.character-picker-initial {
+  font-size: 2rem;
+  font-family: 'Cinzel', serif;
+  color: var(--gold);
+  line-height: 1;
+}
+
+.character-picker-info {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  align-items: center;
+}
+
+.character-picker-info strong {
+  font-family: 'Cinzel', serif;
+  font-size: 0.85rem;
+  color: var(--gold-light, #e8c36a);
+  line-height: 1.2;
+}
+
+.character-picker-info span {
+  font-size: 0.72rem;
+  color: var(--text-dim, #8a8aa0);
+}
+
 /* ─── Lobby Page ─── */
 .lobby-page {
   min-height: 100vh;
@@ -7076,7 +7158,156 @@
   100% { width: 160px; height: 80px; opacity: 0; }
 }
 
-/* ─── DM Display (TV Mode) ─── */
+/* ─── PlayerView: Quick Actions ─── */
+.pv-quick-actions {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.35rem;
+  padding: 0.5rem;
+}
+
+.pv-quick-action-btn {
+  background: rgba(20, 20, 40, 0.85);
+  border: 1px solid var(--gold-border, rgba(212, 168, 70, 0.25));
+  border-radius: 8px;
+  color: #e0e0e8;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.2rem;
+  padding: 0.5rem 0.3rem;
+  font-family: 'Crimson Text', serif;
+  font-size: 0.75rem;
+  min-height: 52px;
+  transition: border-color 0.15s, background 0.15s;
+  line-height: 1.2;
+}
+
+.pv-quick-action-btn span:first-child {
+  font-size: 1.2rem;
+}
+
+.pv-quick-action-btn:hover:not(:disabled) {
+  border-color: var(--gold-dim);
+  background: rgba(212, 168, 70, 0.08);
+}
+
+.pv-quick-action-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ─── PlayerView: Dice tab ─── */
+.pv-dice-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+/* ─── PlayerView: Narrative entry text ─── */
+.pv-entry-text {
+  word-break: break-word;
+  line-height: 1.5;
+}
+
+/* ─── PlayerConnect (QR code sidebar widget) ─── */
+.player-connect {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(13, 13, 20, 0.7);
+  border: 1px solid var(--gold-border, rgba(212, 168, 70, 0.25));
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.player-connect-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+  background: rgba(212, 168, 70, 0.04);
+  user-select: none;
+  transition: background 0.15s;
+}
+
+.player-connect-header:hover {
+  background: rgba(212, 168, 70, 0.08);
+}
+
+.player-connect-title {
+  font-family: 'Cinzel', serif;
+  font-size: 0.78rem;
+  color: var(--gold-light, #e8c36a);
+  flex: 1;
+}
+
+.player-connect-count {
+  font-size: 0.78rem;
+  color: var(--gold-dim);
+  background: rgba(212, 168, 70, 0.1);
+  border-radius: 10px;
+  padding: 0.1rem 0.45rem;
+}
+
+.player-connect-chevron {
+  font-size: 0.65rem;
+  color: var(--gold-dim);
+  transition: transform 0.2s;
+  display: inline-block;
+}
+
+.player-connect-chevron.expanded {
+  transform: rotate(90deg);
+}
+
+.player-connect-code {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.4rem 0.75rem;
+  border-top: 1px solid rgba(212, 168, 70, 0.12);
+}
+
+.room-code-label {
+  font-size: 0.7rem;
+  color: var(--text-dim, #8a8aa0);
+  font-family: 'Cinzel', serif;
+}
+
+.room-code-value {
+  font-family: 'Cinzel', serif;
+  font-size: 1.1rem;
+  color: var(--gold);
+  letter-spacing: 0.18em;
+  font-weight: 700;
+}
+
+.player-connect-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.75rem;
+  border-top: 1px solid rgba(212, 168, 70, 0.12);
+}
+
+.player-connect-qr svg {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+}
+
+.player-connect-qr-label {
+  font-size: 0.7rem;
+  color: var(--text-dim, #8a8aa0);
+  font-style: italic;
+}
 .dm-display {
   width: 100vw;
   height: 100vh;
