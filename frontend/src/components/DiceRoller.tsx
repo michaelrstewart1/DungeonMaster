@@ -42,10 +42,11 @@ function settleRotation(faceIndex: number): string {
 interface DiceRollerProps {
   onRoll?: (notation: string) => void
   lastResult?: DiceResult
+  defaultExpanded?: boolean
 }
 
-export function DiceRoller({ onRoll, lastResult }: DiceRollerProps) {
-  const [collapsed, setCollapsed] = useState(true)
+export function DiceRoller({ onRoll, lastResult, defaultExpanded = false }: DiceRollerProps) {
+  const [collapsed, setCollapsed] = useState(!defaultExpanded)
   const [rolling, setRolling] = useState(false)
   const [activeDie, setActiveDie] = useState<DieType>('d20')
   const [modifier, setModifier] = useState(0)

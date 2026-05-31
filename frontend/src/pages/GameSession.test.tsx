@@ -31,6 +31,9 @@ vi.mock('../api/client', () => ({
   addSessionNPC: () => Promise.resolve({}),
   getEnvironment: () => Promise.resolve({ time_of_day: 'morning', weather: 'clear', temperature: 'mild', season: 'summer' }),
   updateEnvironment: () => Promise.resolve({}),
+  talkToNPC: () => Promise.resolve({ response: '' }),
+  getMapState: () => Promise.resolve(null),
+  generateSceneImage: () => Promise.resolve({ image_url: '', scene_type: 'tavern' }),
 }))
 
 const mockConnect = vi.fn()

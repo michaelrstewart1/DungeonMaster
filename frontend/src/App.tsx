@@ -58,6 +58,11 @@ function AppLayout() {
             <span className="brand-icon" aria-hidden="true">⚔️</span>
             <span className="brand-text">AI Dungeon Master</span>
           </Link>
+          <div className="navbar-actions">
+            <Link to="/join" className="navbar-link" data-testid="nav-join">
+              🎲 Join Game
+            </Link>
+          </div>
         </nav>
       )}
       <main id="main-content" className={isGameSession || isFullscreen ? 'main-fullscreen' : ''}>

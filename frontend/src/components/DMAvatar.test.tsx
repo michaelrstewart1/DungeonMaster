@@ -10,7 +10,7 @@ describe('DMAvatar', () => {
 
   it('shows the DM face element', () => {
     render(<DMAvatar expression="neutral" isSpeaking={false} />)
-    expect(document.querySelector('.avatar-face')).toBeTruthy()
+    expect(document.querySelector('.dm-avatar-frame')).toBeTruthy()
   })
 
   it('applies expression class', () => {
@@ -35,10 +35,11 @@ describe('DMAvatar', () => {
 
   it('animates mouth based on amplitude', () => {
     render(<DMAvatar expression="neutral" isSpeaking={true} mouthAmplitude={0.8} />)
-    const mouth = document.querySelector('.avatar-mouth') as HTMLElement
+    const mouth = document.querySelector('.avatar-mouth-shape')
     expect(mouth).toBeTruthy()
-    // Mouth height should scale with amplitude
-    expect(mouth.style.height).toBeTruthy()
+    // Mouth ellipse should size with amplitude (rx and ry attributes)
+    expect(mouth?.getAttribute('ry')).toBeTruthy()
+    expect(Number(mouth?.getAttribute('ry'))).toBeGreaterThan(0)
   })
 
   it('shows idle animation when not speaking', () => {

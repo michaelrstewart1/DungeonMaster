@@ -907,6 +907,14 @@ export function GameSession() {
           <button className="btn-keyboard-help" onClick={() => setShowKeyboardHelp(v => !v)} title="Keyboard shortcuts (?)">
             ⌨
           </button>
+          <button
+            className="btn-open-lobby"
+            onClick={() => navigate(`/lobby/${sessionId}`)}
+            title="Open lobby — show join code so friends can play from their phones"
+            data-testid="btn-open-lobby"
+          >
+            👥
+          </button>
           <div className="ws-status">
             <span className={`ws-dot ${wsConnected ? 'connected' : 'disconnected'}`} />
             <span>{wsConnected ? 'Connected' : 'Connecting...'}</span>
@@ -990,7 +998,14 @@ export function GameSession() {
           <div className="sidebar-content">
             <InitiativeTracker combatants={combatants} />
             <CombatLog entries={combatLogEntries} isInCombat={gameState?.phase === 'combat'} />
-            <DiceRoller lastResult={lastDiceResult ?? undefined} />
+            <DiceRoller
+              lastResult={lastDiceResult ?? undefined}
+              onRoll={(notation) => {
+                if (wsRef.current) {
+                  wsRef.current.send({ type: 'dice_roll', notation })
+                }
+              }}
+            />
             <EncounterPanel sessionId={sessionId || ''} partyLevel={partyCharacters[0]?.level || 1} />
           </div>
         </aside>

@@ -8632,3 +8632,76 @@
 .character-creator .btn-secondary:hover {
   opacity: 1;
 }
+
+/* ============================================================
+   Navbar — Join Game link (added for multiplayer entry point)
+   ============================================================ */
+.navbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.navbar-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1.1rem;
+  background: linear-gradient(135deg, var(--gold-bg) 0%, rgba(212, 168, 70, 0.18) 100%);
+  color: var(--gold-light);
+  text-decoration: none;
+  border: 1px solid var(--gold-border);
+  border-radius: 6px;
+  font-family: var(--font-display, 'Cinzel', serif);
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  transition: all 0.2s ease;
+}
+
+.navbar-link:hover {
+  background: linear-gradient(135deg, rgba(212, 168, 70, 0.28) 0%, rgba(232, 195, 106, 0.18) 100%);
+  color: var(--gold);
+  border-color: var(--gold);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 12px rgba(212, 168, 70, 0.25);
+}
+
+/* ============================================================
+   Host Multiplayer button — secondary CTA below Begin Adventure
+   ============================================================ */
+.btn-host-multiplayer {
+  margin-top: 0.75rem;
+  font-size: 1rem;
+  padding: 0.85rem 2.5rem;
+  background: linear-gradient(135deg, rgba(40, 35, 55, 0.85) 0%, rgba(60, 50, 80, 0.85) 100%) !important;
+  color: var(--gold-light) !important;
+  border: 1px solid var(--gold-border) !important;
+  font-family: var(--font-display, 'Cinzel', serif);
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.25s ease;
+}
+
+.btn-host-multiplayer:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(60, 50, 80, 0.95) 0%, rgba(80, 65, 105, 0.95) 100%) !important;
+  border-color: var(--gold) !important;
+  color: var(--gold) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 18px rgba(212, 168, 70, 0.22);
+}
+
+.btn-host-multiplayer:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+
+.campaign-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.25rem;
+}

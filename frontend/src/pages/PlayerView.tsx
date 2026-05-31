@@ -481,7 +481,7 @@ export function PlayerView() {
       {/* Dice tab */}
       {tab === 'dice' && (
         <div className="pv-dice-tab">
-          <DiceRoller onRoll={handleDiceRoll} lastResult={lastDiceResult ?? undefined} />
+          <DiceRoller onRoll={handleDiceRoll} lastResult={lastDiceResult ?? undefined} defaultExpanded />
         </div>
       )}
 

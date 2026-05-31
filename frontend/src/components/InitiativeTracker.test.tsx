@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import { InitiativeTracker } from './InitiativeTracker'
 
 describe('InitiativeTracker', () => {
@@ -38,6 +38,9 @@ describe('InitiativeTracker', () => {
 
   it('renders empty state when no combatants', () => {
     render(<InitiativeTracker combatants={[]} />)
+    // Tracker starts collapsed when no combat — click header to expand
+    const header = document.querySelector('.initiative-header') as HTMLElement
+    fireEvent.click(header)
     expect(screen.getByText(/no combat/i)).toBeTruthy()
   })
 })

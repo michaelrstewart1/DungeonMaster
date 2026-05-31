@@ -91,6 +91,19 @@ export function CampaignDetail() {
     }
   }
 
+  const handleHostMultiplayer = async () => {
+    if (!campaignId) return
+    setStartingGame(true)
+    setError(null)
+    try {
+      const session = await createGameSession(campaignId)
+      navigate(`/lobby/${session.id}`)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to host multiplayer game')
+      setStartingGame(false)
+    }
+  }
+
   const handleRemoveCharacter = async (characterId: string) => {
     try {
       await deleteCharacter(characterId)
@@ -298,7 +311,16 @@ export function CampaignDetail() {
             onClick={handleStartGame}
             disabled={startingGame || characters.length === 0}
           >
-            {startingGame ? 'Starting...' : 'Begin Adventure'}
+            {startingGame ? 'Starting...' : '🎲 Begin Adventure (Solo / DM Screen)'}
+          </button>
+          <button
+            className="btn-secondary btn-host-multiplayer"
+            onClick={handleHostMultiplayer}
+            disabled={startingGame || characters.length === 0}
+            title="Get a join code so friends can play from their phones"
+            data-testid="btn-host-multiplayer"
+          >
+            {startingGame ? 'Starting...' : '🖥️ Host Multiplayer Table'}
           </button>
         </section>
       )}

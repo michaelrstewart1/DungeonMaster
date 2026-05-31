@@ -275,14 +275,37 @@ describe('CampaignDetail', () => {
 
     renderWithRoute()
     await waitFor(() => {
-      expect(screen.getByText('Begin Adventure')).toBeTruthy()
+      expect(screen.getByText(/Begin Adventure/)).toBeTruthy()
     })
 
-    fireEvent.click(screen.getByText('Begin Adventure'))
+    fireEvent.click(screen.getByText(/Begin Adventure/))
 
     await waitFor(() => {
       expect(createGameSession).toHaveBeenCalledWith('camp1')
       expect(mockNavigate).toHaveBeenCalledWith('/game/sess1')
+    })
+  })
+
+  it('host multiplayer button creates session and navigates to lobby', async () => {
+    const mockSession: GameSession = {
+      id: 'sess2',
+      campaign_id: 'camp1',
+      phase: 'lobby',
+      turn_count: 0,
+      players: [],
+    }
+    vi.mocked(createGameSession).mockResolvedValue(mockSession)
+
+    renderWithRoute()
+    await waitFor(() => {
+      expect(screen.getByTestId('btn-host-multiplayer')).toBeTruthy()
+    })
+
+    fireEvent.click(screen.getByTestId('btn-host-multiplayer'))
+
+    await waitFor(() => {
+      expect(createGameSession).toHaveBeenCalledWith('camp1')
+      expect(mockNavigate).toHaveBeenCalledWith('/lobby/sess2')
     })
   })
 })

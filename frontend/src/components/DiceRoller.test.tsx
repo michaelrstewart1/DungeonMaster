@@ -10,7 +10,7 @@ describe('DiceRoller', () => {
   })
 
   it('renders dice buttons for standard D&D dice', () => {
-    render(<DiceRoller onRoll={mockOnRoll} />)
+    render(<DiceRoller onRoll={mockOnRoll} defaultExpanded />)
     expect(screen.getByRole('button', { name: 'd4' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'd6' })).toBeTruthy()
     expect(screen.getByRole('button', { name: 'd8' })).toBeTruthy()
@@ -21,7 +21,7 @@ describe('DiceRoller', () => {
   })
 
   it('calls onRoll with dice notation when clicked', () => {
-    render(<DiceRoller onRoll={mockOnRoll} />)
+    render(<DiceRoller onRoll={mockOnRoll} defaultExpanded />)
     fireEvent.click(screen.getByRole('button', { name: 'd20' }))
     expect(mockOnRoll).toHaveBeenCalledWith('1d20')
   })
@@ -30,6 +30,7 @@ describe('DiceRoller', () => {
     render(
       <DiceRoller
         onRoll={mockOnRoll}
+        defaultExpanded
         lastResult={{ notation: '1d20', rolls: [17], modifier: 0, total: 17, is_critical: false, is_fumble: false }}
       />
     )
@@ -40,6 +41,7 @@ describe('DiceRoller', () => {
     render(
       <DiceRoller
         onRoll={mockOnRoll}
+        defaultExpanded
         lastResult={{ notation: '1d20', rolls: [20], modifier: 0, total: 20, is_critical: true, is_fumble: false }}
       />
     )
@@ -50,6 +52,7 @@ describe('DiceRoller', () => {
     render(
       <DiceRoller
         onRoll={mockOnRoll}
+        defaultExpanded
         lastResult={{ notation: '1d20', rolls: [1], modifier: 0, total: 1, is_critical: false, is_fumble: true }}
       />
     )
