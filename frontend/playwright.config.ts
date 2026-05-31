@@ -22,10 +22,21 @@ export default defineConfig({
   ],
   webServer: process.env.CI
     ? undefined
-    : {
-        command: 'npm run dev',
-        url: 'http://localhost:5173',
-        reuseExistingServer: true,
-        timeout: 30_000,
-      },
+    : [
+        {
+          // FastAPI backend — required for end-to-end tests that hit the API.
+          // Vite (below) proxies /api → localhost:8000.
+          command: 'python -m uvicorn app.main:create_app --factory --host 127.0.0.1 --port 8000',
+          cwd: '../backend',
+          url: 'http://127.0.0.1:8000/api/health',
+          reuseExistingServer: true,
+          timeout: 60_000,
+        },
+        {
+          command: 'npm run dev',
+          url: 'http://localhost:5173',
+          reuseExistingServer: true,
+          timeout: 30_000,
+        },
+      ],
 });

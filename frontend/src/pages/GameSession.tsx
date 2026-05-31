@@ -444,7 +444,7 @@ export function GameSession() {
   }))
 
   // Derive fog grid from map data for the FogOfWar component
-  const fogGrid: string[][] = mapData
+  const fogGrid: string[][] = mapData?.terrain
     ? mapData.terrain.map((row) => row.map((cell) => cell))
     : []
 
@@ -982,7 +982,7 @@ export function GameSession() {
             </div>
           )}
           <div className={`chat-area ${!mapData ? '' : ''}`}>
-            <GameChat messages={messages} onSubmitAction={handleSubmitAction} onTalkToNPC={handleTalkToNPC} npcs={sessionNPCs} isWaitingForDM={waitingForDM} phase={gameState?.phase === 'combat' ? 'combat' : 'exploration'} characterName={partyCharacters[0]?.name} characterClass={partyCharacters[0]?.class_name} displayOnly />
+            <GameChat messages={messages} onSubmitAction={handleSubmitAction} onTalkToNPC={handleTalkToNPC} npcs={sessionNPCs} isWaitingForDM={waitingForDM} phase={gameState?.phase === 'combat' ? 'combat' : 'exploration'} characterName={partyCharacters[0]?.name} characterClass={partyCharacters[0]?.class_name} />
           </div>
         </div>
 

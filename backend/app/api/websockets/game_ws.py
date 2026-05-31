@@ -150,9 +150,11 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     "detected_scene": _detect_scene_type(narration),
                     "detected_npcs": _extract_npcs_from_narration(narration),
                 }
-                await manager.broadcast(session_id, turn_result)
 
-                # Update session state in DB
+                # Update session state in DB BEFORE broadcasting.
+                # Order matters: if we broadcast first, the client may close before
+                # the async DB write finishes, leaving the connection in a half-closed
+                # state that deadlocks the SQLAlchemy aiosqlite pool on cancellation.
                 db_factory = getattr(websocket.app.state, "db_factory", None)
                 if db_factory:
                     try:
@@ -176,6 +178,8 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                                 await db.commit()
                     except Exception:
                         pass
+
+                await manager.broadcast(session_id, turn_result)
             
             elif message_type == "token_move":
                 token_move_msg = {

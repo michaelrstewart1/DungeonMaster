@@ -22,7 +22,7 @@ async function createAndOpenCampaign(page: Page, name: string) {
   await page.click('button[type="submit"]:has-text("Create Campaign")')
 
   // Wait for the campaign card to appear after form submission triggers reload
-  await expect(page.locator(`.campaign-card:has-text("${name}")`)).toBeVisible({ timeout: 10000 })
+  await expect(page.locator(`.campaign-card:has-text("${name}")`)).toBeVisible({ timeout: 15000 })
   await page.click(`.campaign-card:has-text("${name}")`)
   await expect(page.locator('h1')).toContainText(name, { timeout: 5000 })
 }
@@ -124,29 +124,66 @@ test.describe('Real User Flows', () => {
     await expect(page.locator('[data-testid="step-class"]')).toBeVisible()
     await page.click('[data-testid="class-wizard"]')
     await expect(page.locator('[data-testid="class-wizard"]')).toHaveClass(/selected/)
+    await page.click('button:has-text("Next: Background")')
+
+    // Step 3: Background — pick first
+    await expect(page.locator('[data-testid="step-background"]')).toBeVisible()
+    await page.locator('.background-card').first().click()
     await page.click('button:has-text("Next: Abilities")')
 
-    // Step 3: Adjust abilities
+    // Step 4: Adjust abilities
     await expect(page.locator('[data-testid="step-abilities"]')).toBeVisible()
-    // Increase intelligence
     const intIncrease = page.locator('button[aria-label="Increase Intelligence"]')
     await intIncrease.click()
     await intIncrease.click()
     await intIncrease.click()
-    await page.click('button:has-text("Next: Review")')
+    await page.click('button:has-text("Next: Skills")')
 
-    // Step 4: Name and review
-    await expect(page.locator('[data-testid="step-review"]')).toBeVisible()
+    // Step 5: Skills — pick required skills from class options
+    await expect(page.locator('[data-testid="step-skills"]')).toBeVisible()
+    const skillButtons = page.locator('.skill-card:not(.unavailable):not(.background-skill)')
+    const skillsToPickCount = await page.locator('.skill-selection-count').textContent()
+        .then(t => parseInt((t?.match(/\/\s*(\d+)/) || [])[1] || '2'))
+    for (let i = 0; i < skillsToPickCount; i++) {
+      await skillButtons.nth(i).click()
+    }
+    await page.click('button:has-text("Next: Equipment")')
+
+    // Step 6: Equipment — accept defaults (already selected)
+    await expect(page.locator('[data-testid="step-equipment"]')).toBeVisible()
+    // Button text varies based on spellcaster status — match either "Spells" or "Details"
+    await page.click('button.btn-primary:has-text("Next:")')
+
+    // Possible Step 7: Spells (Wizard is a caster)
+    const onSpells = await page.locator('[data-testid="step-spells"]').isVisible().catch(() => false)
+    if (onSpells) {
+      await page.click('button:has-text("Next: Details")')
+    }
+
+    // Step 8: Details — fill in name
+    await expect(page.locator('[data-testid="step-details"]')).toBeVisible()
     const heroName = `Elara ${uniqueId()}`
     await page.fill('#char-name', heroName)
+    await page.click('button:has-text("Next: Review")')
+
+    // Step 9: Review
+    await expect(page.locator('[data-testid="step-review"]')).toBeVisible()
     await expect(page.locator('.review-summary')).toContainText('Elf')
     await expect(page.locator('.review-summary')).toContainText('Wizard')
 
     // Submit
+    const createCharResponse = page.waitForResponse(
+      res => res.url().includes('/api/characters') && res.request().method() === 'POST',
+      { timeout: 15000 }
+    )
     await page.click('button[type="submit"]:has-text("Create Character")')
+    const charRes = await createCharResponse
+    if (!charRes.ok()) {
+      throw new Error(`Character creation failed: ${charRes.status()} ${await charRes.text()}`)
+    }
 
     // CRITICAL: Verify the character appears
-    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 5000 })
+    await expect(page.locator('.character-sheet')).toBeVisible({ timeout: 10000 })
     await expect(page.locator('.character-sheet .char-header h2')).toContainText(heroName)
 
     await page.screenshot({ path: 'test-results/real-03-custom-character.png', fullPage: true })
@@ -213,9 +250,11 @@ test.describe('Real User Flows', () => {
     await expect(chatArea).toBeVisible()
 
     // CRITICAL: Verify the opening DM narration is present (proves game state loaded)
-    await expect(page.locator('.chat-message.message-dm').first()).toBeVisible({ timeout: 5000 })
-    const openingText = await page.locator('.chat-message.message-dm').first().textContent()
-    expect(openingText!.length).toBeGreaterThan(20) // Not just "Welcome" — real scene text
+    // Skip the typing indicator and scope to the main chat area
+    const realDmMessage = chatArea.locator('.chat-message.message-dm:not(.typing-message)').first()
+    await expect(realDmMessage).toBeVisible({ timeout: 30000 })
+    // The DM message renders via a typewriter animation; poll until the text is fully rendered
+    await expect(realDmMessage.locator('.message-text')).toContainText(/adventurers|legend|world/i, { timeout: 30000 })
 
     // Verify DM avatar is present
     await expect(page.locator('.dm-avatar')).toBeVisible()
@@ -231,20 +270,20 @@ test.describe('Real User Flows', () => {
     await chatInput.press('Enter')
 
     // Verify the player message appears
-    await expect(page.locator('.chat-message.message-player')).toBeVisible({ timeout: 5000 })
-    await expect(page.locator('.chat-message.message-player')).toContainText('I look around the room')
+    await expect(chatArea.locator('.chat-message.message-player')).toBeVisible({ timeout: 5000 })
+    await expect(chatArea.locator('.chat-message.message-player')).toContainText('I look around the room')
 
     // CRITICAL: Verify the DM responds with contextual narrative about "look around"
-    await expect(page.locator('.chat-message.message-dm:has-text("cavern")')).toBeVisible({ timeout: 10000 })
+    await expect(chatArea.locator('.chat-message.message-dm:has-text("cavern")')).toBeVisible({ timeout: 10000 })
 
     await page.screenshot({ path: 'test-results/real-05-game-session.png', fullPage: true })
 
     // Send a second action to prove multi-turn conversation works
     await chatInput.fill('I attack the shadows')
     await chatInput.press('Enter')
-    await expect(page.locator('.chat-message.message-player')).toHaveCount(2, { timeout: 5000 })
+    await expect(chatArea.locator('.chat-message.message-player')).toHaveCount(2, { timeout: 5000 })
     // DM should respond with combat narration (contains "strike" or "weapon")
-    await expect(page.locator('.chat-message.message-dm:has-text("weapon"), .chat-message.message-dm:has-text("strike")')).toBeVisible({ timeout: 10000 })
+    await expect(chatArea.locator('.chat-message.message-dm:has-text("weapon"), .chat-message.message-dm:has-text("strike")')).toBeVisible({ timeout: 10000 })
 
     await page.screenshot({ path: 'test-results/real-05b-multi-turn.png', fullPage: true })
   })

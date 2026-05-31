@@ -15,12 +15,16 @@ const BattleMap: React.FC<BattleMapProps> = ({
   selectedTokenId,
 }) => {
   // Create a map of token positions for quick lookup
-  const tokenMap = new Map(map.tokens.map((token) => [`${token.x}-${token.y}`, token]))
+  const tokenMap = new Map((map?.tokens || []).map((token) => [`${token.x}-${token.y}`, token]))
 
   // Generate column labels (A, B, C, ...)
-  const columnLabels = Array.from({ length: map.width }, (_, i) =>
+  const columnLabels = Array.from({ length: map?.width || 0 }, (_, i) =>
     String.fromCharCode(65 + i)
   )
+
+  if (!map || !map.width || !map.height) {
+    return <div className="battle-map battle-map-empty" />
+  }
 
   return (
     <div className="battle-map">

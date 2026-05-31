@@ -5,7 +5,7 @@
 
 const API_BASE = process.env.E2E_BASE_URL
   ? `${process.env.E2E_BASE_URL.replace(/\/$/, '')}/api`
-  : 'http://192.168.1.94/api'
+  : 'http://localhost:5173/api'
 
 const FEATURED = new Set([
   'Wrath of the Stormspire',

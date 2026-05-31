@@ -4,7 +4,7 @@ import type { Page } from '@playwright/test';
 const MOCK_CAMPAIGNS = [
   {
     id: 'camp-1',
-    name: 'Lost Mines',
+    name: 'Game Session: Lost Mines',
     description: 'A classic adventure',
     character_ids: ['char-1'],
     world_state: {},
@@ -20,6 +20,10 @@ const MOCK_GAME_STATE = {
   campaign_id: 'camp-1',
   phase: 'exploration',
   current_scene: 'Welcome to the adventure!',
+  narrative_history: [
+    'Welcome to the adventure! The world stirs to life around you.',
+    'DM: Welcome to the adventure! Your journey begins here in the misty hills.',
+  ],
   players: ['player-1'],
   combat_state: null,
   is_active: true,
@@ -114,6 +118,29 @@ export async function mockGameSessionAPIs(page: Page) {
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify(MOCK_GAME_STATE),
+    });
+  });
+
+  // Single campaign endpoint used by GameSession to fetch campaign name
+  await page.route(apiPathMatch('/api/campaigns/*'), (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(MOCK_CAMPAIGNS[0]),
+    });
+  });
+
+  // Environment endpoint — EnvironmentPanel reads .season/.weather/.time_of_day
+  await page.route(apiPathMatch('/api/game/sessions/*/environment'), (route) => {
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        time_of_day: 'day',
+        weather: 'clear',
+        temperature: 'temperate',
+        season: 'spring',
+      }),
     });
   });
 }
