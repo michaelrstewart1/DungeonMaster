@@ -196,6 +196,8 @@ class BotPlayer:
                     continue
                 action = await policy.next_action(self, None)
                 if action is None:
+                    if self.turn_owner is not None:
+                        self.turn_owner.remove(self)
                     return
                 await self._send_action(action)
                 idle_count = 0
@@ -222,6 +224,10 @@ class BotPlayer:
                 continue
             action = await policy.next_action(self, msg)
             if action is None:
+                # Policy exhausted — drop from turn rotation so peers don't
+                # block waiting for our turn that will never come.
+                if self.turn_owner is not None:
+                    self.turn_owner.remove(self)
                 return
             await self._send_action(action)
 
@@ -267,3 +273,17 @@ class TurnOwner:
 
     def advance(self) -> None:
         self._idx += 1
+
+    def remove(self, bot: BotPlayer) -> None:
+        """Drop a bot from the rotation when its policy is exhausted.
+
+        Without this, the round-robin gate would keep waiting for a turn
+        that the exhausted bot will never take, leaving other bots blocked
+        until the wall-clock timeout fires.
+        """
+        if bot in self._bots:
+            i = self._bots.index(bot)
+            self._bots.remove(bot)
+            # Keep _idx pointing at the same logical "next" bot.
+            if self._bots and i < (self._idx % (len(self._bots) + 1)):
+                self._idx = max(0, self._idx - 1)

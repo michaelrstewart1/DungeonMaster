@@ -98,7 +98,12 @@ export function useGameSocket(sessionId: string | undefined): UseGameSocketRetur
   }, [send]);
 
   const joinAsPlayer = useCallback((name: string, characterId?: string) => {
-    send({ type: 'player_join', name, character_id: characterId });
+    // Pass the HTTP-join player_id (if present in sessionStorage) so the
+    // server can reconcile the WS connection with the existing player row.
+    // This is what makes server-targeted private messages (e.g. trade
+    // offers) route to the correct connection.
+    const playerId = sessionStorage.getItem('playerId') || undefined;
+    send({ type: 'player_join', name, character_id: characterId, player_id: playerId });
   }, [send]);
 
   const setReady = useCallback((ready: boolean) => {

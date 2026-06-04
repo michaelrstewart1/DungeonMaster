@@ -22,6 +22,10 @@ class ConnectionManager:
     def __init__(self):
         """Initialize the connection manager."""
         self.active_connections: dict[str, list[WebSocket]] = {}
+        # session_id -> {player_id: WebSocket} for targeted (private) sends.
+        # A player's id is the one reconciled after `player_join` (the HTTP
+        # join id when supplied, otherwise the WS-generated id).
+        self.player_connections: dict[str, dict[str, WebSocket]] = {}
 
     async def connect(self, session_id: str, websocket: WebSocket):
         """Accept and register a new WebSocket connection."""
@@ -36,6 +40,31 @@ class ConnectionManager:
             self.active_connections[session_id].remove(websocket)
             if not self.active_connections[session_id]:
                 del self.active_connections[session_id]
+        # Forget any player_id -> websocket mappings for this connection.
+        players = self.player_connections.get(session_id)
+        if players:
+            stale = [pid for pid, ws in players.items() if ws is websocket]
+            for pid in stale:
+                del players[pid]
+            if not players:
+                del self.player_connections[session_id]
+
+    def register_player(self, session_id: str, player_id: str, websocket: WebSocket):
+        """Bind a player_id to a specific connection for private sends."""
+        if not player_id:
+            return
+        self.player_connections.setdefault(session_id, {})[player_id] = websocket
+
+    async def send_to_player(self, session_id: str, player_id: str, message: dict) -> bool:
+        """Send a message to a single player_id. Returns True if delivered."""
+        ws = self.player_connections.get(session_id, {}).get(player_id)
+        if ws is None:
+            return False
+        try:
+            await ws.send_json(message)
+            return True
+        except Exception:
+            return False
 
     async def broadcast(self, session_id: str, message: dict):
         """Send a message to all connections in a session."""
@@ -229,6 +258,9 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     existing[0].update(player_info)
                 else:
                     _storage.session_players[session_id].append(player_info)
+                # Bind player_id -> this websocket so the server can send
+                # private messages (e.g. trade offers) to a specific player.
+                manager.register_player(session_id, player_id, websocket)
                 await manager.broadcast(session_id, {
                     "type": "player_update",
                     "players": _storage.session_players[session_id],

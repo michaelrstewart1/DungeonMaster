@@ -279,6 +279,74 @@ export async function updatePartyGold(sessionId: string, amount: number, reason:
   });
 }
 
+// ─── Player-to-player trades ────────────────────────────────────────────
+
+export interface TradeItemRef {
+  item_id: string;
+  quantity: number;
+  name?: string;
+}
+
+export interface Trade {
+  id: string;
+  session_id: string;
+  from_player_id: string;
+  from_player_name: string;
+  from_character_id: string;
+  to_player_id: string;
+  to_player_name: string;
+  to_character_id?: string | null;
+  offered_items: TradeItemRef[];
+  requested_items: TradeItemRef[];
+  offered_gold: number;
+  requested_gold: number;
+  note: string;
+  status: 'pending' | 'accepted' | 'declined' | 'cancelled';
+  created_at: string;
+  resolved_at?: string | null;
+}
+
+export interface CreateTradePayload {
+  from_player_id: string;
+  from_character_id: string;
+  to_player_id: string;
+  to_character_id?: string;
+  offered_items: TradeItemRef[];
+  requested_items?: TradeItemRef[];
+  offered_gold?: number;
+  requested_gold?: number;
+  note?: string;
+}
+
+export async function createTrade(sessionId: string, payload: CreateTradePayload): Promise<{ trade: Trade; delivered: boolean }> {
+  return request<{ trade: Trade; delivered: boolean }>(`/game/sessions/${sessionId}/trades`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function listTrades(sessionId: string, playerId?: string, statusFilter?: string): Promise<{ trades: Trade[] }> {
+  const params = new URLSearchParams();
+  if (playerId) params.set('player_id', playerId);
+  if (statusFilter) params.set('status_filter', statusFilter);
+  const qs = params.toString();
+  return request<{ trades: Trade[] }>(`/game/sessions/${sessionId}/trades${qs ? `?${qs}` : ''}`);
+}
+
+export async function respondTrade(sessionId: string, tradeId: string, action: 'accept' | 'decline', playerId: string): Promise<{ trade: Trade }> {
+  return request<{ trade: Trade }>(`/game/sessions/${sessionId}/trades/${tradeId}/respond`, {
+    method: 'POST',
+    body: JSON.stringify({ action, player_id: playerId }),
+  });
+}
+
+export async function cancelTrade(sessionId: string, tradeId: string, playerId: string): Promise<{ trade: Trade }> {
+  return request<{ trade: Trade }>(`/game/sessions/${sessionId}/trades/${tradeId}/cancel`, {
+    method: 'POST',
+    body: JSON.stringify({ player_id: playerId }),
+  });
+}
+
 // Encounters
 export interface EncounterOptions {
   environment: string;

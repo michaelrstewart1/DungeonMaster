@@ -60,10 +60,20 @@ export interface CharacterCreate {
   backstory?: string;
 }
 
+export interface StructuredItem {
+  id: string;
+  name: string;
+  quantity: number;
+  description?: string;
+  rarity?: string;
+  item_type?: string;
+}
+
 export interface Character extends CharacterCreate {
   id: string;
   conditions: string[];
   inventory: string[];
+  structured_inventory?: StructuredItem[];
   proficiency_bonus: number;
   portrait_url?: string;
   experience_points: number;

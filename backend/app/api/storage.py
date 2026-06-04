@@ -9,6 +9,7 @@ tokens: dict[str, str] = {}  # token -> user_id
 vision_analyses: dict[str, dict] = {}
 room_codes: dict[str, str] = {}  # room_code -> session_id
 session_players: dict[str, list[dict]] = {}  # session_id -> [player_info]
+trades: dict[str, dict] = {}  # trade_id -> trade dict
 
 
 def reset() -> None:
@@ -17,6 +18,7 @@ def reset() -> None:
     vision_analyses.clear()
     room_codes.clear()
     session_players.clear()
+    trades.clear()
 
 
 def generate_id() -> str:

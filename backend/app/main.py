@@ -20,6 +20,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.vision import router as vision_router
 from app.api.routes.avatar import router as avatar_router
 from app.api.routes.srd import router as srd_router
+from app.api.routes.trade import router as trade_router
 from app.api.websockets.game_ws import router as game_ws_router
 from app.api.websockets.audio_ws import router as audio_ws_router
 
@@ -182,6 +183,7 @@ def create_app() -> FastAPI:
     app.include_router(vision_router, prefix="/api", tags=["vision"])
     app.include_router(avatar_router, prefix="/api", tags=["avatar"])
     app.include_router(srd_router, prefix="/api", tags=["srd"])
+    app.include_router(trade_router, prefix="/api", tags=["trade"])
     app.include_router(game_ws_router, tags=["websocket"])
     app.include_router(audio_ws_router, tags=["websocket"])
 

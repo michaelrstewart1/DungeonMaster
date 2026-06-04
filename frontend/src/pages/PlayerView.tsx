@@ -8,6 +8,9 @@ import { uuid } from '../utils/uuid';
 import { useGameSocket } from '../hooks/useGameSocket';
 import { DiceRoller } from '../components/DiceRoller';
 import BattleMap from '../components/BattleMap';
+import { TradeOfferModal, IncomingTradeModal, OutgoingTradeBadge } from '../components/TradePanel';
+import { useToast } from '../components/Toast';
+import type { Trade } from '../api/client';
 import type { Character, GameState, GameMap, DiceResult } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -49,7 +52,9 @@ export function PlayerView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const playerName = sessionStorage.getItem('playerName') || 'Adventurer';
   const characterId = sessionStorage.getItem('characterId') || undefined;
-  const { connected, messages, sendChat, sendAction, joinAsPlayer } = useGameSocket(sessionId);
+  const playerId = sessionStorage.getItem('playerId') || '';
+  const { connected, messages, players, sendChat, sendAction, joinAsPlayer } = useGameSocket(sessionId);
+  const { addToast } = useToast();
 
   const [character, setCharacter] = useState<Character | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -62,6 +67,13 @@ export function PlayerView() {
   const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null);
   const [waitingForDM, setWaitingForDM] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
+
+  // Trade state — composing an outgoing offer, incoming offer queue, and
+  // the one outgoing offer we're currently waiting on (we only allow one
+  // at a time per player to keep the UX manageable).
+  const [showTradeModal, setShowTradeModal] = useState(false);
+  const [incomingTrade, setIncomingTrade] = useState<Trade | null>(null);
+  const [pendingOutgoing, setPendingOutgoing] = useState<Trade | null>(null);
 
   // Push-to-talk state
   const [isRecording, setIsRecording] = useState(false);
@@ -209,7 +221,47 @@ export function PlayerView() {
         }));
       }
     }
-  }, [messages, character]);
+
+    // ── Trade flow ───────────────────────────────────────────────────
+    // Server sends `trade_offer` privately to the recipient on create,
+    // and broadcasts `trade_resolved` to both sides on accept/decline/cancel.
+    if (last.type === 'trade_offer' as string) {
+      const p = last.payload as { trade?: Trade };
+      if (p.trade && p.trade.to_player_id === playerId) {
+        setIncomingTrade(p.trade);
+      }
+    }
+    if (last.type === 'trade_resolved' as string) {
+      const p = last.payload as { trade?: Trade };
+      const t = p.trade;
+      if (!t) return;
+      // If WE were involved in the trade, clear any stale UI and refresh inventory.
+      const involved = t.from_player_id === playerId || t.to_player_id === playerId;
+      if (!involved) return;
+      if (pendingOutgoing && pendingOutgoing.id === t.id) setPendingOutgoing(null);
+      if (incomingTrade && incomingTrade.id === t.id) setIncomingTrade(null);
+      if (t.status === 'accepted') {
+        addToast({
+          type: 'success',
+          title: 'Trade complete',
+          message: t.from_player_id === playerId
+            ? `${t.to_player_name} accepted your offer.`
+            : `Items added to your inventory.`,
+        });
+        // Refetch the character so structured_inventory reflects the swap.
+        if (characterId) {
+          fetch(`${API_BASE}/characters/${characterId}`)
+            .then((r) => (r.ok ? r.json() : null))
+            .then((c) => { if (c) setCharacter(c); })
+            .catch(() => undefined);
+        }
+      } else if (t.status === 'declined' && t.from_player_id === playerId) {
+        addToast({ type: 'info', message: `${t.to_player_name} declined your offer.` });
+      } else if (t.status === 'cancelled' && t.to_player_id === playerId) {
+        addToast({ type: 'info', message: `${t.from_player_name} cancelled the trade.` });
+      }
+    }
+  }, [messages, character, playerId, characterId, addToast, pendingOutgoing, incomingTrade]);
 
   // Auto-scroll feed — only when user is already near the bottom
   useEffect(() => {
@@ -531,6 +583,39 @@ export function PlayerView() {
             </div>
           )}
 
+          {/* Tradeable items + Trade button */}
+          <div className="pv-sheet-section">
+            <h3>
+              Inventory
+              <button
+                type="button"
+                className="pv-trade-btn"
+                onClick={() => setShowTradeModal(true)}
+                disabled={!playerId || !character || (character.structured_inventory?.length ?? 0) === 0 || players.filter((p) => p.id !== playerId).length === 0}
+                title={
+                  !playerId ? 'Join the session to trade' :
+                  (character.structured_inventory?.length ?? 0) === 0 ? 'No tradeable items yet' :
+                  players.filter((p) => p.id !== playerId).length === 0 ? 'No other players to trade with' :
+                  'Open trade'
+                }
+              >
+                🤝 Trade
+              </button>
+            </h3>
+            {character.structured_inventory && character.structured_inventory.length > 0 ? (
+              <ul className="pv-inventory-list">
+                {character.structured_inventory.map((item) => (
+                  <li key={item.id} className="pv-inventory-row">
+                    <span className="pv-inventory-name">{item.name}</span>
+                    <span className="pv-inventory-meta">×{item.quantity}{item.rarity ? ` · ${item.rarity}` : ''}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <div className="pv-inventory-empty">No tradeable items yet.</div>
+            )}
+          </div>
+
           {character.spells_known && character.spells_known.length > 0 && (
             <div className="pv-sheet-section">
               <h3>Spells</h3>
@@ -554,6 +639,38 @@ export function PlayerView() {
           )}
         </div>
       )}
+
+      {pendingOutgoing ? (
+        <OutgoingTradeBadge
+          sessionId={sessionId || ''}
+          playerId={playerId}
+          trade={pendingOutgoing}
+          onResolved={() => setPendingOutgoing(null)}
+        />
+      ) : null}
+
+      {showTradeModal && character && sessionId ? (
+        <TradeOfferModal
+          sessionId={sessionId}
+          fromPlayerId={playerId}
+          fromCharacter={character}
+          candidates={players
+            .filter((p) => p.id !== playerId)
+            .map((p) => ({ id: p.id, name: p.name, characterId: p.characterId }))}
+          onClose={() => setShowTradeModal(false)}
+          onSent={(t) => setPendingOutgoing(t)}
+        />
+      ) : null}
+
+      {incomingTrade && sessionId ? (
+        <IncomingTradeModal
+          sessionId={sessionId}
+          playerId={playerId}
+          trade={incomingTrade}
+          onResolved={() => setIncomingTrade(null)}
+          onClose={() => setIncomingTrade(null)}
+        />
+      ) : null}
     </div>
   );
 }

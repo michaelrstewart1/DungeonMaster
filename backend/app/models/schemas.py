@@ -65,7 +65,11 @@ class CharacterCreate(BaseModel):
 
     # Collections
     conditions: List[str] = Field(default_factory=list, description="Active conditions")
-    inventory: List[str] = Field(default_factory=list, description="Inventory items")
+    inventory: List[str] = Field(default_factory=list, description="Inventory items (legacy string list)")
+    structured_inventory: List[Dict[str, Any]] = Field(
+        default_factory=list,
+        description="Tradeable structured items with id/name/quantity/rarity/item_type/description",
+    )
     equipment: List[str] = Field(default_factory=list, description="Equipped items")
     
     # Personality (from background)
@@ -166,6 +170,7 @@ class CharacterUpdate(BaseModel):
     cantrips_known: Optional[List[str]] = None
     conditions: Optional[List[str]] = None
     inventory: Optional[List[str]] = None
+    structured_inventory: Optional[List[Dict[str, Any]]] = None
     equipment: Optional[List[str]] = None
     personality_traits: Optional[str] = None
     ideals: Optional[str] = None

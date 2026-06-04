@@ -83,6 +83,16 @@ async def run_scenario(
         # Brief pause so player_update broadcasts settle before the first action.
         await asyncio.sleep(0.2)
 
+        # Optional scenario hook: run setup that needs both bots connected
+        # but should NOT count as a bot turn (e.g. seeding state via REST,
+        # driving an out-of-band protocol like trade).
+        post_setup = ctx.get("post_setup")
+        if post_setup is not None:
+            try:
+                await post_setup(api, ctx, bots)
+            except Exception as exc:
+                logger.exception("post_setup hook failed: %s", exc)
+
         await bots[0].take_initial_turn()
 
         tasks = [
