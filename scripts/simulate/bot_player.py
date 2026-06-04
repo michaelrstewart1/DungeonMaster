@@ -181,13 +181,18 @@ class BotPlayer:
             try:
                 raw = await asyncio.wait_for(self._ws.recv(), timeout=idle_timeout)
             except asyncio.TimeoutError:
+                # If a TurnOwner is gating us and it's not our turn, don't age
+                # out — another bot may be mid-LLM-call. Only true global idle
+                # (no messages for everyone) should exit; we detect that via
+                # the OTHER bots eventually advancing turn_owner past us, OR
+                # via the runner's wall-clock timeout.
+                if self.turn_owner is not None and not self.turn_owner.is_my_turn(self):
+                    continue
                 idle_count += 1
                 if idle_count >= max_consecutive_idles:
                     logger.debug("%s exiting after %d idle ticks", self.config.name, idle_count)
                     return
                 if policy is None:
-                    continue
-                if self.turn_owner is not None and not self.turn_owner.is_my_turn(self):
                     continue
                 action = await policy.next_action(self, None)
                 if action is None:

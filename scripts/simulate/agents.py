@@ -189,7 +189,9 @@ class LLMPolicy:
             system_message=persona.system_prompt,
             model_context=BufferedChatCompletionContext(buffer_size=15),
         )
-        return cls(persona=persona, other_persona_names=other_persona_names, _agent=agent)
+        instance = cls(persona=persona, other_persona_names=other_persona_names)
+        instance._agent = agent
+        return instance
 
     # -- ActionPolicy --------------------------------------------------------
 
