@@ -10,6 +10,7 @@ from app.api.routes.game import (
     _merge_detected_npcs,
     _detect_scene_type,
     _advance_time,
+    _generate_dm_response,
 )
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
@@ -98,47 +99,33 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
             
             elif message_type == "action":
                 character_id = message.get("character_id")
-                action = message.get("action")
-                session_data = None  # may be loaded below
+                action = message.get("action") or ""
+                session_data: dict | None = None
 
+                # Use the unified narrator helper so the WS path graceful-falls
+                # back to the keyword-mock narration when no LLM provider is
+                # configured — same behavior as POST /api/game/sessions/{id}/action.
+                # Previously this branch produced a useless stub echo string
+                # ("Character X <action>. The DM responds...") for any session
+                # running without an LLM key, which made multiplayer unusable.
                 narrator = getattr(websocket.app.state, "narrator", None)
-                if narrator is not None:
+                db_factory = getattr(websocket.app.state, "db_factory", None)
+                player_text = f"{character_id}: {action}" if character_id else action
+
+                if db_factory is not None:
                     try:
-                        from app.services.llm.narrator import _strip_action_echo
-                        db_factory = getattr(websocket.app.state, "db_factory", None)
-                        if db_factory:
-                            async with db_factory() as db:
-                                session_data = await repo.get_game_session(db, session_id) or {}
-                                campaign_id = session_data.get("campaign_id", "")
-                                campaign = await repo.get_campaign(db, campaign_id) or {}
-                                world_context = campaign.get("world_state", {}).get("context", "A perilous realm.")
-                                characters = []
-                                for cid in campaign.get("character_ids", []):
-                                    c = await repo.get_character(db, cid)
-                                    if c:
-                                        characters.append(c)
-                                scene = {
-                                    "name": "Current Scene",
-                                    "description": session_data.get("current_scene", ""),
-                                }
-                                story_bible = await repo.get_campaign_story_bible(db, campaign_id) or ""
-                                player_text = f"{character_id}: {action}" if character_id else (action or "")
-                                narration = await narrator.narrate_exploration(
-                                    scene=scene,
-                                    player_action=player_text,
-                                    characters=characters,
-                                    world_context=world_context,
-                                    story_bible=story_bible,
-                                    session_history=session_data.get("narrative_history", []),
-                                )
-                                # Safety: strip any echoed action
-                                narration = _strip_action_echo(narration, action or "")
-                        else:
-                            narration = f"Character {character_id} {action}. The DM responds..."
+                        async with db_factory() as db:
+                            session_data = await repo.get_game_session(db, session_id) or {}
+                            narration = await _generate_dm_response(
+                                player_text,
+                                session_data,
+                                narrator=narrator,
+                                db=db,
+                            )
                     except Exception:
-                        narration = f"Character {character_id} {action}. The DM responds..."
+                        narration = await _generate_dm_response(player_text, {}, narrator=None, db=None)
                 else:
-                    narration = f"Character {character_id} {action}. The DM responds..."
+                    narration = await _generate_dm_response(player_text, {}, narrator=None, db=None)
 
                 turn_result = {
                     "type": "turn_result",
@@ -211,6 +198,23 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 from app.api import storage as _storage
                 name = message.get("name", "Unknown")
                 character_id = message.get("character_id")
+
+                # Phase 3 reconciliation: if the client supplies a player_id
+                # (typically the one returned by POST /api/game/join) and that
+                # id is already known to session_players, adopt it as THIS
+                # connection's id. This collapses the historical HTTP/WS
+                # double-id and makes player_update broadcasts coherent.
+                supplied_id = message.get("player_id")
+                if (
+                    isinstance(supplied_id, str)
+                    and supplied_id
+                    and any(
+                        p.get("id") == supplied_id
+                        for p in _storage.session_players.get(session_id, [])
+                    )
+                ):
+                    player_id = supplied_id
+
                 player_info = {
                     "id": player_id,
                     "name": name,
@@ -229,6 +233,21 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     "type": "player_update",
                     "players": _storage.session_players[session_id],
                     "connection_count": manager.get_connection_count(session_id),
+                })
+
+            elif message_type == "dice_roll":
+                # Phase 3 additive: broadcast a dice roll to all connections.
+                # The roll itself is computed client-side today; a future change
+                # may make this server-authoritative.
+                await manager.broadcast(session_id, {
+                    "type": "dice_roll",
+                    "player_id": player_id,
+                    "character_id": message.get("character_id"),
+                    "notation": message.get("notation", ""),
+                    "result": message.get("result"),
+                    "breakdown": message.get("breakdown"),
+                    "purpose": message.get("purpose"),
+                    "timestamp": datetime.now().isoformat(),
                 })
 
             elif message_type == "player_ready":

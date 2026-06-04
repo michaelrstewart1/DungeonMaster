@@ -4,6 +4,9 @@ node_modules/
 dist/
 .env
 backend/dungeon_master.db
+backend/_simulate_test.db
 frontend/test-results/
 backend/data/
 data/
+# Bot harness per-run output (transcripts, scorecards)
+runs/

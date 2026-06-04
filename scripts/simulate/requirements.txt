@@ -1,0 +1,20 @@
+# Bot harness deps — isolated from backend production deps.
+# Install with: pip install -r scripts/simulate/requirements.txt
+#
+# Phase 1 (headless protocol smoke) only needs httpx + websockets.
+# Phase 2 (AutoGen personas) adds autogen-* deps.
+# Phase 4 (observability) adds arize-phoenix.
+
+httpx>=0.27
+websockets>=12.0
+pyyaml>=6.0
+pydantic>=2.6
+
+# Phase 2 — AutoGen personas (LLM-driven players)
+autogen-agentchat>=0.4
+autogen-ext[ollama]>=0.4
+
+# Phase 4 — uncomment when adding observability
+# arize-phoenix>=4.0
+# arize-phoenix-otel>=0.6
+# openinference-instrumentation-autogen>=0.1

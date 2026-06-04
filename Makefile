@@ -66,6 +66,20 @@ test-all: ## Run all tests (backend + frontend + E2E)
 	@echo "  All tests passed!"
 	@echo "====================================="
 
+# --- Simulation (multi-agent bot harness) ---
+
+simulate-deps: ## Install bot-harness deps (Phase 1: httpx, websockets)
+	python -m pip install -r scripts/simulate/requirements.txt
+
+simulate-smoke: ## Run the headless 3-bot smoke scenario against http://127.0.0.1:8000
+	python -m scripts.simulate.runner --scenario smoke --timeout 60
+
+simulate-tavern: ## Run the 4-persona tavern brawl (uses Ollama if reachable, else scripted)
+	python -m scripts.simulate.runner --scenario tavern_brawl --max-turns 20 --timeout 600
+
+simulate-smoke-url: ## Smoke run against a custom backend URL (usage: make simulate-smoke-url URL=http://host:8000)
+	python -m scripts.simulate.runner --scenario smoke --base-url "$(URL)" --timeout 60
+
 # --- Docker Production ---
 
 docker-up: ## Start full production stack

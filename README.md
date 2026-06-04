@@ -73,3 +73,31 @@ make docker-gpu          # With GPU (Ollama + voice)
 ## Development
 
 See `.env.example` for configuration. Run `make help` for all commands.
+
+## Multi-agent simulation (test the app without humans)
+
+A standalone Python harness in `scripts/simulate/` drives the real backend
+with N bot players over the actual WebSocket protocol. Use it to iterate on
+gameplay without wrangling humans:
+
+```bash
+# 1. Boot the backend (any mode — mock narration works for CI).
+make dev-up && uvicorn app.main:app --port 8000  # or `docker compose up backend`
+
+# 2. Install harness deps (isolated from backend prod deps).
+make simulate-deps
+
+# 3. Headless 3-bot smoke (no LLM, no GPU — runs in ~10s, deterministic).
+make simulate-smoke
+
+# 4. 4-persona free-roleplay tavern brawl (uses Ollama if reachable, else
+#    falls back to scripted bots).
+SIMULATE_OLLAMA_HOST=http://192.168.1.94:11434 make simulate-tavern
+```
+
+Per-run output is written to `runs/<scenario>-<timestamp>/`:
+`transcript.jsonl` (every WS frame), `summary.json`, and
+`assertion_failures.json` if any.
+
+See `scripts/simulate/scenarios/` for the scenario format and
+`scripts/simulate/agents.py` for persona definitions.
