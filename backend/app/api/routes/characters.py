@@ -273,6 +273,20 @@ class AwardXPResponse(BaseModel):
     new_level: Optional[int] = None
 
 
+class GoldAdjustRequest(BaseModel):
+    """Body for adjusting a character's personal gold."""
+    amount: int = Field(..., description="Positive to add gold, negative to spend")
+    reason: Optional[str] = Field(None, description="Optional reason / source (e.g. 'quest reward', 'tavern')")
+
+
+class GoldAdjustResponse(BaseModel):
+    """Response from a personal-gold adjustment."""
+    character_id: str
+    gold: int
+    delta: int
+    reason: Optional[str] = None
+
+
 class Milestone(BaseModel):
     """A progression milestone."""
     level: int
@@ -354,6 +368,37 @@ async def award_xp(character_id: str, body: AwardXPRequest, db: AsyncSession = D
         character=CharacterResponse(**character),
         leveled_up=leveled_up,
         new_level=new_level if leveled_up else None,
+    )
+
+
+@router.post("/{character_id}/gold", response_model=GoldAdjustResponse)
+async def adjust_character_gold(
+    character_id: str,
+    body: GoldAdjustRequest,
+    db: AsyncSession = Depends(get_db),
+) -> GoldAdjustResponse:
+    """Adjust a character's personal gold by `amount` (negative spends).
+
+    Rejects when the resulting balance would be negative.
+    """
+    character = await repo.get_character(db, character_id)
+    if character is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Character not found")
+
+    current = int(character.get("gold") or 0)
+    new_total = current + body.amount
+    if new_total < 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Insufficient gold: have {current}, need {-body.amount}",
+        )
+    character["gold"] = new_total
+    await repo.save_character(db, character)
+    return GoldAdjustResponse(
+        character_id=character_id,
+        gold=new_total,
+        delta=body.amount,
+        reason=body.reason,
     )
 
 

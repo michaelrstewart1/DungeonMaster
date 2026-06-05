@@ -11,6 +11,7 @@ Self-hosted AI-powered D&D 5e Dungeon Master with voice interaction, battle maps
 - 📷 **Board Vision** — Camera capture + AI analysis of physical game boards
 - 🎭 **DM Avatar** — Animated face with expression mapping and lip sync
 - 📚 **SRD Reference** — Built-in D&D 5e spells, monsters, equipment, classes, races
+- 🤝 **Player Trading & Inventory** — Item/gold trades with counter-offers, DM arbitration veto, and in-character `use`/`equip` actions
 - 🐳 **Docker Ready** — Production compose with GPU overlay for homelab deployment
 
 ## Quick Start
@@ -61,8 +62,10 @@ make docker-gpu          # With GPU (Ollama + voice)
 | `GET /api/health` | Health check |
 | `/api/auth/*` | Register, login, token auth |
 | `/api/campaigns/*` | Campaign CRUD |
-| `/api/characters/*` | Character CRUD |
+| `/api/characters/*` | Character CRUD + `POST /{id}/gold` for adjustments |
+| `/api/items/*` | `use`, `equip`, `unequip` (in-character item actions) |
 | `/api/game/*` | Game session management |
+| `/api/game/sessions/{id}/trades/*` | Player trades: create / respond / counter / veto (DM) |
 | `/api/maps/*` | Map state + token movement |
 | `/api/avatar/*` | Avatar expression + speaking |
 | `/api/vision/*` | Board capture + analysis |

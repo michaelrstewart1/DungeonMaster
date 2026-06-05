@@ -69,6 +69,28 @@ class TradeCancel(BaseModel):
     player_id: str = Field(..., description="Cancelling player; must be the initiator")
 
 
+class TradeCounter(BaseModel):
+    """Body for countering a trade. Same shape as create except the from/to
+    players are derived from the original trade (recipient becomes proposer).
+    """
+    player_id: str = Field(..., description="Countering player; must be the recipient of the original")
+    from_character_id: Optional[str] = Field(default=None, description="Counter-proposer's character; defaults to original to_character_id")
+    offered_items: List[TradeItemRef] = Field(default_factory=list)
+    requested_items: List[TradeItemRef] = Field(default_factory=list)
+    offered_gold: int = Field(default=0, ge=0)
+    requested_gold: int = Field(default=0, ge=0)
+    note: str = Field(default="", max_length=280)
+
+
+class TradeVeto(BaseModel):
+    """DM action: veto a pending trade.
+
+    No auth gate today (matches the rest of this app); the endpoint is named
+    explicitly so client-side code makes its DM intent clear.
+    """
+    reason: Optional[str] = Field(default=None, max_length=280)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -206,10 +228,18 @@ async def create_trade(
                 status_code=400,
                 detail=f"Item {entry.get('name', ref.item_id)} insufficient quantity",
             )
+    # Validate sender has enough gold offered.
+    if body.offered_gold > 0:
+        sender_gold = int(sender_char.get("gold") or 0)
+        if sender_gold < body.offered_gold:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Sender has {sender_gold} gp, offered {body.offered_gold}",
+            )
 
     # If the recipient character is supplied, make sure their items exist
     # (only a soft check; recheck atomically on accept).
-    if body.to_character_id and body.requested_items:
+    if body.to_character_id and (body.requested_items or body.requested_gold > 0):
         recipient_char = await repo.get_character(db, body.to_character_id)
         if recipient_char is None:
             raise HTTPException(status_code=404, detail="Recipient character not found")
@@ -224,6 +254,13 @@ async def create_trade(
                 raise HTTPException(
                     status_code=400,
                     detail=f"Requested item {entry.get('name', ref.item_id)} insufficient quantity",
+                )
+        if body.requested_gold > 0:
+            recipient_gold = int(recipient_char.get("gold") or 0)
+            if recipient_gold < body.requested_gold:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Recipient has {recipient_gold} gp, requested {body.requested_gold}",
                 )
 
     trade_id = str(uuid.uuid4())
@@ -267,13 +304,20 @@ async def create_trade(
 
     storage.trades[trade_id] = trade
 
-    # Notify the recipient privately if they're connected.
+    # Notify the recipient privately for confirmation, AND broadcast to the
+    # whole session so the DM (and any open trade-arbitration UIs) see it.
+    # The recipient's UI is the only one that opens the modal — others use it
+    # purely for awareness/observability.
     from app.api.websockets.game_ws import manager
 
     delivered = await manager.send_to_player(
         session_id,
         body.to_player_id,
         {"type": "trade_offer", "trade": _trade_summary(trade), "timestamp": _now()},
+    )
+    await manager.broadcast(
+        session_id,
+        {"type": "trade_offer_observed", "trade": _trade_summary(trade), "timestamp": _now()},
     )
     return {"trade": _trade_summary(trade), "delivered": delivered}
 
@@ -349,6 +393,24 @@ async def respond_trade(
     # the client's perspective: either both inventories change or neither.
     offered_refs = [TradeItemRef(**r) for r in trade.get("offered_items", [])]
     requested_refs = [TradeItemRef(**r) for r in trade.get("requested_items", [])]
+    offered_gold = int(trade.get("offered_gold") or 0)
+    requested_gold = int(trade.get("requested_gold") or 0)
+
+    # Re-check gold balances at accept time — players may have spent since the
+    # offer was created.
+    sender_gold = int(sender_char.get("gold") or 0)
+    recipient_gold = int(recipient_char.get("gold") or 0)
+    if sender_gold < offered_gold:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Sender no longer has enough gold ({sender_gold} < {offered_gold})",
+        )
+    if recipient_gold < requested_gold:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Recipient no longer has enough gold ({recipient_gold} < {requested_gold})",
+        )
+
     try:
         offered_items = await _debit_items(sender_char, offered_refs)
         requested_items = await _debit_items(recipient_char, requested_refs)
@@ -362,6 +424,9 @@ async def respond_trade(
 
     _credit_items(recipient_char, offered_items)
     _credit_items(sender_char, requested_items)
+    # Atomic gold swap.
+    sender_char["gold"] = sender_gold - offered_gold + requested_gold
+    recipient_char["gold"] = recipient_gold - requested_gold + offered_gold
 
     await repo.save_character(db, sender_char)
     await repo.save_character(db, recipient_char)
@@ -389,6 +454,89 @@ async def cancel_trade(session_id: str, trade_id: str, body: TradeCancel) -> dic
         raise HTTPException(status_code=403, detail="Only the initiator can cancel")
     trade["status"] = "cancelled"
     trade["resolved_at"] = _now()
+
+    from app.api.websockets.game_ws import manager
+
+    await manager.broadcast(
+        session_id,
+        {"type": "trade_resolved", "trade": _trade_summary(trade), "timestamp": _now()},
+    )
+    return {"trade": _trade_summary(trade)}
+
+
+@router.post("/sessions/{session_id}/trades/{trade_id}/counter", status_code=status.HTTP_201_CREATED)
+async def counter_trade(
+    session_id: str,
+    trade_id: str,
+    body: TradeCounter,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Counter an existing pending trade. Atomically marks the original
+    `countered`, then creates a new trade with roles swapped (recipient becomes
+    proposer) and a `counter_of` link back to the original.
+    """
+    original = storage.trades.get(trade_id)
+    if original is None or original.get("session_id") != session_id:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    if original.get("status") != "pending":
+        raise HTTPException(status_code=409, detail=f"Trade already {original['status']}")
+    if body.player_id != original.get("to_player_id"):
+        raise HTTPException(status_code=403, detail="Only the recipient can counter")
+
+    new_from_player_id = original["to_player_id"]
+    new_from_character_id = body.from_character_id or original.get("to_character_id")
+    new_to_player_id = original["from_player_id"]
+    new_to_character_id = original.get("from_character_id")
+    if not new_from_character_id:
+        raise HTTPException(status_code=400, detail="Counter-proposer has no character")
+
+    # Reuse the create flow's validation by constructing a TradeCreate.
+    create_body = TradeCreate(
+        from_player_id=new_from_player_id,
+        from_character_id=new_from_character_id,
+        to_player_id=new_to_player_id,
+        to_character_id=new_to_character_id,
+        offered_items=body.offered_items,
+        requested_items=body.requested_items,
+        offered_gold=body.offered_gold,
+        requested_gold=body.requested_gold,
+        note=body.note,
+    )
+    # Mark original as countered first so it's resolved even if the new
+    # trade fails validation (recipient can then send a fresh offer).
+    original["status"] = "countered"
+    original["resolved_at"] = _now()
+
+    from app.api.websockets.game_ws import manager
+
+    await manager.broadcast(
+        session_id,
+        {"type": "trade_resolved", "trade": _trade_summary(original), "timestamp": _now()},
+    )
+
+    # Delegate to create_trade for full validation + WS notification.
+    result = await create_trade(session_id, create_body, db)
+    new_trade = result["trade"]
+    new_trade["counter_of"] = trade_id
+    storage.trades[new_trade["id"]] = new_trade
+    return {"original": _trade_summary(original), "trade": new_trade, "delivered": result["delivered"]}
+
+
+@router.post("/sessions/{session_id}/trades/{trade_id}/veto")
+async def veto_trade(session_id: str, trade_id: str, body: TradeVeto) -> dict:
+    """DM-side veto. Marks a pending trade as 'vetoed' (no items/gold move)
+    and broadcasts trade_resolved with the reason in the trade's note field.
+    """
+    trade = storage.trades.get(trade_id)
+    if trade is None or trade.get("session_id") != session_id:
+        raise HTTPException(status_code=404, detail="Trade not found")
+    if trade.get("status") != "pending":
+        raise HTTPException(status_code=409, detail=f"Trade already {trade['status']}")
+
+    trade["status"] = "vetoed"
+    trade["resolved_at"] = _now()
+    if body.reason:
+        trade["note"] = body.reason
 
     from app.api.websockets.game_ws import manager
 

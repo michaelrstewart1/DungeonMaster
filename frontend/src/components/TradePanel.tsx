@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { Character, StructuredItem } from '../types';
 import type { Trade, TradeItemRef } from '../api/client';
-import { createTrade, respondTrade, cancelTrade } from '../api/client';
+import { createTrade, respondTrade, cancelTrade, counterTrade } from '../api/client';
 import { useToast } from './Toast';
 
 interface Player {
@@ -41,6 +41,8 @@ export function TradeOfferModal({
   const { addToast } = useToast();
   const [to, setTo] = useState<Player | null>(initialTo ?? candidates[0] ?? null);
   const [selectedItems, setSelectedItems] = useState<Record<string, number>>({});
+  const [offeredGold, setOfferedGold] = useState<number>(0);
+  const [requestedGold, setRequestedGold] = useState<number>(0);
   const [note, setNote] = useState('');
   const [sending, setSending] = useState(false);
 
@@ -72,8 +74,8 @@ export function TradeOfferModal({
       return;
     }
     const items: TradeItemRef[] = Object.entries(selectedItems).map(([id, qty]) => ({ item_id: id, quantity: qty }));
-    if (items.length === 0) {
-      addToast({ type: 'error', message: 'Pick at least one item to offer.' });
+    if (items.length === 0 && offeredGold === 0 && requestedGold === 0) {
+      addToast({ type: 'error', message: 'Offer at least one item or some gold.' });
       return;
     }
     setSending(true);
@@ -84,6 +86,8 @@ export function TradeOfferModal({
         to_player_id: to.id,
         to_character_id: to.characterId,
         offered_items: items,
+        offered_gold: offeredGold,
+        requested_gold: requestedGold,
         note,
       });
       addToast({
@@ -157,6 +161,29 @@ export function TradeOfferModal({
           </div>
 
           <label className="trade-field">
+            <span>Gold you offer (you have {fromCharacter.gold ?? 0} gp)</span>
+            <input
+              type="number"
+              className="trade-gold-input"
+              min={0}
+              max={fromCharacter.gold ?? 0}
+              value={offeredGold}
+              onChange={(e) => setOfferedGold(Math.max(0, Math.min(fromCharacter.gold ?? 0, Number(e.target.value) || 0)))}
+            />
+          </label>
+
+          <label className="trade-field">
+            <span>Gold you request</span>
+            <input
+              type="number"
+              className="trade-gold-input"
+              min={0}
+              value={requestedGold}
+              onChange={(e) => setRequestedGold(Math.max(0, Number(e.target.value) || 0))}
+            />
+          </label>
+
+          <label className="trade-field">
             <span>Message (optional)</span>
             <textarea
               className="trade-note"
@@ -171,7 +198,7 @@ export function TradeOfferModal({
 
         <footer className="trade-modal-footer">
           <button className="trade-btn-secondary" onClick={onClose} disabled={sending}>Cancel</button>
-          <button className="trade-btn-primary" onClick={handleSend} disabled={sending || !to || Object.keys(selectedItems).length === 0}>
+          <button className="trade-btn-primary" onClick={handleSend} disabled={sending || !to || (Object.keys(selectedItems).length === 0 && offeredGold === 0 && requestedGold === 0)}>
             {sending ? 'Sending…' : 'Send offer'}
           </button>
         </footer>
@@ -191,6 +218,8 @@ interface IncomingTradeModalProps {
 export function IncomingTradeModal({ sessionId, playerId, trade, onResolved, onClose }: IncomingTradeModalProps) {
   const { addToast } = useToast();
   const [busy, setBusy] = useState(false);
+  const [showCounterPrompt, setShowCounterPrompt] = useState(false);
+  const [counterNote, setCounterNote] = useState('');
 
   const handle = async (action: 'accept' | 'decline') => {
     setBusy(true);
@@ -234,9 +263,17 @@ export function IncomingTradeModal({ sessionId, playerId, trade, onResolved, onC
                 </span>
               </li>
             ))}
+            {trade.offered_gold > 0 ? (
+              <li className="trade-item is-picked trade-item-gold">
+                <span className="trade-item-row">
+                  <span className="trade-item-name">💰 Gold</span>
+                  <span className="trade-item-meta">{trade.offered_gold} gp</span>
+                </span>
+              </li>
+            ) : null}
           </ul>
 
-          {trade.requested_items.length > 0 ? (
+          {(trade.requested_items.length > 0 || trade.requested_gold > 0) ? (
             <>
               <div className="trade-incoming-from" style={{ marginTop: '0.8rem' }}>In exchange for:</div>
               <ul className="trade-items">
@@ -248,6 +285,14 @@ export function IncomingTradeModal({ sessionId, playerId, trade, onResolved, onC
                     </span>
                   </li>
                 ))}
+                {trade.requested_gold > 0 ? (
+                  <li className="trade-item trade-item-gold">
+                    <span className="trade-item-row">
+                      <span className="trade-item-name">💰 Gold</span>
+                      <span className="trade-item-meta">{trade.requested_gold} gp</span>
+                    </span>
+                  </li>
+                ) : null}
               </ul>
             </>
           ) : null}
@@ -261,10 +306,60 @@ export function IncomingTradeModal({ sessionId, playerId, trade, onResolved, onC
           <button className="trade-btn-secondary" onClick={() => handle('decline')} disabled={busy}>
             {busy ? '…' : 'Decline'}
           </button>
+          <button className="trade-btn-secondary" onClick={() => setShowCounterPrompt(true)} disabled={busy}>
+            Counter…
+          </button>
           <button className="trade-btn-primary" onClick={() => handle('accept')} disabled={busy}>
             {busy ? '…' : 'Accept'}
           </button>
         </footer>
+
+        {showCounterPrompt ? (
+          <div className="trade-counter-prompt">
+            <p>
+              Send the original offer back to <strong>{trade.from_player_name}</strong> as a counter? They can then accept,
+              decline, or counter again. (For complex re-negotiation, decline and create a fresh trade.)
+            </p>
+            <input
+              className="trade-note"
+              type="text"
+              maxLength={280}
+              placeholder="Optional note"
+              value={counterNote}
+              onChange={(e) => setCounterNote(e.target.value)}
+            />
+            <div className="trade-counter-actions">
+              <button className="trade-btn-secondary" onClick={() => setShowCounterPrompt(false)} disabled={busy}>Back</button>
+              <button
+                className="trade-btn-primary"
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    const res = await counterTrade(sessionId, trade.id, {
+                      player_id: playerId,
+                      // Offer back what was requested, request back what was offered, swap gold.
+                      offered_items: trade.requested_items.map((i) => ({ item_id: i.item_id, quantity: i.quantity })),
+                      requested_items: trade.offered_items.map((i) => ({ item_id: i.item_id, quantity: i.quantity })),
+                      offered_gold: trade.requested_gold,
+                      requested_gold: trade.offered_gold,
+                      note: counterNote,
+                    });
+                    addToast({ type: 'success', title: 'Counter sent', message: `${trade.from_player_name} will see your counter offer.` });
+                    onResolved(res.original);
+                    onClose();
+                  } catch (err) {
+                    addToast({ type: 'error', message: err instanceof Error ? err.message : 'Counter failed' });
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                Send counter
+              </button>
+            </div>
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -28,6 +28,7 @@ export interface CharacterCreate {
   max_hp?: number;
   ac: number;
   experience_points?: number;
+  gold?: number;
   strength: number;
   dexterity: number;
   constitution: number;
@@ -67,6 +68,8 @@ export interface StructuredItem {
   description?: string;
   rarity?: string;
   item_type?: string;
+  effect?: { type: string; value: string | number } | null;
+  equipped?: boolean;
 }
 
 export interface Character extends CharacterCreate {
@@ -77,6 +80,7 @@ export interface Character extends CharacterCreate {
   proficiency_bonus: number;
   portrait_url?: string;
   experience_points: number;
+  gold: number;
 }
 
 // Campaign

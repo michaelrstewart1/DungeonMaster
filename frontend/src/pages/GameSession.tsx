@@ -34,6 +34,8 @@ import type { Achievement } from '../components/AchievementToast'
 import { NPCJournal } from '../components/NPCJournal'
 import { EnvironmentPanel } from '../components/EnvironmentPanel'
 import { PlayerConnect } from '../components/PlayerConnect'
+import { TradeArbitrationPanel } from '../components/TradeArbitrationPanel'
+import type { Trade } from '../api/client'
 import type { GameState, GameMap, DiceResult, Character } from '../types'
 import './GameSession.css'
 
@@ -66,6 +68,7 @@ export function GameSession() {
   const [dmPersonality, setDmPersonality] = useState<string>('classic_wizard')
   const [waitingForDM, setWaitingForDM] = useState(false)
   const [sessionTime, setSessionTime] = useState(0)
+  const [pendingTrades, setPendingTrades] = useState<Record<string, Trade>>({})
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false)
   const [partyCharacters, setPartyCharacters] = useState<Character[]>([])
   const [activeEffect, setActiveEffect] = useState<EffectType>(null)
@@ -704,6 +707,20 @@ export function GameSession() {
           setMessages((prev) => [...prev, { role: 'dm', text: `Error: ${data.message}`, timestamp: Date.now() }])
           break
         }
+        case 'trade_offer_observed' as string: {
+          const p = msg.payload as { trade?: Trade }
+          if (p.trade) setPendingTrades((prev) => ({ ...prev, [p.trade!.id]: p.trade! }))
+          break
+        }
+        case 'trade_resolved' as string: {
+          const p = msg.payload as { trade?: Trade }
+          if (p.trade) setPendingTrades((prev) => {
+            const next = { ...prev }
+            delete next[p.trade!.id]
+            return next
+          })
+          break
+        }
       }
     })
 
@@ -939,6 +956,7 @@ export function GameSession() {
           />
           <PartyStatus characters={partyCharacters} connectedCharacterIds={new Set(connectedPlayers.filter(p => p.character_id).map(p => p.character_id!))} />
           <PlayerConnect sessionId={sessionId || ''} connectedCount={wsConnectionCount} partySize={partyCharacters.length} />
+          <TradeArbitrationPanel sessionId={sessionId || ''} pendingTradesFromWs={pendingTrades} />
           <MiniMap sceneType={currentScene} />
           <EnvironmentPanel sessionId={sessionId || ''} />
         </aside>

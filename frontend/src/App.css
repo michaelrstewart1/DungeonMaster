@@ -8728,6 +8728,19 @@
   cursor: not-allowed;
 }
 
+.pv-gold-pill {
+  float: right;
+  margin-left: 0.5rem;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem;
+  background: rgba(212, 175, 55, 0.18);
+  border: 1px solid var(--gold-border, rgba(212, 175, 55, 0.4));
+  color: var(--gold-light, #e6c869);
+  border-radius: 999px;
+  font-family: inherit;
+  font-weight: 600;
+}
+
 .pv-inventory-list {
   list-style: none;
   padding: 0;
@@ -8972,3 +8985,43 @@ button.trade-item-row {
   .trade-modal { max-height: 100vh; border-radius: 0; max-width: 100%; }
   .trade-modal-backdrop { padding: 0; }
 }
+
+.trade-gold-input {
+  width: 100%;
+  padding: 0.6rem;
+  background: rgba(0,0,0,0.3);
+  border: 1px solid var(--gold-border);
+  color: var(--gold-light);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 1rem;
+}
+.trade-item-gold .trade-item-name { color: var(--gold-light); }
+
+
+.pv-inventory-row.is-equipped { background: rgba(212,175,55,0.06); }
+.pv-inv-chip { display:inline-block; margin-left:.5rem; padding:.1rem .4rem; font-size:.7rem; background:rgba(212,175,55,0.18); border:1px solid var(--gold-border); border-radius:4px; color:var(--gold-light); }
+.pv-inventory-actions { display:flex; gap:.4rem; margin-left:.5rem; }
+.pv-inv-btn { padding:.25rem .55rem; font-size:.75rem; background:rgba(0,0,0,0.3); border:1px solid var(--gold-border); color:var(--gold-light); border-radius:4px; cursor:pointer; font-family:inherit; }
+.pv-inv-btn:hover:not(:disabled) { background:var(--gold-bg); }
+.pv-inv-btn:disabled { opacity:.4; cursor:not-allowed; }
+
+
+.trade-counter-prompt { padding: 1rem; border-top: 1px solid var(--gold-border); background: rgba(0,0,0,0.2); }
+.trade-counter-prompt p { margin: 0 0 .5rem; color: var(--gold-dim); font-size: .85rem; }
+.trade-counter-actions { display:flex; gap:.5rem; justify-content:flex-end; margin-top:.5rem; }
+
+
+.trade-arb-panel { padding: .8rem; background: rgba(0,0,0,0.3); border: 1px solid var(--gold-border); border-radius: 6px; margin: .5rem 0; }
+.trade-arb-panel h3 { margin: 0 0 .5rem; color: var(--gold-light); font-size: .9rem; display:flex; align-items:center; gap:.5rem; }
+.trade-arb-count { padding: .1rem .5rem; background: var(--gold-bg); border-radius: 999px; font-size: .75rem; }
+.trade-arb-empty { color: var(--gold-dim); font-size: .8rem; font-style: italic; }
+.trade-arb-list { list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:.5rem; }
+.trade-arb-row { padding:.5rem; background: rgba(0,0,0,0.2); border-left: 3px solid var(--gold-border); }
+.trade-arb-detail { font-size: .8rem; color: var(--gold-dim); margin-top: .25rem; }
+.trade-arb-controls { display:flex; gap:.4rem; margin-top:.4rem; }
+.trade-arb-reason { flex:1; padding:.3rem .5rem; background:rgba(0,0,0,.3); border:1px solid var(--gold-border); color:var(--gold-light); border-radius:4px; font-family:inherit; font-size:.8rem; }
+.trade-arb-veto-btn { padding:.3rem .8rem; background:rgba(180,40,40,.3); border:1px solid rgba(255,80,80,.5); color:#ffaaaa; border-radius:4px; cursor:pointer; font-family:inherit; }
+.trade-arb-veto-btn:hover:not(:disabled) { background:rgba(180,40,40,.5); }
+.trade-arb-veto-btn:disabled { opacity:.4; cursor:not-allowed; }
+

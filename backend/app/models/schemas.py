@@ -38,6 +38,9 @@ class CharacterCreate(BaseModel):
     # Experience
     experience_points: int = Field(default=0, ge=0, description="Experience points")
 
+    # Per-character gold (separate from party-pooled gold on the session)
+    gold: int = Field(default=0, ge=0, description="Personal gold pieces")
+
     # Other attributes
     hp: int = Field(default=8, gt=0, description="Hit points (must be positive)")
     max_hp: Optional[int] = Field(None, gt=0, description="Maximum hit points")
@@ -143,6 +146,7 @@ class CharacterUpdate(BaseModel):
     name: Optional[str] = Field(None, min_length=1)
     level: Optional[int] = Field(None, ge=1, le=20)
     experience_points: Optional[int] = Field(None, ge=0)
+    gold: Optional[int] = Field(None, ge=0)
     subrace: Optional[str] = None
     subclass: Optional[str] = None
     background: Optional[str] = None

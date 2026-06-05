@@ -34,6 +34,8 @@ vi.mock('../api/client', () => ({
   talkToNPC: () => Promise.resolve({ response: '' }),
   getMapState: () => Promise.resolve(null),
   generateSceneImage: () => Promise.resolve({ image_url: '', scene_type: 'tavern' }),
+  listTrades: () => Promise.resolve({ trades: [] }),
+  vetoTrade: () => Promise.resolve({ trade: null }),
 }))
 
 const mockConnect = vi.fn()

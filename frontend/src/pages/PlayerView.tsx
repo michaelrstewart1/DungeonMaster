@@ -11,6 +11,7 @@ import BattleMap from '../components/BattleMap';
 import { TradeOfferModal, IncomingTradeModal, OutgoingTradeBadge } from '../components/TradePanel';
 import { useToast } from '../components/Toast';
 import type { Trade } from '../api/client';
+import { useItem, equipItem } from '../api/client';
 import type { Character, GameState, GameMap, DiceResult } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -259,6 +260,29 @@ export function PlayerView() {
         addToast({ type: 'info', message: `${t.to_player_name} declined your offer.` });
       } else if (t.status === 'cancelled' && t.to_player_id === playerId) {
         addToast({ type: 'info', message: `${t.from_player_name} cancelled the trade.` });
+      } else if (t.status === 'countered' && t.from_player_id === playerId) {
+        addToast({ type: 'info', message: `${t.to_player_name} countered your offer — see incoming.` });
+      } else if (t.status === 'vetoed') {
+        addToast({ type: 'error', title: 'DM vetoed trade', message: t.note ? `Reason: ${t.note}` : '' });
+      }
+    }
+    // Item use/equip broadcasts — refresh own character so HP/equipped UI updates.
+    if (
+      (last.type === 'item_used' as string ||
+       last.type === 'item_equipped' as string ||
+       last.type === 'item_unequipped' as string)
+    ) {
+      const p = last.payload as { character_id?: string; character_name?: string; item_name?: string; effect_summary?: string | null };
+      if (p.character_id && p.character_id !== characterId && p.character_name && p.item_name) {
+        if (last.type === 'item_used') {
+          addToast({ type: 'info', message: `${p.character_name} used ${p.item_name}${p.effect_summary ? ` — ${p.effect_summary}` : ''}` });
+        }
+      }
+      if (p.character_id === characterId && characterId) {
+        fetch(`${API_BASE}/characters/${characterId}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((c) => { if (c) setCharacter(c); })
+          .catch(() => undefined);
       }
     }
   }, [messages, character, playerId, characterId, addToast, pendingOutgoing, incomingTrade]);
@@ -587,6 +611,7 @@ export function PlayerView() {
           <div className="pv-sheet-section">
             <h3>
               Inventory
+              <span className="pv-gold-pill" title="Personal gold">💰 {character.gold ?? 0} gp</span>
               <button
                 type="button"
                 className="pv-trade-btn"
@@ -604,12 +629,46 @@ export function PlayerView() {
             </h3>
             {character.structured_inventory && character.structured_inventory.length > 0 ? (
               <ul className="pv-inventory-list">
-                {character.structured_inventory.map((item) => (
-                  <li key={item.id} className="pv-inventory-row">
-                    <span className="pv-inventory-name">{item.name}</span>
-                    <span className="pv-inventory-meta">×{item.quantity}{item.rarity ? ` · ${item.rarity}` : ''}</span>
-                  </li>
-                ))}
+                {character.structured_inventory.map((item) => {
+                  const isEquippable = ['weapon', 'armor', 'shield', 'accessory'].includes((item.item_type || '').toLowerCase());
+                  const hasEffect = !!(item.effect && item.effect.type);
+                  const handleUse = async () => {
+                    if (!sessionId || !character || !playerId) return;
+                    try {
+                      const res = await useItem(sessionId, character.id, item.id, playerId);
+                      addToast({ type: 'success', message: res.effect_summary || `Used ${res.item_name}.` });
+                    } catch (err) {
+                      addToast({ type: 'error', message: err instanceof Error ? err.message : 'Use failed' });
+                    }
+                  };
+                  const handleEquip = async (equip: boolean) => {
+                    if (!sessionId || !character || !playerId) return;
+                    try {
+                      await equipItem(sessionId, character.id, item.id, playerId, equip);
+                    } catch (err) {
+                      addToast({ type: 'error', message: err instanceof Error ? err.message : 'Equip failed' });
+                    }
+                  };
+                  return (
+                    <li key={item.id} className={`pv-inventory-row ${item.equipped ? 'is-equipped' : ''}`}>
+                      <span className="pv-inventory-name">
+                        {item.name}
+                        {item.equipped ? <span className="pv-inv-chip">Equipped</span> : null}
+                      </span>
+                      <span className="pv-inventory-meta">×{item.quantity}{item.rarity ? ` · ${item.rarity}` : ''}</span>
+                      <span className="pv-inventory-actions">
+                        {hasEffect ? (
+                          <button type="button" className="pv-inv-btn" onClick={handleUse} disabled={!playerId}>Use</button>
+                        ) : null}
+                        {isEquippable ? (
+                          <button type="button" className="pv-inv-btn" onClick={() => handleEquip(!item.equipped)} disabled={!playerId}>
+                            {item.equipped ? 'Unequip' : 'Equip'}
+                          </button>
+                        ) : null}
+                      </span>
+                    </li>
+                  );
+                })}
               </ul>
             ) : (
               <div className="pv-inventory-empty">No tradeable items yet.</div>

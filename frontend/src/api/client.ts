@@ -279,6 +279,61 @@ export async function updatePartyGold(sessionId: string, amount: number, reason:
   });
 }
 
+export interface CharacterGoldAdjustResponse {
+  character_id: string;
+  gold: number;
+  delta: number;
+  reason?: string;
+}
+
+export async function adjustCharacterGold(
+  characterId: string,
+  amount: number,
+  reason?: string,
+): Promise<CharacterGoldAdjustResponse> {
+  return request<CharacterGoldAdjustResponse>(`/characters/${characterId}/gold`, {
+    method: 'POST',
+    body: JSON.stringify({ amount, reason }),
+  });
+}
+
+// ─── Item actions (use / equip / unequip) ──────────────────────────────
+
+export interface ItemUseResult {
+  character_id: string;
+  item_id: string;
+  item_name: string;
+  consumed: boolean;
+  effect_summary?: string | null;
+  hp_before?: number;
+  hp_after?: number;
+}
+
+export async function useItem(
+  sessionId: string,
+  characterId: string,
+  itemId: string,
+  playerId: string,
+): Promise<ItemUseResult> {
+  return request<ItemUseResult>(
+    `/game/sessions/${sessionId}/characters/${characterId}/items/${itemId}/use`,
+    { method: 'POST', body: JSON.stringify({ player_id: playerId }) },
+  );
+}
+
+export async function equipItem(
+  sessionId: string,
+  characterId: string,
+  itemId: string,
+  playerId: string,
+  equip: boolean,
+): Promise<{ character_id: string; item_id: string; equipped: boolean }> {
+  return request(
+    `/game/sessions/${sessionId}/characters/${characterId}/items/${itemId}/${equip ? 'equip' : 'unequip'}`,
+    { method: 'POST', body: JSON.stringify({ player_id: playerId }) },
+  );
+}
+
 // ─── Player-to-player trades ────────────────────────────────────────────
 
 export interface TradeItemRef {
@@ -301,9 +356,10 @@ export interface Trade {
   offered_gold: number;
   requested_gold: number;
   note: string;
-  status: 'pending' | 'accepted' | 'declined' | 'cancelled';
+  status: 'pending' | 'accepted' | 'declined' | 'cancelled' | 'countered' | 'vetoed';
   created_at: string;
   resolved_at?: string | null;
+  counter_of?: string | null;
 }
 
 export interface CreateTradePayload {
@@ -344,6 +400,38 @@ export async function cancelTrade(sessionId: string, tradeId: string, playerId: 
   return request<{ trade: Trade }>(`/game/sessions/${sessionId}/trades/${tradeId}/cancel`, {
     method: 'POST',
     body: JSON.stringify({ player_id: playerId }),
+  });
+}
+
+export interface CounterPayload {
+  player_id: string;
+  from_character_id?: string;
+  offered_items?: TradeItemRef[];
+  requested_items?: TradeItemRef[];
+  offered_gold?: number;
+  requested_gold?: number;
+  note?: string;
+}
+
+export async function counterTrade(
+  sessionId: string,
+  tradeId: string,
+  payload: CounterPayload,
+): Promise<{ original: Trade; trade: Trade; delivered: boolean }> {
+  return request(`/game/sessions/${sessionId}/trades/${tradeId}/counter`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function vetoTrade(
+  sessionId: string,
+  tradeId: string,
+  reason?: string,
+): Promise<{ trade: Trade }> {
+  return request<{ trade: Trade }>(`/game/sessions/${sessionId}/trades/${tradeId}/veto`, {
+    method: 'POST',
+    body: JSON.stringify({ reason }),
   });
 }
 
