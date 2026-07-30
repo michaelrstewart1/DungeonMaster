@@ -66,6 +66,20 @@ jobs:
             --base-url http://127.0.0.1:8765 \
             --timeout 30
 
+      - name: Run resume/rejoin scenario
+        run: |
+          python -m scripts.simulate.runner \
+            --scenario resume_rejoin \
+            --base-url http://127.0.0.1:8765 \
+            --timeout 60
+
+      - name: Run combat loop scenario
+        run: |
+          python -m scripts.simulate.runner \
+            --scenario combat_loop \
+            --base-url http://127.0.0.1:8765 \
+            --timeout 60
+
       - name: Upload run artifacts
         if: always()
         uses: actions/upload-artifact@v4

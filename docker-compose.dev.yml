@@ -21,6 +21,8 @@ services:
     container_name: dm-mongodb
     ports:
       - "27017:27017"
+    profiles:
+      - srd   # optional 5e SRD reference DB — not used by the backend yet
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 5s

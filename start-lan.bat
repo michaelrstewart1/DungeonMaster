@@ -15,12 +15,15 @@ for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /c:"IPv4 Address"') do (
 )
 :found_ip
 set LOCAL_IP=%LOCAL_IP: =%
-echo  Your LAN address: http://%LOCAL_IP%:8000
+echo  Your LAN address: http://%LOCAL_IP%:3000
 echo  Share this with players on the same WiFi.
 echo.
 echo  Press Ctrl+C to stop the server.
 echo ============================================================
 echo.
+
+REM Start the frontend dev server (LAN-accessible) in a second window
+start "DungeonMaster Frontend" cmd /k "cd /d "%~dp0frontend" && npm run dev -- --host 0.0.0.0 --port 3000"
 
 cd /d "%~dp0backend"
 

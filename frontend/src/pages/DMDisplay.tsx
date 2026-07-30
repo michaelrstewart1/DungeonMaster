@@ -49,6 +49,18 @@ export function DMDisplay() {
   const autoScanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const narrativeRef = useRef<HTMLDivElement>(null);
 
+  // Client-side lip sync: while the avatar is speaking, oscillate the mouth
+  // amplitude locally (the server only reports the speaking window).
+  const [mouthAmp, setMouthAmp] = useState(0);
+  useEffect(() => {
+    if (!avatar.is_speaking) {
+      setMouthAmp(0);
+      return;
+    }
+    const t = setInterval(() => setMouthAmp(0.25 + Math.random() * 0.75), 120);
+    return () => clearInterval(t);
+  }, [avatar.is_speaking]);
+
   // Load initial data
   useEffect(() => {
     if (!sessionId) return;
@@ -271,13 +283,16 @@ export function DMDisplay() {
   const isCombat = phase === 'combat';
   const combatState = gameState?.combat_state;
 
-  // DM face expressions
+  // DM face expressions (must cover every backend Expression value)
   const faceExpressions: Record<string, string> = {
     neutral: '🧙',
     happy: '😊',
     angry: '😠',
+    sad: '😢',
     surprised: '😲',
     thinking: '🤔',
+    menacing: '😈',
+    excited: '🤩',
     laughing: '😈',
     dramatic: '🔥',
   };
@@ -290,17 +305,17 @@ export function DMDisplay() {
       <div className="dm-avatar-section">
         <div className={`dm-face ${avatar.is_speaking ? 'dm-face-speaking' : ''}`}>
           <span className="dm-face-emoji" style={{
-            transform: `translate(${avatar.gaze.x * 5}px, ${avatar.gaze.y * 5}px)`,
+            transform: `translate(${(typeof avatar.gaze === 'object' ? avatar.gaze.x : 0) * 5}px, ${(typeof avatar.gaze === 'object' ? avatar.gaze.y : 0) * 5}px)`,
           }}>
             {faceEmoji}
           </span>
           {avatar.is_speaking && (
             <div className="dm-speaking-indicator">
-              <span className="dm-speak-bar" style={{ height: `${20 + avatar.mouth_amplitude * 30}px` }} />
-              <span className="dm-speak-bar" style={{ height: `${10 + avatar.mouth_amplitude * 50}px` }} />
-              <span className="dm-speak-bar" style={{ height: `${15 + avatar.mouth_amplitude * 40}px` }} />
-              <span className="dm-speak-bar" style={{ height: `${10 + avatar.mouth_amplitude * 50}px` }} />
-              <span className="dm-speak-bar" style={{ height: `${20 + avatar.mouth_amplitude * 30}px` }} />
+              <span className="dm-speak-bar" style={{ height: `${20 + mouthAmp * 30}px` }} />
+              <span className="dm-speak-bar" style={{ height: `${10 + mouthAmp * 50}px` }} />
+              <span className="dm-speak-bar" style={{ height: `${15 + mouthAmp * 40}px` }} />
+              <span className="dm-speak-bar" style={{ height: `${10 + mouthAmp * 50}px` }} />
+              <span className="dm-speak-bar" style={{ height: `${20 + mouthAmp * 30}px` }} />
             </div>
           )}
         </div>

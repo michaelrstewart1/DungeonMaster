@@ -1,5 +1,5 @@
 # AI Dungeon Master - Development Commands
-.PHONY: help dev-up dev-down test-backend test-frontend test-e2e test-all lint format migrate install docker-up docker-down docker-gpu
+.PHONY: help dev-up dev-down test-backend test-frontend test-e2e test-all lint format migrate install docker-up docker-down docker-gpu backup restore
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -74,6 +74,12 @@ simulate-deps: ## Install bot-harness deps (Phase 1: httpx, websockets)
 simulate-smoke: ## Run the headless 3-bot smoke scenario against http://127.0.0.1:8000
 	python -m scripts.simulate.runner --scenario smoke --timeout 60
 
+simulate-resume: ## Verify session resume + player rejoin protocol
+	python -m scripts.simulate.runner --scenario resume_rejoin --timeout 90
+
+simulate-combat: ## Fight a rules-engine encounter end to end
+	python -m scripts.simulate.runner --scenario combat_loop --timeout 90
+
 simulate-tavern: ## Run the 4-persona tavern brawl (uses Ollama if reachable, else scripted)
 	python -m scripts.simulate.runner --scenario tavern_brawl --max-turns 20 --timeout 600
 
@@ -101,3 +107,12 @@ migrate: ## Run Alembic migrations
 
 migrate-new: ## Create a new migration (usage: make migrate-new MSG="description")
 	cd backend && python -m alembic revision --autogenerate -m "$(MSG)"
+
+backup: ## Dump the production Postgres DB to backups/dungeon_master_<timestamp>.sql.gz
+	@mkdir -p backups
+	docker compose exec -T postgres pg_dump -U dm dungeon_master | gzip > backups/dungeon_master_$$(date +%Y%m%d_%H%M%S).sql.gz
+	@ls -lh backups | tail -1
+
+restore: ## Restore the production DB from a dump (usage: make restore FILE=backups/xxx.sql.gz)
+	@test -n "$(FILE)" || (echo "Usage: make restore FILE=backups/xxx.sql.gz" && exit 1)
+	gunzip -c "$(FILE)" | docker compose exec -T postgres psql -U dm -d dungeon_master

@@ -9,10 +9,6 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+asyncpg://dungeonmaster:dungeonmaster@localhost:5432/dungeonmaster"
     database_echo: bool = False
 
-    # MongoDB (SRD data)
-    mongodb_url: str = "mongodb://localhost:27017"
-    mongodb_database: str = "5e-database"
-
     # Redis
     redis_url: str = "redis://localhost:6379/0"
 

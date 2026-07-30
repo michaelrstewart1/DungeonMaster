@@ -16,25 +16,28 @@ services:
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     environment:
-      - DM_DATABASE_URL=postgresql+asyncpg://dm:${POSTGRES_PASSWORD:-changeme}@postgres:5432/dungeon_master
+      - DM_DATABASE_URL=postgresql+asyncpg://dm:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/dungeon_master
       - DM_REDIS_URL=redis://redis:6379/0
-      - DM_MONGODB_URL=mongodb://mongo:27017/srd
       - DM_LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - DM_LLM_FALLBACK_PROVIDER=${DM_LLM_FALLBACK_PROVIDER:-}
       - DM_OLLAMA_MODEL=${LLM_MODEL:-llama3.1:8b}
       - DM_OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - DM_ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - DM_OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - DM_GEMINI_API_KEY=${GEMINI_API_KEY:-}
       - DM_GEMINI_MODEL=${GEMINI_MODEL:-gemini-2.5-flash}
-      - TTS_PROVIDER=${TTS_PROVIDER:-piper}
-      - STT_PROVIDER=${STT_PROVIDER:-whisper}
+      - DM_TTS_ENGINE=${TTS_PROVIDER:-piper}
+      - DM_OPENAI_TTS_VOICE=${DM_OPENAI_TTS_VOICE:-onyx}
+      - DM_OPENAI_TTS_MODEL=${DM_OPENAI_TTS_MODEL:-gpt-4o-mini-tts}
+      - DM_STT_PROVIDER=${DM_STT_PROVIDER:-auto}
+      - DM_STT_MODEL=${DM_STT_MODEL:-base.en}
+      - DM_STT_DEVICE=${DM_STT_DEVICE:-cpu}
+      - DM_VISION_CAMERA_DEVICE=${DM_VISION_CAMERA_DEVICE:--1}
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
-      mongo:
-        condition: service_started
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 30s
@@ -53,7 +56,7 @@ services:
     environment:
       POSTGRES_DB: dungeon_master
       POSTGRES_USER: dm
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -61,12 +64,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-    restart: unless-stopped
-
-  mongo:
-    image: mongo:7
-    volumes:
-      - mongodata:/data/db
     restart: unless-stopped
 
   redis:
@@ -94,7 +91,6 @@ services:
 
 volumes:
   pgdata:
-  mongodata:
   redisdata:
   ollama_models:
   backend_data:

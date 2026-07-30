@@ -210,6 +210,10 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     except Exception:
                         pass
 
+                # Animate the DM avatar on the TV display for this narration
+                from app.api.routes.avatar import trigger_speaking
+                trigger_speaking(session_id, narration)
+
                 await manager.broadcast(session_id, turn_result)
             
             elif message_type == "token_move":

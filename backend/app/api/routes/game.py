@@ -224,6 +224,10 @@ async def submit_player_action(
 
     await repo.save_game_session(db, session)
 
+    # Animate the DM avatar on the TV display for this narration
+    from app.api.routes.avatar import trigger_speaking
+    trigger_speaking(session_id, narration)
+
     # Long-term memory: distill this turn into canonical facts in the
     # background (never blocks the player's response).
     if narrator is not None:

@@ -126,6 +126,23 @@ async def speak(session_id: str, body: dict) -> dict:
     return state.to_dict()
 
 
+def trigger_speaking(session_id: str, text: str) -> None:
+    """Auto-animate the DM avatar for a piece of narration.
+
+    Called by the game loop whenever narration is produced — sets an
+    expression from text sentiment and a speaking window sized to the
+    text length (~2.5 words/sec, matching typical TTS pace)."""
+    if not text:
+        return
+    words = len(text.split())
+    duration = min(45.0, max(1.5, words / 2.5))
+    state = _get_or_create_state(session_id)
+    state.expression = _expression_mapper.from_text_sentiment(text)
+    state.is_speaking = True
+    state.mouth_amplitude = 0.5
+    _speaking_timers[session_id] = datetime.now() + timedelta(seconds=duration)
+
+
 @router.get("/{session_id}/state")
 async def get_full_state(session_id: str) -> dict:
     """Get full avatar state.
