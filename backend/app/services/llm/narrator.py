@@ -143,6 +143,7 @@ class DMNarrator:
         story_bible: str = "",
         npcs: list[dict] | None = None,
         session_history: list[str] | None = None,
+        history_summary: str = "",
     ) -> str:
         """Narrate an exploration action.
         
@@ -154,6 +155,7 @@ class DMNarrator:
             story_bible: Secret narrative plan for the campaign (optional)
             npcs: Known NPCs in the scene (optional, for canon protection)
             session_history: Session's narrative_history strings for context
+            history_summary: Rolling "story so far" summary of older history
             
         Returns:
             Narration string describing what happens
@@ -166,6 +168,8 @@ class DMNarrator:
             }
             if story_bible:
                 game_state["story_bible"] = story_bible
+            if history_summary:
+                game_state["story_so_far"] = history_summary
 
             # Create system prompt with NPC context for canon protection
             system_prompt = PromptTemplates.dm_system_prompt(

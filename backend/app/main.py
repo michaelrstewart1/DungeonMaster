@@ -28,69 +28,56 @@ from app.api.websockets.audio_ws import router as audio_ws_router
 logger = logging.getLogger(__name__)
 
 
-def _init_app_state(app: FastAPI) -> None:
-    """Initialize narrator and TTS on app startup.
-
-    Supports Gemini, OpenAI, Anthropic, and Ollama LLM providers based on config.
-    Falls back to None / FakeTTS so unit-tests still pass without network calls.
-    """
-    from app.config import settings
-    from app.services.llm.narrator import DMNarrator
+def _build_llm_provider(name: str, settings):
+    """Construct an LLM provider by name, or None if unavailable/misconfigured."""
     from app.services.llm.openai import OpenAIProvider
     from app.services.llm.ollama import OllamaProvider
     from app.services.llm.gemini import GeminiProvider
     from app.services.llm.anthropic import AnthropicProvider
+
+    try:
+        if name == "gemini" and settings.gemini_api_key:
+            return GeminiProvider(api_key=settings.gemini_api_key, model=settings.gemini_model)
+        if name == "anthropic" and settings.anthropic_api_key:
+            return AnthropicProvider(api_key=settings.anthropic_api_key)
+        if name == "ollama":
+            return OllamaProvider(base_url=settings.ollama_base_url, model=settings.ollama_model)
+        if name == "openai" and settings.openai_api_key:
+            return OpenAIProvider(api_key=settings.openai_api_key)
+    except Exception as exc:  # pragma: no cover
+        logger.warning("AI DM: could not init %s provider (%s)", name, exc)
+    return None
+
+
+def _init_app_state(app: FastAPI) -> None:
+    """Initialize narrator and TTS on app startup.
+
+    Supports Gemini, OpenAI, Anthropic, and Ollama LLM providers based on config.
+    An optional fallback provider (DM_LLM_FALLBACK_PROVIDER) is chained so a
+    dead API never stalls the table. Falls back to None / FakeTTS so
+    unit-tests still pass without network calls.
+    """
+    from app.config import settings
+    from app.services.llm.narrator import DMNarrator
+    from app.services.llm.fallback import FallbackLLMProvider
     from app.services.voice.tts import FakeTTS, OpenAITTS
 
     narrator = None
     tts = FakeTTS()
 
     provider = settings.llm_provider.lower()
+    llm = _build_llm_provider(provider, settings)
 
-    if provider == "gemini" and settings.gemini_api_key:
-        try:
-            llm = GeminiProvider(
-                api_key=settings.gemini_api_key,
-                model=settings.gemini_model,
-            )
-            narrator = DMNarrator(llm=llm, max_history=30)
-            logger.info(
-                "AI DM: Gemini narrator ready (model=%s)",
-                settings.gemini_model,
-            )
-        except Exception as exc:  # pragma: no cover
-            logger.warning("AI DM: could not init Gemini (%s) — using fallbacks", exc)
+    fallback_name = (settings.llm_fallback_provider or "").lower()
+    if llm is not None and fallback_name and fallback_name != provider:
+        fallback = _build_llm_provider(fallback_name, settings)
+        if fallback is not None:
+            llm = FallbackLLMProvider(llm, fallback)
+            logger.info("AI DM: fallback provider chained (%s → %s)", provider, fallback_name)
 
-    elif provider == "anthropic" and settings.anthropic_api_key:
-        try:
-            llm = AnthropicProvider(api_key=settings.anthropic_api_key)
-            narrator = DMNarrator(llm=llm, max_history=30)
-            logger.info("AI DM: Anthropic narrator ready")
-        except Exception as exc:  # pragma: no cover
-            logger.warning("AI DM: could not init Anthropic (%s) — using fallbacks", exc)
-
-    elif provider == "ollama":
-        try:
-            llm = OllamaProvider(
-                base_url=settings.ollama_base_url,
-                model=settings.ollama_model,
-            )
-            narrator = DMNarrator(llm=llm, max_history=30)
-            logger.info(
-                "AI DM: Ollama narrator ready (model=%s, url=%s)",
-                settings.ollama_model,
-                settings.ollama_base_url,
-            )
-        except Exception as exc:  # pragma: no cover
-            logger.warning("AI DM: could not init Ollama (%s) — using fallbacks", exc)
-
-    elif provider == "openai" and settings.openai_api_key:
-        try:
-            llm = OpenAIProvider(api_key=settings.openai_api_key)
-            narrator = DMNarrator(llm=llm, max_history=30)
-            logger.info("AI DM: OpenAI narrator ready (model=gpt-4.1-mini)")
-        except Exception as exc:  # pragma: no cover
-            logger.warning("AI DM: could not init OpenAI services (%s) — using fallbacks", exc)
+    if llm is not None:
+        narrator = DMNarrator(llm=llm, max_history=30)
+        logger.info("AI DM: narrator ready (provider=%s)", llm.name)
 
     if narrator is None:
         logger.warning("AI DM: No LLM provider active (provider=%s) — using keyword fallbacks", provider)

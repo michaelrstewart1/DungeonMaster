@@ -18,6 +18,9 @@ class Settings(BaseSettings):
 
     # LLM Settings
     llm_provider: str = "anthropic"  # anthropic, openai, ollama, gemini
+    # Optional secondary provider used automatically when the primary
+    # errors/times out (e.g. primary=anthropic, fallback=ollama).
+    llm_fallback_provider: str = ""
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     gemini_api_key: str = ""

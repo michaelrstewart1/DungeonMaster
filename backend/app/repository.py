@@ -95,6 +95,55 @@ async def set_campaign_story_bible(db: AsyncSession, campaign_id: str, bible: st
 
 
 # ---------------------------------------------------------------------------
+# Campaign Memory
+# ---------------------------------------------------------------------------
+
+async def get_campaign_memory(db: AsyncSession, campaign_id: str) -> dict:
+    """Get structured campaign memory (events/quests/npcs/locations)."""
+    from app.models.database import CampaignMemoryDB
+
+    row = await db.get(CampaignMemoryDB, campaign_id)
+    if row:
+        return row.to_dict()
+    return {
+        "campaign_id": campaign_id,
+        "events": [],
+        "quests": [],
+        "npcs": [],
+        "locations": [],
+        "updated_at": None,
+    }
+
+
+async def save_campaign_memory(db: AsyncSession, memory: dict) -> dict:
+    """Insert or update campaign memory. Returns the saved dict."""
+    from datetime import datetime, timezone
+
+    from app.models.database import CampaignMemoryDB
+
+    row = await db.get(CampaignMemoryDB, memory["campaign_id"])
+    stamp = datetime.now(timezone.utc).isoformat()
+    if row:
+        row.events = list(memory.get("events", []))
+        row.quests = list(memory.get("quests", []))
+        row.npcs = list(memory.get("npcs", []))
+        row.locations = list(memory.get("locations", []))
+        row.updated_at = stamp
+    else:
+        row = CampaignMemoryDB(
+            campaign_id=memory["campaign_id"],
+            events=list(memory.get("events", [])),
+            quests=list(memory.get("quests", [])),
+            npcs=list(memory.get("npcs", [])),
+            locations=list(memory.get("locations", [])),
+            updated_at=stamp,
+        )
+        db.add(row)
+    await db.flush()
+    return row.to_dict()
+
+
+# ---------------------------------------------------------------------------
 # Characters
 # ---------------------------------------------------------------------------
 

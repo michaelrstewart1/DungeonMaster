@@ -309,6 +309,36 @@ class MapDB(Base):
 
 
 # ---------------------------------------------------------------------------
+# Campaign Memory (structured long-term DM memory, keyed by campaign)
+# ---------------------------------------------------------------------------
+
+class CampaignMemoryDB(Base):
+    __tablename__ = "campaign_memory"
+
+    campaign_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    # Canonical event log: [{"fact", "session_id", "turn", "timestamp", "tags"}]
+    events: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Quest log: [{"id", "title", "status", "notes", "updated_at"}]
+    quests: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Persistent NPC registry: [{"name", "npc_type", "disposition", "location",
+    #   "notes", "alive", "last_seen_session"}]
+    npcs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Known locations: [{"name", "description", "visited"}]
+    locations: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    updated_at: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    def to_dict(self) -> dict:
+        return {
+            "campaign_id": self.campaign_id,
+            "events": self.events or [],
+            "quests": self.quests or [],
+            "npcs": self.npcs or [],
+            "locations": self.locations or [],
+            "updated_at": self.updated_at,
+        }
+
+
+# ---------------------------------------------------------------------------
 # Runtime store (persisted key-value snapshots of runtime state)
 # ---------------------------------------------------------------------------
 

@@ -224,6 +224,26 @@ async def submit_player_action(
 
     await repo.save_game_session(db, session)
 
+    # Long-term memory: distill this turn into canonical facts in the
+    # background (never blocks the player's response).
+    if narrator is not None:
+        import asyncio as _asyncio
+        db_factory = getattr(request.app.state, "db_factory", None)
+        llm = getattr(narrator, "_llm", None)
+        if db_factory is not None and llm is not None:
+            from app.services.game.memory import record_turn
+            from app.services.game.summarizer import maybe_roll_up
+            _asyncio.create_task(record_turn(
+                db_factory, llm,
+                campaign_id=session.get("campaign_id", ""),
+                session_id=session_id,
+                turn=turn_number,
+                player_action=player_text,
+                narration=narration,
+            ))
+            # Rolling summarization keeps long-campaign context bounded
+            _asyncio.create_task(maybe_roll_up(db_factory, llm, session_id))
+
     return PlayerActionResponse(
         narration=narration,
         turn_number=turn_number,
@@ -405,6 +425,23 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
             story_bible = await repo.get_campaign_story_bible(db, campaign_id) or ""
             # Pass known NPCs for canon protection context
             npcs = session.get("npcs", [])
+
+            # Layered long-term memory: quests, canon facts, and NPC registry
+            # relevant to this action are injected into the world context so
+            # the DM never contradicts established events across sessions.
+            try:
+                from app.services.game.memory import build_memory_context
+                memory = await repo.get_campaign_memory(db, campaign_id)
+                memory_block = build_memory_context(
+                    memory,
+                    player_action,
+                    recent_narrative=session.get("narrative_history", []),
+                )
+                if memory_block:
+                    world_context = f"{world_context}\n\n{memory_block}"
+            except Exception as exc:
+                logger.warning("Memory retrieval failed (continuing without): %s", exc)
+
             result = await asyncio.wait_for(
                 narrator.narrate_exploration(
                     scene=scene,
@@ -414,6 +451,7 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                     story_bible=story_bible,
                     npcs=npcs,
                     session_history=session.get("narrative_history", []),
+                    history_summary=session.get("history_summary", "") or "",
                 ),
                 timeout=45.0,
             )

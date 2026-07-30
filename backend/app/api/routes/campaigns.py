@@ -146,6 +146,15 @@ async def get_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)) -> 
     return CampaignResponse(**campaign)
 
 
+@router.get("/{campaign_id}/memory")
+async def get_campaign_memory(campaign_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Get the DM's long-term memory for a campaign (events, quests, NPCs, locations)."""
+    campaign = await repo.get_campaign(db, campaign_id)
+    if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
+    return await repo.get_campaign_memory(db, campaign_id)
+
+
 @router.put("/{campaign_id}", response_model=CampaignResponse)
 async def update_campaign(campaign_id: str, campaign_update: CampaignCreate, db: AsyncSession = Depends(get_db)) -> CampaignResponse:
     """Update a campaign."""
