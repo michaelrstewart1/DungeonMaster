@@ -57,6 +57,8 @@ export function loadConfig(): PlaytestConfig {
     sshHost: process.env.PLAYTEST_SSH_HOST || 'dungeon@192.168.1.94',
     headed: envBool('PLAYTEST_HEADED', false),
     runDir,
-    runTimeoutMs: envInt('PLAYTEST_TIMEOUT_MS', 25 * 60 * 1000),
+    // 45 min: with a serial local LLM, 4 players × 2 exploration rounds alone
+    // can take ~20 min — the point is to measure that, not abort on it.
+    runTimeoutMs: envInt('PLAYTEST_TIMEOUT_MS', 45 * 60 * 1000),
   };
 }

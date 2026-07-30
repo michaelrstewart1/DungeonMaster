@@ -10,3 +10,6 @@ backend/data/
 data/
 # Bot harness per-run output (transcripts, scorecards)
 runs/
+
+# Playtest simulator run artifacts
+playtest-runs/

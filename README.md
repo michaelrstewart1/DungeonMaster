@@ -104,3 +104,37 @@ Per-run output is written to `runs/<scenario>-<timestamp>/`:
 
 See `scripts/simulate/scenarios/` for the scenario format and
 `scripts/simulate/agents.py` for persona definitions.
+
+## Human-fidelity playtest simulator (browser-level)
+
+The API-level harness above can't catch UI bugs. `frontend/playtest/` is a
+Playwright **library-mode** orchestrator that replays a whole family game
+night against the real deployed stack — no mocks:
+
+- 1 laptop context (host) creates the campaign + session through the real UI
+- 1 TV context passively watches the DM display (`/dm/:id`)
+- N iPhone-emulated phone contexts join by room code, pick characters, and
+  play with human keystroke cadence, read-time, and think-time
+- Player decisions come from LLM persona brains (Ollama), with a scripted
+  playbook fallback so a run never stalls
+- Optional chaos: phone offline/rejoin, 3G throttle, mid-turn refresh
+- Everything is instrumented: console errors, HTTP timing (incl. server-side
+  `X-Process-Time`), WS frames, screenshots at every beat, Playwright traces,
+  and backend `docker stats`/logs sampled over SSH
+
+```bash
+# Full run vs the VM (4 phones, LLM brains, chaos, telemetry — ~15-25 min)
+make playtest
+
+# Quick local scripted run (1 phone, no chaos/telemetry)
+make playtest-local
+
+# Re-generate a report from an existing run dir
+make playtest-analyze RUN=playtest-runs/<ts>
+```
+
+Each run writes `playtest-runs/<ts>/` with `events.jsonl`, screenshots,
+per-actor traces, backend logs, and a `report.md` containing a timeline,
+latency percentiles per interaction, an error inventory, and a prioritized
+issues list. Configure via `PLAYTEST_*` env vars (see
+`frontend/playtest/config.ts`).
