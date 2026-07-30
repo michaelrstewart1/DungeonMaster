@@ -116,3 +116,12 @@ backup: ## Dump the production Postgres DB to backups/dungeon_master_<timestamp>
 restore: ## Restore the production DB from a dump (usage: make restore FILE=backups/xxx.sql.gz)
 	@test -n "$(FILE)" || (echo "Usage: make restore FILE=backups/xxx.sql.gz" && exit 1)
 	gunzip -c "$(FILE)" | docker compose exec -T postgres psql -U dm -d dungeon_master
+
+playtest: ## Human-fidelity multi-device playtest vs the deployed VM (TV + 4 phones, LLM brains, chaos)
+	cd frontend && npm run playtest
+
+playtest-local: ## Playtest against a local dev stack (no chaos, scripted brains, faster)
+	cd frontend && set PLAYTEST_BASE_URL=http://localhost:5173&& set PLAYTEST_CHAOS=0&& set PLAYTEST_LLM=0&& npm run playtest
+
+playtest-analyze: ## Rebuild the report for an existing run (usage: make playtest-analyze RUN=playtest-runs/<ts>)
+	cd frontend && npm run playtest:analyze -- ../$(RUN)

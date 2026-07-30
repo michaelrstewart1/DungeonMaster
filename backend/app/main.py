@@ -208,6 +208,26 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    @app.middleware("http")
+    async def timing_middleware(request, call_next):
+        """Per-request timing: X-Process-Time header + structured log line.
+
+        Playtest instrumentation correlates this header with client-side
+        timings to split network latency from server processing time.
+        """
+        import time
+
+        start = time.perf_counter()
+        response = await call_next(request)
+        elapsed = time.perf_counter() - start
+        response.headers["X-Process-Time"] = f"{elapsed:.4f}"
+        if request.url.path.startswith("/api/") and request.url.path != "/api/health":
+            logger.info(
+                "REQTIME %s %s %d %.1fms",
+                request.method, request.url.path, response.status_code, elapsed * 1000,
+            )
+        return response
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
