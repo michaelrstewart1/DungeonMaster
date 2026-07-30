@@ -108,8 +108,20 @@ class DMNarrator:
         # Legacy shared history — kept for backward compat but no longer
         # the primary context source.  Callers should pass session_history.
         self._history: list[LLMMessage] = []
-        # Use compact prompts for local models (Ollama) to reduce latency
-        self._compact = hasattr(llm, '_base_url')  # Ollama has _base_url
+
+    @property
+    def _compact(self) -> bool:
+        """Compact prompts/budgets for local models — decided PER REQUEST.
+
+        A FallbackLLMProvider flips between cloud and local as its circuit
+        breaker trips/recovers, so this must track the provider that will
+        actually serve the next call. Plain providers: Ollama exposes
+        _base_url, cloud providers don't.
+        """
+        llm = self._llm
+        if hasattr(llm, "serving_locally"):
+            return bool(llm.serving_locally())
+        return hasattr(llm, "_base_url")
 
     @staticmethod
     def _build_context_from_narrative(

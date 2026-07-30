@@ -111,3 +111,36 @@ async def test_cooldown_expiry_retries_primary():
 
     # cooldown of 0 means the primary is retried every call
     assert primary.attempts == 2
+
+class OllamaLike(FakeLLM):
+    """FakeLLM that quacks like the Ollama adapter (has _base_url)."""
+    _base_url = "http://localhost:11434"
+
+    @property
+    def name(self) -> str:
+        return "ollama-like"
+
+
+@pytest.mark.asyncio
+async def test_serving_locally_tracks_breaker_state():
+    """Compact-prompt detection must follow WHICH provider will serve next."""
+    cloud = ExplodingLLM(default_response="cloud")
+    local = OllamaLike(default_response="local narration")
+    provider = FallbackLLMProvider(cloud, local, cooldown_seconds=60)
+
+    # Breaker closed: cloud primary serves -> rich prompts
+    assert provider.serving_locally() is False
+
+    # Primary fails -> breaker trips -> local serves -> compact prompts
+    resp = await provider.generate(messages=[LLMMessage(role="user", content="hi")])
+    assert resp.content == "local narration"
+    assert provider.serving_locally() is True
+
+    # Breaker expiry restores cloud detection
+    provider._primary_down_until = 0.0
+    assert provider.serving_locally() is False
+
+
+def test_serving_locally_local_primary():
+    provider = FallbackLLMProvider(OllamaLike(), FakeLLM())
+    assert provider.serving_locally() is True

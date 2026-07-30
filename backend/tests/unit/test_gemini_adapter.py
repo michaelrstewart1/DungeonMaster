@@ -205,3 +205,16 @@ class TestGeminiAdapter:
         usage = provider._extract_usage({})
         assert usage.prompt_tokens == 0
         assert usage.completion_tokens == 0
+
+
+class TestThinkingDisabled:
+    """Live narration must not burn maxOutputTokens on hidden reasoning."""
+
+    def test_payload_disables_thinking(self):
+        from app.services.llm.gemini import GeminiProvider
+        provider = GeminiProvider(api_key="k")
+        payload = provider._build_payload(
+            [LLMMessage(role="user", content="hi")], "sys", 0.7, 500
+        )
+        assert payload["generationConfig"]["thinkingConfig"] == {"thinkingBudget": 0}
+        assert payload["generationConfig"]["maxOutputTokens"] == 500

@@ -40,15 +40,15 @@ class FallbackLLMProvider(LLMProvider):
         # tax on every request (e.g. Gemini 429 storms added 3-9s per call).
         self._cooldown_seconds = cooldown_seconds
         self._primary_down_until = 0.0
-        # Ollama-detection heuristic used by DMNarrator for compact prompts —
-        # if EITHER provider in the chain is local, advertise it: the local
-        # model serves most requests whenever the cloud primary is rate
-        # limited, and feeding it the rich cloud prompt (and 500-token
-        # budget) more than doubles narration latency on the GPU.
-        if hasattr(primary, "_base_url"):
-            self._base_url = primary._base_url
-        elif hasattr(fallback, "_base_url"):
-            self._base_url = fallback._base_url
+
+    def serving_locally(self) -> bool:
+        """True when the provider that will serve the NEXT request is a
+        local model (Ollama). DMNarrator uses this per-request to pick
+        compact prompts/token budgets for the GPU and rich ones for the
+        cloud — a static decision at startup mislabeled Gemini as local
+        (or vice versa) and truncated cloud narrations at 200 tokens."""
+        active = self._primary if self._primary_available() else self._fallback
+        return hasattr(active, "_base_url")
 
     @property
     def name(self) -> str:

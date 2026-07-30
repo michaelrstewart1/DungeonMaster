@@ -156,6 +156,11 @@ class GeminiProvider(LLMProvider):
             "generationConfig": {
                 "temperature": temperature,
                 "maxOutputTokens": max_tokens,
+                # 2.5-series models "think" by default and the hidden
+                # reasoning consumes maxOutputTokens — narrations came back
+                # truncated mid-word. Live table narration needs speed, not
+                # chain-of-thought, so disable thinking entirely.
+                "thinkingConfig": {"thinkingBudget": 0},
             },
         }
 
