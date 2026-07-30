@@ -303,6 +303,7 @@ async def create_trade(
         trade["requested_items"] = _label_refs(trade["requested_items"], rinv)
 
     storage.trades[trade_id] = trade
+    storage.flush("trades")
 
     # Notify the recipient privately for confirmation, AND broadcast to the
     # whole session so the DM (and any open trade-arbitration UIs) see it.
@@ -361,6 +362,7 @@ async def respond_trade(
     if body.action == "decline":
         trade["status"] = "declined"
         trade["resolved_at"] = _now()
+        storage.flush("trades")
         from app.api.websockets.game_ws import manager
 
         await manager.broadcast(
@@ -374,6 +376,7 @@ async def respond_trade(
     if sender_char is None:
         trade["status"] = "cancelled"
         trade["resolved_at"] = _now()
+        storage.flush("trades")
         raise HTTPException(status_code=410, detail="Sender character missing; trade cancelled")
     _ensure_item_ids(sender_char)
 
@@ -420,6 +423,7 @@ async def respond_trade(
             _credit_items(sender_char, offered_items)  # type: ignore[has-type]
         trade["status"] = "cancelled"
         trade["resolved_at"] = _now()
+        storage.flush("trades")
         raise HTTPException(status_code=409, detail=str(exc))
 
     _credit_items(recipient_char, offered_items)
@@ -433,6 +437,7 @@ async def respond_trade(
 
     trade["status"] = "accepted"
     trade["resolved_at"] = _now()
+    storage.flush("trades")
 
     from app.api.websockets.game_ws import manager
 
@@ -454,6 +459,7 @@ async def cancel_trade(session_id: str, trade_id: str, body: TradeCancel) -> dic
         raise HTTPException(status_code=403, detail="Only the initiator can cancel")
     trade["status"] = "cancelled"
     trade["resolved_at"] = _now()
+    storage.flush("trades")
 
     from app.api.websockets.game_ws import manager
 
@@ -506,6 +512,7 @@ async def counter_trade(
     # trade fails validation (recipient can then send a fresh offer).
     original["status"] = "countered"
     original["resolved_at"] = _now()
+    storage.flush("trades")
 
     from app.api.websockets.game_ws import manager
 
@@ -519,6 +526,7 @@ async def counter_trade(
     new_trade = result["trade"]
     new_trade["counter_of"] = trade_id
     storage.trades[new_trade["id"]] = new_trade
+    storage.flush("trades")
     return {"original": _trade_summary(original), "trade": new_trade, "delivered": result["delivered"]}
 
 
@@ -537,6 +545,7 @@ async def veto_trade(session_id: str, trade_id: str, body: TradeVeto) -> dict:
     trade["resolved_at"] = _now()
     if body.reason:
         trade["note"] = body.reason
+    storage.flush("trades")
 
     from app.api.websockets.game_ws import manager
 

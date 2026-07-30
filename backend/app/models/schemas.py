@@ -225,6 +225,7 @@ class GameStateResponse(BaseModel):
     active_effects: List[Dict[str, Any]] = Field(default_factory=list, description="Active effects/spells")
     detected_scene: Optional[str] = Field(None, description="Detected scene type: tavern, dungeon, etc.")
     scene_image_url: Optional[str] = Field(None, description="URL of AI-generated scene background image")
+    room_code: Optional[str] = Field(None, description="Multiplayer join code for this session")
 
     @field_validator("current_phase", mode="before")
     @classmethod

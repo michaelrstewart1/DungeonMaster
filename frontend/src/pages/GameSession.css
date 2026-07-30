@@ -9310,3 +9310,74 @@
   padding: 4px 0;
   animation: fadeIn 0.3s ease;
 }
+
+/* ============================================================
+   End-of-session overlay
+   ============================================================ */
+
+.end-session-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.75);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  animation: fadeIn 0.2s ease;
+}
+
+.end-session-panel {
+  background: var(--bg-medium);
+  border: 1px solid var(--gold-border);
+  border-radius: 12px;
+  padding: 2rem 2.5rem;
+  max-width: 520px;
+  width: calc(100% - 2rem);
+  text-align: center;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.7);
+}
+
+.end-session-panel h3 {
+  font-family: 'Cinzel', serif;
+  color: var(--gold-light);
+  margin: 0 0 0.8rem 0;
+  font-size: 1.4rem;
+}
+
+.end-session-panel p {
+  color: rgba(255, 255, 255, 0.75);
+  line-height: 1.5;
+}
+
+.end-session-summary {
+  font-style: italic;
+  border-left: 3px solid var(--gold-dim);
+  padding: 0.6rem 1rem;
+  margin: 0.8rem 0;
+  text-align: left;
+  background: var(--gold-bg);
+  border-radius: 0 8px 8px 0;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+
+.end-session-actions {
+  display: flex;
+  gap: 0.8rem;
+  justify-content: center;
+  margin-top: 1.2rem;
+}
+
+.btn-end-session {
+  background: none;
+  border: 1px solid var(--gold-border);
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 1rem;
+  padding: 0.3rem 0.5rem;
+  transition: background 0.2s;
+}
+
+.btn-end-session:hover {
+  background: var(--gold-bg);
+}

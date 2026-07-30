@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { listGameSessions } from '../api/client';
+import { listGameSessions, resumeGameSession } from '../api/client';
 import type { SessionSummary } from '../api/client';
 
 interface SessionHistoryProps {
@@ -30,6 +30,7 @@ export function SessionHistory({ campaignId }: SessionHistoryProps) {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [loading, setLoading] = useState(true);
+  const [resuming, setResuming] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,6 +40,18 @@ export function SessionHistory({ campaignId }: SessionHistoryProps) {
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [campaignId]);
+
+  // Restore server-side room code mapping before entering, so players
+  // can rejoin with the original code even after a backend restart.
+  const handleResume = async (sessionId: string, target: 'game' | 'lobby') => {
+    setResuming(sessionId);
+    try {
+      await resumeGameSession(sessionId);
+    } catch {
+      // Session state fetch happens in the target page; proceed regardless.
+    }
+    navigate(target === 'lobby' ? `/lobby/${sessionId}` : `/game/${sessionId}`);
+  };
 
   if (loading) return null;
   if (sessions.length === 0) return null;
@@ -51,7 +64,7 @@ export function SessionHistory({ campaignId }: SessionHistoryProps) {
           <div
             key={session.id}
             className={`session-history-item ${i === 0 ? 'latest' : ''}`}
-            onClick={() => navigate(`/game/${session.id}`)}
+            onClick={() => handleResume(session.id, 'game')}
             role="button"
             tabIndex={0}
           >
@@ -62,9 +75,32 @@ export function SessionHistory({ campaignId }: SessionHistoryProps) {
                 <span className="session-phase">{session.phase}</span>
                 <span className="session-turns">{session.turn_count} turns</span>
                 <span className="session-time">{timeAgo(session.created_at)}</span>
+                {session.room_code && (
+                  <span className="session-room-code" title="Join code">🔑 {session.room_code}</span>
+                )}
               </div>
               {session.scene && (
                 <p className="session-scene-preview">{session.scene}</p>
+              )}
+              {i === 0 && (
+                <div className="session-resume-actions">
+                  <button
+                    className="btn-primary btn-resume"
+                    data-testid="btn-continue-session"
+                    disabled={resuming === session.id}
+                    onClick={(e) => { e.stopPropagation(); handleResume(session.id, 'game'); }}
+                  >
+                    {resuming === session.id ? 'Resuming…' : '▶ Continue Adventure'}
+                  </button>
+                  <button
+                    className="btn-secondary btn-resume-table"
+                    data-testid="btn-resume-table"
+                    disabled={resuming === session.id}
+                    onClick={(e) => { e.stopPropagation(); handleResume(session.id, 'lobby'); }}
+                  >
+                    🖥️ Resume Multiplayer Table
+                  </button>
+                </div>
               )}
             </div>
           </div>

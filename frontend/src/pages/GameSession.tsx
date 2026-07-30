@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { uuid } from '../utils/uuid'
-import { getGameState, submitAction, getCampaign, getSessionGreeting, getSessionRecap, getCharacters, talkToNPC, getSessionNPCs, getMapState } from '../api/client'
+import { getGameState, submitAction, getCampaign, getSessionGreeting, getSessionRecap, getCharacters, talkToNPC, getSessionNPCs, getMapState, endGameSession } from '../api/client'
 import { GameWebSocket } from '../api/websocket'
 import { GameChat, type ChatMessage } from '../components/GameChat'
 import { DiceRoller } from '../components/DiceRoller'
@@ -82,6 +82,8 @@ export function GameSession() {
   const [npcDialogue, setNpcDialogue] = useState<{ npcName: string; npcType: NPCType; dialogue: string } | null>(null)
   const [showRecap, setShowRecap] = useState(false)
   const [recapText, setRecapText] = useState('')
+  const [endState, setEndState] = useState<'idle' | 'confirm' | 'ending' | 'ended'>('idle')
+  const [endSummary, setEndSummary] = useState('')
   const [showInventory, setShowInventory] = useState(false)
   const [showLevelUp, setShowLevelUp] = useState(false)
   const [currentScene, setCurrentScene] = useState<string>('tavern')
@@ -593,35 +595,52 @@ export function GameSession() {
 
     if (!sessionId) return
 
-    // Audio WebSocket for TTS voice
+    // Audio WebSocket for TTS voice (auto-reconnects — narration audio must
+    // survive wifi blips and backend restarts during a live session)
     const wsBase = import.meta.env.VITE_WS_URL || `ws://${window.location.host}`
-    const audioWs = new WebSocket(`${wsBase}/ws/audio/${sessionId}`)
-    audioWsRef.current = audioWs
-    audioWs.binaryType = 'arraybuffer'
-    audioWs.onmessage = (event) => {
-      if (event.data instanceof ArrayBuffer) {
-        // Accumulate audio chunks for current voice segment
-        audioChunksRef.current.push(new Uint8Array(event.data))
-      } else {
-        // JSON message — audio_done fires once per voice segment
-        try {
-          const msg = JSON.parse(event.data as string)
-          if (msg.type === 'audio_done' && audioChunksRef.current.length > 0) {
-            const total = audioChunksRef.current.reduce((acc, c) => acc + c.length, 0)
-            const merged = new Uint8Array(total)
-            let offset = 0
-            for (const chunk of audioChunksRef.current) { merged.set(chunk, offset); offset += chunk.length }
-            audioChunksRef.current = []
-            // Queue segment for sequential playback (multi-voice sends multiple segments)
-            const blob = new Blob([merged], { type: 'audio/mpeg' })
-            audioQueueRef.current.push(blob)
-            if (audioQueueRef.current.length === 1) {
-              playNextAudio()
+    let audioDisposed = false
+    let audioRetry = 0
+    let audioTimer: ReturnType<typeof setTimeout> | null = null
+
+    const openAudioWs = () => {
+      if (audioDisposed) return
+      const audioWs = new WebSocket(`${wsBase}/ws/audio/${sessionId}`)
+      audioWsRef.current = audioWs
+      audioWs.binaryType = 'arraybuffer'
+      audioWs.onopen = () => { audioRetry = 0 }
+      audioWs.onmessage = (event) => {
+        if (event.data instanceof ArrayBuffer) {
+          // Accumulate audio chunks for current voice segment
+          audioChunksRef.current.push(new Uint8Array(event.data))
+        } else {
+          // JSON message — audio_done fires once per voice segment
+          try {
+            const msg = JSON.parse(event.data as string)
+            if (msg.type === 'audio_done' && audioChunksRef.current.length > 0) {
+              const total = audioChunksRef.current.reduce((acc, c) => acc + c.length, 0)
+              const merged = new Uint8Array(total)
+              let offset = 0
+              for (const chunk of audioChunksRef.current) { merged.set(chunk, offset); offset += chunk.length }
+              audioChunksRef.current = []
+              // Queue segment for sequential playback (multi-voice sends multiple segments)
+              const blob = new Blob([merged], { type: 'audio/mpeg' })
+              audioQueueRef.current.push(blob)
+              if (audioQueueRef.current.length === 1) {
+                playNextAudio()
+              }
             }
-          }
-        } catch { /* ignore non-JSON */ }
+          } catch { /* ignore non-JSON */ }
+        }
+      }
+      audioWs.onclose = () => {
+        audioWsRef.current = null
+        if (!audioDisposed) {
+          audioRetry++
+          audioTimer = setTimeout(openAudioWs, Math.min(1000 * audioRetry, 15000))
+        }
       }
     }
+    openAudioWs()
 
     const ws = new GameWebSocket(sessionId)
     wsRef.current = ws
@@ -732,7 +751,9 @@ export function GameSession() {
       unsubStatus()
       ws.disconnect()
       wsRef.current = null
-      audioWs.close()
+      audioDisposed = true
+      if (audioTimer) clearTimeout(audioTimer)
+      audioWsRef.current?.close()
       audioWsRef.current = null
     }
   }, [sessionId, loadGameState, speakText, extractCombatLogEntries])
@@ -932,6 +953,14 @@ export function GameSession() {
           >
             👥
           </button>
+          <button
+            className="btn-end-session"
+            onClick={() => setEndState('confirm')}
+            title="End session — save recap for next time"
+            data-testid="btn-end-session"
+          >
+            🌙
+          </button>
           <div className="ws-status">
             <span className={`ws-dot ${wsConnected ? 'connected' : 'disconnected'}`} />
             <span>{wsConnected ? 'Connected' : 'Connecting...'}</span>
@@ -1028,6 +1057,62 @@ export function GameSession() {
           </div>
         </aside>
       </div>
+
+      {/* End-of-session flow */}
+      {endState !== 'idle' && (
+        <div className="end-session-overlay" onClick={() => endState === 'confirm' && setEndState('idle')}>
+          <div className="end-session-panel" onClick={e => e.stopPropagation()}>
+            {endState === 'confirm' && (
+              <>
+                <h3>🌙 End Session?</h3>
+                <p>The tale will be recorded — a recap is saved so next session picks up right where you left off.</p>
+                <div className="end-session-actions">
+                  <button className="btn-secondary" onClick={() => setEndState('idle')}>Keep Playing</button>
+                  <button
+                    className="btn-primary"
+                    data-testid="btn-confirm-end"
+                    onClick={async () => {
+                      if (!sessionId) return
+                      setEndState('ending')
+                      try {
+                        const result = await endGameSession(sessionId)
+                        setEndSummary(result.summary)
+                        setEndState('ended')
+                      } catch {
+                        setEndSummary('The session has ended. Your progress is saved.')
+                        setEndState('ended')
+                      }
+                    }}
+                  >
+                    End & Save Recap
+                  </button>
+                </div>
+              </>
+            )}
+            {endState === 'ending' && (
+              <>
+                <h3>🌙 Recording the Tale…</h3>
+                <p>The chronicler is writing tonight's recap.</p>
+              </>
+            )}
+            {endState === 'ended' && (
+              <>
+                <h3>📜 Until Next Time</h3>
+                <p className="end-session-summary">{endSummary}</p>
+                <div className="end-session-actions">
+                  <button
+                    className="btn-primary"
+                    data-testid="btn-return-campaign"
+                    onClick={() => navigate('/')}
+                  >
+                    Return to Campaigns
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Keyboard shortcuts overlay */}
       {showKeyboardHelp && (

@@ -45,6 +45,7 @@ async def capture_board(session_id: str, request: Request) -> JSONResponse:
 
     result = _serialize_analysis(analysis)
     storage.vision_analyses[session_id] = result
+    storage.flush("vision_analyses")
     return JSONResponse(status_code=200, content=result)
 
 
@@ -60,6 +61,7 @@ async def upload_board_image(session_id: str, request: Request, file: UploadFile
 
     result = _serialize_analysis(analysis)
     storage.vision_analyses[session_id] = result
+    storage.flush("vision_analyses")
 
     # Broadcast token positions via WebSocket if available
     from app.api.websockets.game_ws import manager

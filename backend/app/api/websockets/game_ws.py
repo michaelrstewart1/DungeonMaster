@@ -258,6 +258,7 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     existing[0].update(player_info)
                 else:
                     _storage.session_players[session_id].append(player_info)
+                _storage.flush("session_players")
                 # Bind player_id -> this websocket so the server can send
                 # private messages (e.g. trade offers) to a specific player.
                 manager.register_player(session_id, player_id, websocket)
@@ -290,6 +291,7 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     if p["id"] == player_id:
                         p["is_ready"] = ready
                         break
+                _storage.flush("session_players")
                 await manager.broadcast(session_id, {
                     "type": "player_update",
                     "players": players,

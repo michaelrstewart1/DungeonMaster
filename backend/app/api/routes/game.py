@@ -109,13 +109,15 @@ async def create_game_session(session_create: GameSessionCreate, db: AsyncSessio
         },
     }
     
-    await repo.save_game_session(db, session_data)
-
     # Auto-generate a room code for multiplayer join
     room_code = storage.generate_room_code()
     storage.room_codes[room_code] = session_id
     session_data["room_code"] = room_code
     storage.session_players[session_id] = []
+    storage.flush("room_codes", "session_players")
+
+    # Persist including room_code so the session is resumable after restart
+    await repo.save_game_session(db, session_data)
 
     return GameStateResponse(**session_data)
 
@@ -135,6 +137,7 @@ async def list_game_sessions(campaign_id: str | None = None, db: AsyncSession = 
             "turn_count": sdata.get("turn_count", 0),
             "created_at": sdata.get("created_at", ""),
             "scene": sdata.get("current_scene", "")[:120],
+            "room_code": sdata.get("room_code"),
         })
     sessions.sort(key=lambda s: s.get("created_at", ""), reverse=True)
     return sessions
@@ -147,6 +150,36 @@ async def get_game_state(session_id: str, db: AsyncSession = Depends(get_db)) ->
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
     return GameStateResponse(**session)
+
+
+@router.get("/sessions/{session_id}/resume")
+async def resume_game_session(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Resume a saved session: restore its room code mapping and return
+    everything a client needs to pick up where the table left off."""
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+
+    # Re-register the room code so players can rejoin after a restart.
+    room_code = session.get("room_code")
+    if not room_code:
+        room_code = storage.generate_room_code()
+        session["room_code"] = room_code
+        await repo.save_game_session(db, session)
+    if storage.room_codes.get(room_code) != session_id:
+        storage.room_codes[room_code] = session_id
+        storage.flush("room_codes")
+    if session_id not in storage.session_players:
+        storage.session_players[session_id] = []
+        storage.flush("session_players")
+
+    history = session.get("narrative_history") or []
+    return {
+        "session": session,
+        "room_code": room_code,
+        "players": storage.session_players.get(session_id, []),
+        "recent_narrative": history[-10:],
+    }
 
 
 @router.post("/sessions/{session_id}/action", response_model=PlayerActionResponse)
@@ -570,6 +603,51 @@ async def save_session_summary(
 
     await repo.set_campaign_session_summary(db, campaign_id, summary)
     return {"summary": summary}
+
+
+@router.post("/sessions/{session_id}/end")
+async def end_game_session(
+    request: Request, session_id: str, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """End a session for the night: generate a recap, persist it to the
+    campaign for next session's greeting, stamp the session as ended, and
+    tell all connected players."""
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+
+    campaign_id = session.get("campaign_id", "")
+    campaign = await repo.get_campaign(db, campaign_id) or {}
+
+    narrator = getattr(request.app.state, "narrator", None)
+    summary = None
+    if narrator is not None:
+        try:
+            summary = await narrator.generate_session_summary(
+                narrative_history=session.get("narrative_history", []),
+                campaign_name=campaign.get("name", ""),
+            )
+        except Exception:
+            summary = None
+    if not summary:
+        history = session.get("narrative_history", [])
+        summary = history[-1] if history else "The party's deeds were recorded."
+
+    if campaign_id:
+        await repo.set_campaign_session_summary(db, campaign_id, summary)
+
+    session["ended_at"] = datetime.now(timezone.utc).isoformat()
+    session["end_summary"] = summary
+    await repo.save_game_session(db, session)
+
+    from app.api.websockets.game_ws import manager
+    await manager.broadcast(session_id, {
+        "type": "session_ended",
+        "summary": summary,
+        "timestamp": session["ended_at"],
+    })
+
+    return {"summary": summary, "ended_at": session["ended_at"]}
 
 
 # NPC Journal endpoints
@@ -1798,6 +1876,7 @@ class JoinRequest(BaseModel):
     room_code: str = Field(..., description="4-letter room code")
     player_name: str = Field(..., description="Player's display name")
     character_id: Optional[str] = Field(default=None, description="Optional character ID to use")
+    player_id: Optional[str] = Field(default=None, description="Previous player ID for rejoin")
 
 
 @router.get("/sessions/{session_id}/room-code")
@@ -1811,6 +1890,7 @@ async def get_room_code(session_id: str, db: AsyncSession = Depends(get_db)) -> 
     if not code:
         code = storage.generate_room_code()
         storage.room_codes[code] = session_id
+        storage.flush("room_codes")
         session["room_code"] = code
         await repo.save_game_session(db, session)
 
@@ -1828,22 +1908,45 @@ async def join_game(body: JoinRequest, db: AsyncSession = Depends(get_db)) -> di
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid room code")
 
-    player_id = storage.generate_id()
-    player_info = {
-        "id": player_id,
-        "name": body.player_name,
-        "character_id": body.character_id,
-        "joined_at": datetime.now(timezone.utc).isoformat(),
-    }
-
     if session_id not in storage.session_players:
         storage.session_players[session_id] = []
-    storage.session_players[session_id].append(player_info)
+    players = storage.session_players[session_id]
+
+    # Rejoin: reuse an existing roster entry (durable player_id from the
+    # client, or a same-name match after a phone refresh) instead of
+    # duplicating the player.
+    existing = None
+    if body.player_id:
+        existing = next((p for p in players if p.get("id") == body.player_id), None)
+    if existing is None:
+        existing = next(
+            (p for p in players if p.get("name", "").lower() == body.player_name.lower()),
+            None,
+        )
+
+    rejoined = existing is not None
+    if existing is not None:
+        player_id = existing["id"]
+        existing["name"] = body.player_name
+        if body.character_id:
+            existing["character_id"] = body.character_id
+        existing["rejoined_at"] = datetime.now(timezone.utc).isoformat()
+    else:
+        player_id = storage.generate_id()
+        players.append({
+            "id": player_id,
+            "name": body.player_name,
+            "character_id": body.character_id,
+            "joined_at": datetime.now(timezone.utc).isoformat(),
+        })
+    storage.flush("session_players")
 
     return {
         "session_id": session_id,
         "player_id": player_id,
         "campaign_id": session.get("campaign_id", ""),
+        "rejoined": rejoined,
+        "character_id": (existing or {}).get("character_id") or body.character_id,
     }
 
 

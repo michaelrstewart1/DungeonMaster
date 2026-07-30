@@ -3,6 +3,7 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { GameWebSocket, type WSMessage } from '../api/websocket';
+import { loadIdentity } from '../utils/playerIdentity';
 
 export interface PlayerInfo {
   id: string;
@@ -43,6 +44,21 @@ export function useGameSocket(sessionId: string | undefined): UseGameSocketRetur
 
     const unsubMessage = ws.onMessage((msg) => {
       setMessages((prev) => [...prev.slice(-200), msg]); // keep last 200
+
+      if (msg.type === 'reconnected') {
+        // Connection dropped and came back (wifi blip, backend restart):
+        // automatically re-register this player so the server rebinds the
+        // socket for private messages and roster state.
+        const identity = loadIdentity(sessionId);
+        if (identity) {
+          ws.send({
+            type: 'player_join',
+            name: identity.playerName,
+            character_id: identity.characterId,
+            player_id: identity.playerId,
+          });
+        }
+      }
 
       if (msg.type === 'player_joined') {
         const p = msg.payload as { player_id: string; connection_count?: number; name?: string };
@@ -98,13 +114,15 @@ export function useGameSocket(sessionId: string | undefined): UseGameSocketRetur
   }, [send]);
 
   const joinAsPlayer = useCallback((name: string, characterId?: string) => {
-    // Pass the HTTP-join player_id (if present in sessionStorage) so the
-    // server can reconcile the WS connection with the existing player row.
-    // This is what makes server-targeted private messages (e.g. trade
-    // offers) route to the correct connection.
-    const playerId = sessionStorage.getItem('playerId') || undefined;
+    // Pass the durable player_id (localStorage identity, with legacy
+    // sessionStorage fallback) so the server reconciles this WS connection
+    // with the existing player row instead of creating a duplicate.
+    const playerId =
+      (sessionId ? loadIdentity(sessionId)?.playerId : undefined) ||
+      sessionStorage.getItem('playerId') ||
+      undefined;
     send({ type: 'player_join', name, character_id: characterId, player_id: playerId });
-  }, [send]);
+  }, [send, sessionId]);
 
   const setReady = useCallback((ready: boolean) => {
     send({ type: 'player_ready', ready });

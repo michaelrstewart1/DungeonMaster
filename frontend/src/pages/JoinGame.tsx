@@ -1,6 +1,7 @@
 /** Join Game page — enter a room code or scan QR to join a multiplayer session. */
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { saveIdentity, loadLastIdentity, updateIdentity } from '../utils/playerIdentity';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -17,7 +18,7 @@ export function JoinGame() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [roomCode, setRoomCode] = useState(searchParams.get('code') || '');
-  const [playerName, setPlayerName] = useState('');
+  const [playerName, setPlayerName] = useState(() => loadLastIdentity()?.playerName || '');
   const [error, setError] = useState('');
   const [joining, setJoining] = useState(false);
   const [phase, setPhase] = useState<'join' | 'pick-character'>('join');
@@ -45,10 +46,17 @@ export function JoinGame() {
     setError('');
 
     try {
+      // Reuse a prior identity when rejoining the same table (phone refresh,
+      // backend restart) so the roster doesn't grow duplicates.
+      const previous = loadLastIdentity();
       const res = await fetch(`${API_BASE}/game/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ room_code: finalCode, player_name: finalName }),
+        body: JSON.stringify({
+          room_code: finalCode,
+          player_name: finalName,
+          player_id: previous?.roomCode === finalCode ? previous.playerId : undefined,
+        }),
       });
 
       if (!res.ok) {
@@ -57,10 +65,20 @@ export function JoinGame() {
       }
 
       const data = await res.json();
-      sessionStorage.setItem('playerName', finalName);
-      sessionStorage.setItem('playerId', data.player_id);
-      sessionStorage.setItem('sessionId', data.session_id);
+      saveIdentity({
+        playerId: data.player_id,
+        playerName: finalName,
+        sessionId: data.session_id,
+        characterId: data.character_id || undefined,
+        roomCode: finalCode,
+      });
       setSessionId(data.session_id);
+
+      // Rejoining with a character already selected — skip the picker
+      if (data.rejoined && data.character_id) {
+        navigate(`/play/${data.session_id}`);
+        return;
+      }
 
       // Fetch available characters for this campaign
       if (data.campaign_id) {
@@ -87,7 +105,7 @@ export function JoinGame() {
   }
 
   function selectCharacter(charId: string) {
-    sessionStorage.setItem('characterId', charId);
+    updateIdentity(sessionId, { characterId: charId });
     navigate(`/play/${sessionId}`);
   }
 

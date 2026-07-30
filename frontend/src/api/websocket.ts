@@ -1,7 +1,7 @@
 /** WebSocket connection manager for real-time game events. */
 import type { GameState, TurnResult } from '../types';
 
-export type WSMessageType = 'game_state' | 'turn_result' | 'player_joined' | 'player_left' | 'error';
+export type WSMessageType = 'game_state' | 'turn_result' | 'player_joined' | 'player_left' | 'error' | 'reconnected';
 
 export interface WSMessage {
   type: WSMessageType;
@@ -17,10 +17,14 @@ export class GameWebSocket {
   private messageHandlers: MessageHandler[] = [];
   private statusHandlers: StatusHandler[] = [];
   private reconnectAttempts = 0;
-  private maxReconnectAttempts = 5;
+  private maxReconnectDelay = 15000;
   private reconnectDelay = 1000;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private shouldReconnect = true;
+  private hadConnection = false;
+  // Outbound messages queued while disconnected; flushed on (re)connect.
+  private outbox: Record<string, unknown>[] = [];
+  private maxOutbox = 50;
 
   constructor(sessionId: string, baseUrl?: string) {
     const wsBase = baseUrl || import.meta.env.VITE_WS_URL || `ws://${window.location.host}`;
@@ -33,9 +37,20 @@ export class GameWebSocket {
     this.ws = new WebSocket(this.url);
 
     this.ws.onopen = () => {
+      const isReconnect = this.hadConnection;
+      this.hadConnection = true;
       this.reconnectAttempts = 0;
       this.notifyStatus(true);
       this.startHeartbeat();
+      // Deliver queued actions typed while offline, oldest first.
+      const pending = this.outbox.splice(0, this.outbox.length);
+      pending.forEach((msg) => this.send(msg));
+      if (isReconnect) {
+        // Let consumers re-join and re-fetch state after a drop.
+        this.messageHandlers.forEach((handler) =>
+          handler({ type: 'reconnected', payload: { message: 'reconnected' } }),
+        );
+      }
     };
 
     this.ws.onmessage = (event) => {
@@ -53,9 +68,15 @@ export class GameWebSocket {
     this.ws.onclose = () => {
       this.notifyStatus(false);
       this.stopHeartbeat();
-      if (this.shouldReconnect && this.reconnectAttempts < this.maxReconnectAttempts) {
+      if (this.shouldReconnect) {
+        // Keep trying for the whole session — a table game runs for hours
+        // and the backend may restart mid-session. Backoff caps at 15s.
         this.reconnectAttempts++;
-        setTimeout(() => this.connect(), this.reconnectDelay * this.reconnectAttempts);
+        const delay = Math.min(
+          this.reconnectDelay * this.reconnectAttempts,
+          this.maxReconnectDelay,
+        );
+        setTimeout(() => this.connect(), delay);
       }
     };
 
@@ -74,6 +95,10 @@ export class GameWebSocket {
   send(message: Record<string, unknown>): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(message));
+    } else if (this.shouldReconnect && message.type !== 'ping') {
+      // Queue non-heartbeat messages to deliver after reconnect.
+      this.outbox.push(message);
+      if (this.outbox.length > this.maxOutbox) this.outbox.shift();
     }
   }
 

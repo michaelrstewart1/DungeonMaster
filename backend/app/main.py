@@ -135,8 +135,19 @@ async def lifespan(app: FastAPI):
     # Expose session factory for WebSocket handler
     app.state.db_factory = async_session
 
+    # Restore persisted runtime state (room codes, players, trades, tokens)
+    from app.api import storage
+    storage.configure(async_session)
+    await storage.load_from_db()
+
     _init_app_state(app)
     yield
+
+    # Shutdown — snapshot runtime state so restarts don't drop live sessions
+    try:
+        await storage.persist()
+    except Exception:
+        pass
 
     # Shutdown — close any open HTTP clients
     narrator = getattr(app.state, "narrator", None)

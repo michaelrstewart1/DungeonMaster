@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
+import { loadIdentity } from '../utils/playerIdentity';
 import { useGameSocket } from '../hooks/useGameSocket';
 import { DiceRoller } from '../components/DiceRoller';
 import BattleMap from '../components/BattleMap';
@@ -51,9 +52,10 @@ const COMBAT_ACTIONS: QuickAction[] = [
 
 export function PlayerView() {
   const { sessionId } = useParams<{ sessionId: string }>();
-  const playerName = sessionStorage.getItem('playerName') || 'Adventurer';
-  const characterId = sessionStorage.getItem('characterId') || undefined;
-  const playerId = sessionStorage.getItem('playerId') || '';
+  const identity = sessionId ? loadIdentity(sessionId) : null;
+  const playerName = identity?.playerName || sessionStorage.getItem('playerName') || 'Adventurer';
+  const characterId = identity?.characterId || sessionStorage.getItem('characterId') || undefined;
+  const playerId = identity?.playerId || sessionStorage.getItem('playerId') || '';
   const { connected, messages, players, sendChat, sendAction, joinAsPlayer } = useGameSocket(sessionId);
   const { addToast } = useToast();
 
@@ -92,33 +94,52 @@ export function PlayerView() {
     }
   }, [connected, playerName, characterId, joinAsPlayer]);
 
-  // Connect to audio WebSocket for STT
+  // Connect to audio WebSocket for STT (with automatic reconnect — PTT
+  // must keep working through wifi blips and backend restarts).
   useEffect(() => {
     if (!sessionId) return;
     const wsBase = import.meta.env.VITE_WS_URL || `ws://${window.location.host}`;
-    const ws = new WebSocket(`${wsBase}/ws/audio/${sessionId}`);
-    ws.binaryType = 'arraybuffer';
+    let disposed = false;
+    let retry = 0;
+    let timer: ReturnType<typeof setTimeout> | null = null;
 
-    ws.onmessage = (event) => {
-      if (typeof event.data === 'string') {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.type === 'transcription' && msg.text) {
-            setActionText((prev) => {
-              const combined = prev ? `${prev} ${msg.text}` : msg.text;
-              return combined;
-            });
-            setIsTranscribing(false);
-          }
-        } catch { /* ignore parse errors */ }
-      }
+    const open = () => {
+      if (disposed) return;
+      const ws = new WebSocket(`${wsBase}/ws/audio/${sessionId}`);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => { retry = 0; };
+      ws.onmessage = (event) => {
+        if (typeof event.data === 'string') {
+          try {
+            const msg = JSON.parse(event.data);
+            if (msg.type === 'transcription' && msg.text) {
+              setActionText((prev) => {
+                const combined = prev ? `${prev} ${msg.text}` : msg.text;
+                return combined;
+              });
+              setIsTranscribing(false);
+            }
+          } catch { /* ignore parse errors */ }
+        }
+      };
+
+      ws.onclose = () => {
+        audioWsRef.current = null;
+        if (!disposed) {
+          retry++;
+          timer = setTimeout(open, Math.min(1000 * retry, 15000));
+        }
+      };
+      audioWsRef.current = ws;
     };
 
-    ws.onclose = () => { audioWsRef.current = null; };
-    audioWsRef.current = ws;
+    open();
 
     return () => {
-      ws.close();
+      disposed = true;
+      if (timer) clearTimeout(timer);
+      audioWsRef.current?.close();
       audioWsRef.current = null;
     };
   }, [sessionId]);
@@ -157,6 +178,16 @@ export function PlayerView() {
   useEffect(() => {
     if (messages.length === 0) return;
     const last = messages[messages.length - 1];
+
+    if ((last.type as string) === 'reconnected') {
+      // Re-sync authoritative state after a connection drop.
+      if (sessionId) {
+        fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
+          .then((r) => r.json())
+          .then((data) => setGameState(data))
+          .catch(() => {});
+      }
+    }
 
     if (last.type === 'turn_result') {
       const p = last.payload as { narration?: string; character_id?: string; current_turn?: string };
@@ -285,7 +316,7 @@ export function PlayerView() {
           .catch(() => undefined);
       }
     }
-  }, [messages, character, playerId, characterId, addToast, pendingOutgoing, incomingTrade]);
+  }, [messages, character, playerId, characterId, addToast, pendingOutgoing, incomingTrade, sessionId]);
 
   // Auto-scroll feed — only when user is already near the bottom
   useEffect(() => {

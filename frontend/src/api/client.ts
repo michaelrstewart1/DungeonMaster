@@ -193,6 +193,12 @@ export async function createGameSession(campaignId: string): Promise<{ id: strin
   });
 }
 
+export async function endGameSession(sessionId: string): Promise<{ summary: string; ended_at: string }> {
+  return request<{ summary: string; ended_at: string }>(`/game/sessions/${sessionId}/end`, {
+    method: 'POST',
+  });
+}
+
 export async function getGameState(sessionId: string): Promise<GameState> {
   const raw = await request<GameState & { current_phase?: string }>(`/game/sessions/${sessionId}/state`);
   // Backend returns current_phase, frontend expects phase
@@ -472,10 +478,22 @@ export interface SessionSummary {
   turn_count: number;
   created_at: string;
   scene: string;
+  room_code?: string | null;
 }
 
 export async function listGameSessions(campaignId: string): Promise<SessionSummary[]> {
   return request<SessionSummary[]>(`/game/sessions?campaign_id=${campaignId}`);
+}
+
+export interface ResumeSessionData {
+  session: GameState & Record<string, unknown>;
+  room_code: string;
+  players: { id: string; name: string; character_id?: string | null }[];
+  recent_narrative: string[];
+}
+
+export async function resumeGameSession(sessionId: string): Promise<ResumeSessionData> {
+  return request<ResumeSessionData>(`/game/sessions/${sessionId}/resume`);
 }
 
 // Environment (Weather & Time of Day)

@@ -5360,6 +5360,30 @@
   white-space: nowrap;
 }
 
+.session-room-code {
+  font-size: 0.75rem;
+  color: var(--gold-light);
+  background: var(--gold-bg);
+  border: 1px solid var(--gold-border);
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  letter-spacing: 0.1em;
+  font-family: 'Cinzel', serif;
+}
+
+.session-resume-actions {
+  display: flex;
+  gap: 0.6rem;
+  margin-top: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.session-resume-actions .btn-resume,
+.session-resume-actions .btn-resume-table {
+  font-size: 0.85rem;
+  padding: 0.4rem 0.9rem;
+}
+
 /* ============================================================
    Chat Textarea Styling
    ============================================================ */

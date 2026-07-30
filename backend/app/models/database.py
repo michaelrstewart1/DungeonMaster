@@ -309,6 +309,17 @@ class MapDB(Base):
 
 
 # ---------------------------------------------------------------------------
+# Runtime store (persisted key-value snapshots of runtime state)
+# ---------------------------------------------------------------------------
+
+class RuntimeStoreDB(Base):
+    __tablename__ = "runtime_stores"
+
+    name: Mapped[str] = mapped_column(String(64), primary_key=True)
+    data: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+
+
+# ---------------------------------------------------------------------------
 # User (auth)
 # ---------------------------------------------------------------------------
 

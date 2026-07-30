@@ -100,6 +100,7 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
     if user and user.get("password_hash") == pw_hash:
         token = secrets.token_urlsafe(32)
         storage.tokens[token] = user["id"]
+        storage.flush("tokens")
         return LoginResponse(token=token, username=user["username"], id=user["id"])
 
     raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
