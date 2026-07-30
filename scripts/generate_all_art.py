@@ -63,7 +63,7 @@ CATEGORIES = [
     ("races", RACES, 512, 512),
     ("classes", CLASSES, 512, 512),
     ("backgrounds", BACKGROUNDS, 512, 512),
-    ("landscapes", LANDSCAPES, 1024, 512),
+    ("landscapes", LANDSCAPES, 1920, 1080),
 ]
 
 

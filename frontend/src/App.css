@@ -100,11 +100,12 @@
 
 /* ── Epic Fantasy Background Slideshow ── */
 .home-bg-slideshow {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  /* Fixed to the viewport — an absolute layer stretched over the FULL page
+     height forced background-size:cover to zoom the art ~5x (blurry mush).
+     Pinning to the viewport keeps the landscape at its natural framing. */
+  position: fixed;
+  inset: 0;
+  height: 100vh;
   z-index: 0;
   pointer-events: none;
   overflow: hidden;
