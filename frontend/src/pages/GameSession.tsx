@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { uuid } from '../utils/uuid'
-import { getGameState, submitAction, getCampaign, getSessionGreeting, getSessionRecap, getCharacters, talkToNPC, getSessionNPCs, getMapState, endGameSession } from '../api/client'
+import { getGameState, submitAction, getCampaign, getSessionGreeting, getSessionRecap, getCharacters, talkToNPC, getSessionNPCs, getMapState, endGameSession, travelTo } from '../api/client'
 import { GameWebSocket } from '../api/websocket'
 import { GameChat, type ChatMessage } from '../components/GameChat'
 import { DiceRoller } from '../components/DiceRoller'
@@ -24,6 +24,7 @@ import { SessionRecap } from '../components/SessionRecap'
 import PartyInventory from '../components/PartyInventory'
 import LevelUpModal from '../components/LevelUpModal'
 import { SceneArt, detectScene } from '../components/SceneArt'
+import { stripUuidLabel } from '../utils/narrative'
 import { generateSceneImage } from '../api/client'
 import { EncounterPanel } from '../components/EncounterPanel'
 import { DeathSaveTracker } from '../components/DeathSaveTracker'
@@ -35,8 +36,9 @@ import { NPCJournal } from '../components/NPCJournal'
 import { EnvironmentPanel } from '../components/EnvironmentPanel'
 import { PlayerConnect } from '../components/PlayerConnect'
 import { TradeArbitrationPanel } from '../components/TradeArbitrationPanel'
+import { WorldMapPanel } from '../components/WorldMapPanel'
 import type { Trade } from '../api/client'
-import type { GameState, GameMap, DiceResult, Character } from '../types'
+import type { GameState, GameMap, DiceResult, Character, WorldLocation } from '../types'
 import './GameSession.css'
 
 function formatTime(seconds: number): string {
@@ -100,6 +102,7 @@ export function GameSession() {
   const [unlockedAchievements, setUnlockedAchievements] = useState<Set<string>>(new Set())
   const [connectedPlayers, setConnectedPlayers] = useState<Array<{ id: string; name: string; character_id?: string }>>([])
   const [wsConnectionCount, setWsConnectionCount] = useState(0)
+  const [showWorldMap, setShowWorldMap] = useState(false)
   const turnCounterRef = useRef(0)
   const partyCharsRef = useRef<Character[]>([])
 
@@ -432,6 +435,7 @@ export function GameSession() {
       if (e.key === 'j' || e.key === 'J') setAdventureLogOpen(v => !v)
       if (e.key === 'i' || e.key === 'I') setShowInventory(v => !v)
       if (e.key === 'n' || e.key === 'N') setShowNPCJournal(v => !v)
+      if (e.key === 'm' || e.key === 'M') setShowWorldMap(v => !v)
       if (e.key === 'l' || e.key === 'L') setShowLevelUp(v => !v)
     }
     window.addEventListener('keydown', handler)
@@ -506,7 +510,7 @@ export function GameSession() {
           if (entry.startsWith('Player: ')) {
             restoredMessages.push({
               role: 'player',
-              text: entry.slice('Player: '.length),
+              text: stripUuidLabel(entry.slice('Player: '.length)),
               timestamp: Date.now(),
             })
           } else if (entry.startsWith('DM: ')) {
@@ -741,6 +745,24 @@ export function GameSession() {
           if (p.trade) setPendingTrades((prev) => ({ ...prev, [p.trade!.id]: p.trade! }))
           break
         }
+        case 'scene_change' as string: {
+          const p = msg.payload as { current_location?: string; location?: WorldLocation; narration?: string; detected_scene?: string; world_locations?: WorldLocation[] }
+          if (p.location) {
+            setMessages((prev) => [...prev, { role: 'dm', text: `🧭 The party travels to ${p.location!.name}.`, timestamp: Date.now() }])
+          }
+          if (p.narration) {
+            setMessages((prev) => [...prev, { role: 'dm', text: p.narration!, timestamp: Date.now() }])
+          }
+          if (p.detected_scene) setCurrentScene(p.detected_scene)
+          setGameState((prev) => prev ? {
+            ...prev,
+            current_location: p.current_location ?? prev.current_location,
+            world_locations: p.world_locations ?? prev.world_locations,
+            current_scene: p.location?.description ?? prev.current_scene,
+            detected_scene: p.detected_scene ?? prev.detected_scene,
+          } : prev)
+          break
+        }
         case 'trade_resolved' as string: {
           const p = msg.payload as { trade?: Trade }
           if (p.trade) setPendingTrades((prev) => {
@@ -827,6 +849,22 @@ export function GameSession() {
       setWaitingForDM(false)
     }
   }, [sessionId, speakText, processDMMessage])
+
+  const handleTravel = useCallback(async (destinationId: string) => {
+    if (!sessionId) return
+    // The scene_change WS broadcast updates messages/state for every screen;
+    // here we only need to surface errors and let the panel close on success.
+    const result = await travelTo(sessionId, destinationId)
+    setGameState((prev) => prev ? {
+      ...prev,
+      current_location: result.current_location,
+      world_locations: result.world_locations,
+      current_scene: result.location?.description ?? prev.current_scene,
+      detected_scene: result.detected_scene ?? prev.detected_scene,
+    } : prev)
+    if (result.detected_scene) setCurrentScene(result.detected_scene)
+    setShowWorldMap(false)
+  }, [sessionId])
 
   const handleCellClick = useCallback((x: number, y: number) => {
     if (selectedToken && wsRef.current) {
@@ -952,6 +990,14 @@ export function GameSession() {
           >
             ⬆️
           </button>
+          <button
+            className="btn-world-map"
+            onClick={() => setShowWorldMap(v => !v)}
+            title="World Map (M)"
+            data-testid="btn-world-map"
+          >
+            🗺️
+          </button>
           <button className="btn-keyboard-help" onClick={() => setShowKeyboardHelp(v => !v)} title="Keyboard shortcuts (?)">
             ⌨
           </button>
@@ -1025,7 +1071,22 @@ export function GameSession() {
             <div className="scene-panel" aria-hidden="true">
               <div className="scene-panel-art">
                 {sceneImageUrl ? (
-                  <img src={sceneImageUrl} alt={currentScene} className="scene-panel-generated-img" />
+                  <img
+                    src={sceneImageUrl}
+                    alt={currentScene}
+                    className="scene-panel-generated-img"
+                    onError={() => {
+                      // Dead URL (e.g. image wiped by a container rebuild):
+                      // fall back to the procedural CSS art instead of a
+                      // broken-image icon, and forget the bad cache entry.
+                      setSceneImageUrl(null)
+                      setSceneImageCache(prev => {
+                        const next = new Map(prev)
+                        for (const [k, v] of next) if (v === sceneImageUrl) next.delete(k)
+                        return next
+                      })
+                    }}
+                  />
                 ) : (
                   <SceneArt sceneType={currentScene} />
                 )}
@@ -1201,6 +1262,16 @@ export function GameSession() {
         sessionId={sessionId || ''}
         isOpen={showNPCJournal}
         onClose={() => setShowNPCJournal(false)}
+      />
+
+      {/* World Map */}
+      <WorldMapPanel
+        isOpen={showWorldMap}
+        onClose={() => setShowWorldMap(false)}
+        locations={gameState?.world_locations ?? []}
+        currentLocationId={gameState?.current_location}
+        inCombat={gameState?.phase === 'combat'}
+        onTravel={handleTravel}
       />
 
       {/* Death Save Tracker */}

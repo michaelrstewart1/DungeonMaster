@@ -1,0 +1,194 @@
+/* World Map Panel — dark fantasy overlay for macro travel between scenes */
+
+.world-map-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(6, 4, 2, 0.75);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.world-map-panel {
+  width: min(680px, 92vw);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  background: linear-gradient(160deg, #1a1410 0%, #0f0b08 100%);
+  border: 1px solid var(--gold-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(212, 175, 55, 0.12);
+  overflow: hidden;
+}
+
+.world-map-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--gold-border);
+  background: rgba(212, 175, 55, 0.05);
+}
+
+.world-map-header h2 {
+  margin: 0;
+  font-family: 'Cinzel', serif;
+  font-size: 1.2rem;
+  color: var(--gold-light);
+  letter-spacing: 0.06em;
+}
+
+.world-map-close {
+  background: none;
+  border: 1px solid var(--gold-border);
+  border-radius: 6px;
+  color: var(--gold-dim);
+  cursor: pointer;
+  padding: 0.25rem 0.6rem;
+  font-size: 0.9rem;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.world-map-close:hover {
+  color: var(--gold-light);
+  border-color: var(--gold);
+}
+
+.world-map-notice,
+.world-map-error {
+  margin: 0.75rem 1.25rem 0;
+  padding: 0.5rem 0.85rem;
+  border-radius: 8px;
+  font-size: 0.88rem;
+}
+
+.world-map-notice {
+  background: rgba(212, 175, 55, 0.08);
+  border: 1px solid var(--gold-border);
+  color: var(--gold-dim);
+}
+
+.world-map-error {
+  background: rgba(180, 50, 50, 0.12);
+  border: 1px solid rgba(200, 80, 80, 0.4);
+  color: #e08a8a;
+}
+
+.world-map-locations {
+  padding: 1rem 1.25rem 1.25rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.world-map-location {
+  display: flex;
+  align-items: center;
+  gap: 0.85rem;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(212, 175, 55, 0.15);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+  opacity: 0.75;
+  transition: border-color 0.15s, opacity 0.15s, background 0.15s;
+}
+
+.world-map-location.current {
+  opacity: 1;
+  border-color: var(--gold);
+  background: var(--gold-bg);
+  box-shadow: inset 0 0 24px rgba(212, 175, 55, 0.06);
+}
+
+.world-map-location.reachable {
+  opacity: 1;
+  border-color: rgba(212, 175, 55, 0.35);
+}
+
+.world-map-location.reachable:hover {
+  background: rgba(212, 175, 55, 0.06);
+  border-color: var(--gold);
+}
+
+.world-map-location-icon {
+  font-size: 1.5rem;
+  width: 2.2rem;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.world-map-location-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.world-map-location-name {
+  font-family: 'Cinzel', serif;
+  font-size: 0.98rem;
+  color: var(--gold-light);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.world-map-badge {
+  font-family: 'Crimson Text', serif;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.current-badge {
+  background: var(--gold);
+  color: #1a1410;
+  font-weight: 700;
+}
+
+.visited-badge {
+  border: 1px solid var(--gold-border);
+  color: var(--gold-dim);
+}
+
+.world-map-location-desc {
+  font-size: 0.85rem;
+  color: rgba(232, 220, 196, 0.65);
+  margin-top: 0.15rem;
+  line-height: 1.35;
+}
+
+.world-map-travel-btn {
+  flex-shrink: 0;
+  font-family: 'Cinzel', serif;
+  font-size: 0.82rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 8px;
+  border: 1px solid var(--gold);
+  background: linear-gradient(180deg, rgba(212, 175, 55, 0.18), rgba(212, 175, 55, 0.06));
+  color: var(--gold-light);
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.world-map-travel-btn:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(212, 175, 55, 0.3), rgba(212, 175, 55, 0.12));
+  transform: translateY(-1px);
+}
+
+.world-map-travel-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.world-map-hidden-hint {
+  text-align: center;
+  font-style: italic;
+  font-size: 0.82rem;
+  color: rgba(232, 220, 196, 0.4);
+  padding: 0.5rem 0 0.25rem;
+}

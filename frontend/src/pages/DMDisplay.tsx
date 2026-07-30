@@ -153,6 +153,26 @@ export function DMDisplay() {
       if (p.chunk) setStreamingNarration((prev) => prev + p.chunk);
     }
 
+    if (last.type === 'scene_change' as string) {
+      const p = last.payload as { location?: { name?: string; description?: string }; narration?: string; detected_scene?: string; current_location?: string }
+      const text = p.narration || (p.location?.name ? `The party arrives at ${p.location.name}.` : '');
+      if (text) {
+        setStreamingNarration('');
+        setCurrentNarration(text);
+        setNarrative((prev) => [
+          ...prev.slice(-50),
+          { id: uuid(), text: `🧭 ${text}`, type: 'narration', timestamp: new Date().toISOString() },
+        ]);
+        speakNarration(text);
+      }
+      setGameState((prev) => prev ? {
+        ...prev,
+        current_location: p.current_location ?? prev.current_location,
+        current_scene: p.location?.description ?? prev.current_scene,
+        detected_scene: p.detected_scene ?? prev.detected_scene,
+      } : prev);
+    }
+
     if (last.type === 'combat_started' as string) {
       const p = last.payload as { combat_state?: GameState['combat_state'] };
       setGameState((prev) => prev ? { ...prev, phase: 'combat', combat_state: p.combat_state ?? prev.combat_state } : prev);

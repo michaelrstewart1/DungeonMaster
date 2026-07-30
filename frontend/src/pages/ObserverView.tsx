@@ -8,6 +8,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
+import { stripUuidLabel } from '../utils/narrative';
 import { useGameSocket } from '../hooks/useGameSocket';
 import type { WSMessage } from '../api/websocket';
 import type { CombatState, GameState } from '../types';
@@ -29,7 +30,7 @@ function feedFromHistory(history: unknown, limit = 40): FeedEntry[] {
     const isDM = s.startsWith('DM: ');
     return {
       id: `hist-${i}-${s.length}`,
-      text: isDM ? s.slice(4) : s.replace(/^Player: /, ''),
+      text: stripUuidLabel(isDM ? s.slice(4) : s.replace(/^Player: /, '')),
       type: isDM ? ('narration' as const) : ('action' as const),
     };
   });
@@ -108,6 +109,16 @@ export function ObserverView() {
       if ((msg.type as string) === 'chat') {
         const p = msg.payload as { message?: string; sender?: string };
         setFeed((prev) => [...prev, { id: uuid(), text: p.message || '', sender: p.sender, type: 'chat' }]);
+      }
+
+      if ((msg.type as string) === 'scene_change') {
+        const p = msg.payload as { location?: { name?: string }; narration?: string };
+        if (p.location?.name) {
+          setFeed((prev) => [...prev, { id: uuid(), text: `🧭 The party travels to ${p.location!.name}.`, type: 'system' }]);
+        }
+        if (p.narration) {
+          setFeed((prev) => [...prev, { id: uuid(), text: p.narration!, type: 'narration' }]);
+        }
       }
 
       if (msg.type === 'combat_started') {

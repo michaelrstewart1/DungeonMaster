@@ -7,7 +7,7 @@ export type WSMessageType =
   | 'chat' | 'turn_update' | 'vision_update'
   | 'trade_offer' | 'trade_resolved'
   | 'item_used' | 'item_equipped' | 'item_unequipped'
-  | 'player_joined' | 'player_left' | 'error' | 'reconnected' | 'observer_ack';
+  | 'player_joined' | 'player_left' | 'error' | 'reconnected' | 'observer_ack' | 'scene_change';
 
 export interface WSMessage {
   type: WSMessageType;

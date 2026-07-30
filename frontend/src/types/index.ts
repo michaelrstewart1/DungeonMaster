@@ -121,6 +121,16 @@ export interface CombatState {
   log?: string[];
 }
 
+export interface WorldLocation {
+  id: string;
+  name: string;
+  description: string;
+  scene_type?: string;
+  connections: string[];
+  discovered: boolean;
+  visited: boolean;
+}
+
 export interface GameState {
   phase: GamePhase;
   campaign_id?: string;
@@ -130,6 +140,8 @@ export interface GameState {
   active_effects: Record<string, unknown>[];
   detected_scene?: string;
   scene_image_url?: string;
+  current_location?: string | null;
+  world_locations?: WorldLocation[];
 }
 
 // Game Session

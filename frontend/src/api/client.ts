@@ -17,6 +17,7 @@ import type {
   LevelUpChoices,
   LevelUpResult,
   DistributeLootResponse,
+  WorldLocation,
 } from '../types';
 
 const BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -212,6 +213,21 @@ export async function submitAction(sessionId: string, action: PlayerAction): Pro
   return request<TurnResult>(`/game/sessions/${sessionId}/action`, {
     method: 'POST',
     body: JSON.stringify(action),
+  });
+}
+
+export interface TravelResult {
+  current_location: string;
+  location: WorldLocation;
+  narration: string;
+  detected_scene?: string;
+  world_locations: WorldLocation[];
+}
+
+export async function travelTo(sessionId: string, destinationId: string): Promise<TravelResult> {
+  return request<TravelResult>(`/game/sessions/${sessionId}/travel`, {
+    method: 'POST',
+    body: JSON.stringify({ destination_id: destinationId }),
   });
 }
 

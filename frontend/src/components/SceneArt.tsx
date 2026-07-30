@@ -306,6 +306,13 @@ export function SceneArt({ sceneType = 'tavern', backgroundImageUrl, imageOnly }
     setTimeout(() => setPrevImageUrl(null), 2500)
   }, [])
 
+  // Dead URL (404 after a rebuild wiped generated art): drop the image
+  // layer entirely rather than showing a broken-image icon.
+  const handleImageError = useCallback(() => {
+    setCurrentImageUrl(null)
+    setImageLoaded(false)
+  }, [])
+
   const scene = useMemo(() => {
     const type = sceneType as SceneType
     switch (type) {
@@ -346,6 +353,7 @@ export function SceneArt({ sceneType = 'tavern', backgroundImageUrl, imageOnly }
             alt=""
             className={`scene-art-bg-image ${imageLoaded ? 'scene-art-bg-visible' : 'scene-art-bg-loading'}`}
             onLoad={handleImageLoad}
+            onError={handleImageError}
           />
         )}
         {/* Dark overlay for text readability */}
@@ -370,6 +378,7 @@ export function SceneArt({ sceneType = 'tavern', backgroundImageUrl, imageOnly }
           alt=""
           className={`scene-art-bg-image ${imageLoaded ? 'scene-art-bg-visible' : 'scene-art-bg-loading'}`}
           onLoad={handleImageLoad}
+          onError={handleImageError}
         />
       )}
       {/* CSS procedural art as overlay */}

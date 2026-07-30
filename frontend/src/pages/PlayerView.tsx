@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
 import { loadIdentity } from '../utils/playerIdentity';
+import { stripUuidLabel } from '../utils/narrative';
 import { useGameSocket } from '../hooks/useGameSocket';
 import type { WSMessage } from '../api/websocket';
 import { useWakeLock } from '../hooks/useWakeLock';
@@ -38,7 +39,7 @@ function narrativeFromHistory(history: unknown, limit = 30): NarrativeEntry[] {
     const isDM = s.startsWith('DM: ');
     return {
       id: `hist-${i}-${s.length}`,
-      text: isDM ? s.slice(4) : s.replace(/^Player: /, ''),
+      text: stripUuidLabel(isDM ? s.slice(4) : s.replace(/^Player: /, '')),
       type: isDM ? ('narration' as const) : ('action' as const),
       timestamp: new Date().toISOString(),
     };
@@ -284,6 +285,19 @@ export function PlayerView() {
           type: 'chat',
           timestamp: new Date().toISOString(),
         },
+      ]);
+    }
+
+    if ((last.type as string) === 'scene_change') {
+      const p = last.payload as { location?: { name?: string }; narration?: string };
+      setNarrative((prev) => [
+        ...prev,
+        ...(p.location?.name
+          ? [{ id: uuid(), text: `🧭 The party travels to ${p.location.name}.`, type: 'system' as const, timestamp: new Date().toISOString() }]
+          : []),
+        ...(p.narration
+          ? [{ id: uuid(), text: p.narration, type: 'narration' as const, timestamp: new Date().toISOString() }]
+          : []),
       ]);
     }
 

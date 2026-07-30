@@ -48,6 +48,10 @@ services:
       - "host.docker.internal:host-gateway"
     volumes:
       - backend_data:/app/data
+      # Generated art must survive container rebuilds — sessions persist
+      # /api/scene-images/... URLs that would otherwise dangle.
+      - backend_scenes:/app/app/generated_scenes
+      - backend_portraits:/app/app/generated_portraits
     restart: unless-stopped
 
   # --- Databases ---
@@ -94,3 +98,5 @@ volumes:
   redisdata:
   ollama_models:
   backend_data:
+  backend_scenes:
+  backend_portraits:

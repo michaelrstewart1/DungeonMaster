@@ -86,6 +86,98 @@ class EnvironmentData(BaseModel):
     season: str = Field(default="spring", description="spring, summer, autumn, winter")
 
 
+# ─── World Navigation (macro travel between scenes) ─────────────────────
+#
+# The world map is a deterministic location graph stored on the session.
+# Travel is rules-engine code: the server validates connectivity, moves the
+# party, reveals neighbors, and updates the scene. The LLM only narrates
+# the journey afterwards — it can never decide where the party is.
+
+DEFAULT_WORLD_LOCATIONS: list[dict] = [
+    {
+        "id": "crossroads-village",
+        "name": "Crossroads Village",
+        "description": "A weathered village where trade roads meet. Smoke curls from the tavern chimney and rumors travel faster than carts.",
+        "scene_type": "village",
+        "connections": ["darkwood-forest", "mountain-pass"],
+    },
+    {
+        "id": "darkwood-forest",
+        "name": "The Darkwood",
+        "description": "Ancient trees crowd out the sun. Things rustle in the undergrowth that are not deer.",
+        "scene_type": "forest",
+        "connections": ["crossroads-village", "hollow-cave"],
+    },
+    {
+        "id": "mountain-pass",
+        "name": "Windscar Pass",
+        "description": "A narrow trail hugging the cliffside. The wind howls warnings to those who climb.",
+        "scene_type": "mountain",
+        "connections": ["crossroads-village", "ruined-temple"],
+    },
+    {
+        "id": "hollow-cave",
+        "name": "The Hollow Cave",
+        "description": "A yawning cave mouth exhales cold, stale air. Scratch marks line the entrance stone.",
+        "scene_type": "cave",
+        "connections": ["darkwood-forest", "forgotten-depths"],
+    },
+    {
+        "id": "ruined-temple",
+        "name": "Ruined Temple of the Old Gods",
+        "description": "Shattered columns and a defaced altar. Whatever was worshipped here did not leave willingly.",
+        "scene_type": "temple",
+        "connections": ["mountain-pass", "forgotten-depths"],
+    },
+    {
+        "id": "forgotten-depths",
+        "name": "The Forgotten Depths",
+        "description": "A dungeon older than any map. The darkness below has weight, and it is watching.",
+        "scene_type": "dungeon",
+        "connections": ["hollow-cave", "ruined-temple"],
+    },
+]
+
+
+def _build_world_locations(campaign: dict | None) -> tuple[list[dict], str | None]:
+    """Build the session's world map from the campaign (or the default graph).
+
+    Returns (locations, starting_location_id). The first location is the
+    start: it is visited, and its neighbors are discovered.
+    """
+    raw = None
+    if campaign:
+        ws = campaign.get("world_state") or {}
+        if isinstance(ws, dict):
+            raw = ws.get("locations")
+    source = raw if isinstance(raw, list) and raw else DEFAULT_WORLD_LOCATIONS
+
+    locations: list[dict] = []
+    for loc in source:
+        if not isinstance(loc, dict) or not loc.get("id") or not loc.get("name"):
+            continue
+        locations.append({
+            "id": str(loc["id"]),
+            "name": str(loc["name"]),
+            "description": str(loc.get("description", "")),
+            "scene_type": str(loc.get("scene_type", "road")),
+            "connections": [str(c) for c in (loc.get("connections") or [])],
+            "discovered": False,
+            "visited": False,
+        })
+    if not locations:
+        return [], None
+
+    start = locations[0]
+    start["discovered"] = True
+    start["visited"] = True
+    by_id = {loc["id"]: loc for loc in locations}
+    for neighbor_id in start["connections"]:
+        if neighbor_id in by_id:
+            by_id[neighbor_id]["discovered"] = True
+    return locations, start["id"]
+
+
 @router.post("/sessions", status_code=status.HTTP_201_CREATED, response_model=GameStateResponse)
 async def create_game_session(session_create: GameSessionCreate, db: AsyncSession = Depends(get_db)) -> GameStateResponse:
     """Create a new game session for a campaign."""
@@ -94,7 +186,9 @@ async def create_game_session(session_create: GameSessionCreate, db: AsyncSessio
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Campaign not found")
     
     session_id = storage.generate_id()
-    
+
+    world_locations, starting_location = _build_world_locations(campaign)
+
     session_data = {
         "id": session_id,
         "campaign_id": session_create.campaign_id,
@@ -105,6 +199,8 @@ async def create_game_session(session_create: GameSessionCreate, db: AsyncSessio
         "active_effects": [],
         "created_at": datetime.now(timezone.utc).isoformat(),
         "turn_count": 0,
+        "current_location": starting_location,
+        "world_locations": world_locations,
         "environment": {
             "time_of_day": "dawn",
             "weather": "clear",
@@ -262,6 +358,116 @@ async def submit_player_action(
         detected_scene=detected_scene,
         detected_npcs=detected_npcs,
     )
+
+
+# ─── World Travel ────────────────────────────────────────────────────────
+
+
+class TravelRequest(BaseModel):
+    """Schema for traveling to another world location."""
+    destination_id: str = Field(..., description="ID of the destination location")
+
+
+@router.get("/sessions/{session_id}/world-map")
+async def get_world_map(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Get the world location graph and the party's current location."""
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+    return {
+        "current_location": session.get("current_location"),
+        "locations": session.get("world_locations") or [],
+    }
+
+
+@router.post("/sessions/{session_id}/travel")
+async def travel_to_location(
+    request: Request,
+    session_id: str,
+    body: TravelRequest,
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """Move the party to a connected world location.
+
+    Travel is deterministic rules-engine code: connectivity is validated
+    here, the scene changes here, and neighbors are revealed here. The LLM
+    only narrates the journey afterwards.
+    """
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+
+    if session.get("current_phase") == "combat":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="The party cannot travel during combat")
+
+    locations = session.get("world_locations") or []
+    by_id = {loc["id"]: loc for loc in locations}
+    if not by_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="This session has no world map")
+
+    destination = by_id.get(body.destination_id)
+    if destination is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown destination")
+
+    current_id = session.get("current_location")
+    current = by_id.get(current_id) if current_id else None
+    if current_id == body.destination_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="The party is already there")
+    if current is not None and body.destination_id not in (current.get("connections") or []):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{destination['name']} is not reachable from {current['name']}",
+        )
+
+    # Deterministic world update
+    session["current_location"] = destination["id"]
+    destination["visited"] = True
+    destination["discovered"] = True
+    for neighbor_id in destination.get("connections") or []:
+        if neighbor_id in by_id:
+            by_id[neighbor_id]["discovered"] = True
+    session["current_scene"] = destination.get("description") or destination["name"]
+    if destination.get("scene_type"):
+        session["detected_scene"] = destination["scene_type"]
+    _advance_time(session)
+
+    # Narrative flavor (LLM with graceful fallback) — never decides state.
+    origin_name = current["name"] if current else "their last camp"
+    travel_text = f"The party travels from {origin_name} to {destination['name']}."
+    narrator = getattr(request.app.state, "narrator", None)
+    try:
+        narration = await _generate_dm_response(travel_text, session, narrator, db)
+    except Exception:
+        narration = f"You arrive at {destination['name']}. {destination.get('description', '')}".strip()
+
+    session["narrative_history"].append(f"Player: {travel_text}")
+    session["narrative_history"].append(f"DM: {narration}")
+    session["turn_count"] = session.get("turn_count", 0) + 1
+    await repo.save_game_session(db, session)
+
+    # Tell every screen at the table (phones, TV, observers)
+    from app.api.websockets.game_ws import manager
+    await manager.broadcast(session_id, {
+        "type": "scene_change",
+        "current_location": destination["id"],
+        "location": destination,
+        "narration": narration,
+        "detected_scene": session.get("detected_scene"),
+        "world_locations": locations,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+
+    # Animate the DM avatar for the arrival narration
+    from app.api.routes.avatar import trigger_speaking
+    trigger_speaking(session_id, narration)
+
+    return {
+        "current_location": destination["id"],
+        "location": destination,
+        "narration": narration,
+        "detected_scene": session.get("detected_scene"),
+        "world_locations": locations,
+    }
 
 
 def _detect_effects(narration: str, player_action: str) -> List[str]:

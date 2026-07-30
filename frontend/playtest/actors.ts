@@ -131,6 +131,28 @@ export class HostActor {
     this.bus.emit(HostActor.NAME, 'action', { name: 'end-session', status: res?.status() ?? 'failed' });
   }
 
+  /** Server-side truth for post-hoc assertions (phase, location, combat). */
+  async gameState(): Promise<Record<string, unknown>> {
+    const res = await this.page.request.get(
+      `${this.cfg.baseUrl}/api/game/sessions/${this.sessionId}/state`,
+    );
+    return res.ok() ? await res.json() : {};
+  }
+
+  /** DM decision: the party travels to another world location (World Map panel). */
+  async travelTo(destinationId: string): Promise<{ status: number; body: Record<string, unknown> }> {
+    const t0 = Date.now();
+    const res = await this.page.request.post(
+      `${this.cfg.baseUrl}/api/game/sessions/${this.sessionId}/travel`,
+      { data: { destination_id: destinationId } },
+    );
+    const body = await res.json().catch(() => ({}));
+    this.bus.emit(HostActor.NAME, 'action', {
+      name: 'travel', status: res.status(), ms: Date.now() - t0, destination: destinationId,
+    });
+    return { status: res.status(), body };
+  }
+
   async stop(): Promise<void> {
     await stopActor(this.context, this.cfg, HostActor.NAME);
   }

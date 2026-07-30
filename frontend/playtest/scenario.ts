@@ -149,7 +149,57 @@ export async function runGameNight(browser: Browser, cfg: PlaytestConfig, bus: E
     await tv.screenshot('combat-end');
     for (const phone of phones) await phone.screenshot('combat-end');
 
-    // ── Act 5: wind down ────────────────────────────────────────────
+    // ── Assert the encounter actually COMPLETED (server + phones agree) ──
+    const postCombat = await host.gameState();
+    if (postCombat['current_phase'] === 'combat') {
+      bus.emit('runner', 'issue', {
+        name: 'encounter-did-not-complete', turns,
+        detail: 'combat still active on the server after the combat loop ended',
+      });
+    } else {
+      bus.emit('runner', 'probe', { name: 'encounter-completed', turns, phase: postCombat['current_phase'] });
+    }
+    const phonesBackToExploration = await pollUntil(
+      async () => !(await phones[0].inCombat().catch(() => true)), 15_000,
+    );
+    if (!phonesBackToExploration) {
+      bus.emit('runner', 'issue', { name: 'phone-stuck-in-combat-after-encounter' });
+    }
+
+    // ── Act 5: world travel (macro navigation between scenes) ──────
+    bus.emit('runner', 'phase', { name: 'travel' });
+    const world = (postCombat['world_locations'] as Array<Record<string, unknown>>) || [];
+    const currentLoc = world.find((l) => l['id'] === postCombat['current_location']);
+    const destId = ((currentLoc?.['connections'] as string[]) || [])[0];
+    if (!destId) {
+      bus.emit('runner', 'issue', { name: 'no-travel-destination', detail: 'session has no world map or no connected locations' });
+    } else {
+      const tTravel = Date.now();
+      const { status, body } = await host.travelTo(destId);
+      if (status !== 200) {
+        bus.emit('runner', 'issue', { name: 'travel-failed', status, destination: destId });
+      } else {
+        const destName = String((body['location'] as Record<string, unknown>)?.['name'] ?? destId);
+        // Probe: do the phones see the scene change broadcast?
+        const phoneSawTravel = await pollUntil(
+          async () => (await phones[0].page.getByText('The party travels to').count().catch(() => 0)) > 0,
+          20_000,
+        );
+        bus.emit('runner', 'probe', {
+          name: 'travel-to-phone-feed', ms: Date.now() - tTravel,
+          destination: destName, visible: phoneSawTravel,
+        });
+        if (!phoneSawTravel) bus.emit('runner', 'issue', { name: 'travel-not-visible-on-phone', destination: destName });
+        const stateAfter = await host.gameState();
+        if (stateAfter['current_location'] !== destId) {
+          bus.emit('runner', 'issue', { name: 'travel-state-mismatch', expected: destId, actual: stateAfter['current_location'] });
+        }
+        await tv.screenshot('after-travel');
+        await phones[0].screenshot('after-travel');
+      }
+    }
+
+    // ── Act 6: wind down ────────────────────────────────────────────
     bus.emit('runner', 'phase', { name: 'wind-down' });
     if (cfg.chaos) await throttlePhone(phones[phones.length - 1], bus, false);
     const scene = await phones[0].latestNarration();

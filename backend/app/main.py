@@ -250,13 +250,18 @@ def create_app() -> FastAPI:
     app.include_router(game_ws_router, tags=["websocket"])
     app.include_router(audio_ws_router, tags=["websocket"])
 
-    portraits_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "generated_portraits")
-    os.makedirs(portraits_dir, exist_ok=True)
-    app.mount("/api/portraits", StaticFiles(directory=portraits_dir), name="portraits")
+    # Serve generated art from the SAME directories the routes write to —
+    # these constants are the single source of truth. (A previous version
+    # recomputed the paths here and resolved one directory level higher,
+    # so every generated portrait/scene URL 404'd.)
+    from app.api.routes.characters import PORTRAITS_DIR
+    from app.api.routes.game import SCENE_IMAGES_DIR
 
-    scenes_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "generated_scenes")
-    os.makedirs(scenes_dir, exist_ok=True)
-    app.mount("/api/scene-images", StaticFiles(directory=scenes_dir), name="scene-images")
+    os.makedirs(PORTRAITS_DIR, exist_ok=True)
+    app.mount("/api/portraits", StaticFiles(directory=PORTRAITS_DIR), name="portraits")
+
+    os.makedirs(SCENE_IMAGES_DIR, exist_ok=True)
+    app.mount("/api/scene-images", StaticFiles(directory=SCENE_IMAGES_DIR), name="scene-images")
 
     return app
 
