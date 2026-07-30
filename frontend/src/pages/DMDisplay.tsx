@@ -104,6 +104,22 @@ export function DMDisplay() {
     if (messages.length === 0) return;
     const last = messages[messages.length - 1];
 
+    if (last.type === 'reconnected' as string) {
+      // Resync after a drop — the TV must never sit stale on the wall while
+      // the game moved on (turns taken, combat started/ended, new narration).
+      if (sessionId) {
+        fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
+          .then((r) => r.json())
+          .then((data) => {
+            setGameState(data);
+            const history = Array.isArray(data.narrative_history) ? data.narrative_history : [];
+            const lastDM = [...history].reverse().find((l: unknown) => String(l).startsWith('DM: '));
+            if (lastDM) setCurrentNarration(String(lastDM).slice(4));
+          })
+          .catch(() => {});
+      }
+    }
+
     if (last.type === 'turn_result') {
       const p = last.payload as { narration?: string };
       const text = p.narration || '';

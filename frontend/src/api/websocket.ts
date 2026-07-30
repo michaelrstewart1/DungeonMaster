@@ -28,6 +28,12 @@ export class GameWebSocket {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private shouldReconnect = true;
   private hadConnection = false;
+  // Liveness: any inbound frame proves the socket is alive. If nothing
+  // arrives for > 2 heartbeat intervals (incl. pong replies), the socket is
+  // presumed dead (phone slept, wifi switched) and force-closed to trigger
+  // the reconnect path — browsers can keep zombie sockets "open" for minutes.
+  private lastMessageAt = 0;
+  private visibilityHandler: (() => void) | null = null;
   // Outbound messages queued while disconnected; flushed on (re)connect.
   private outbox: Record<string, unknown>[] = [];
   private maxOutbox = 50;
@@ -40,12 +46,25 @@ export class GameWebSocket {
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
+    // Phones fire visibilitychange when unlocked / switched back to the
+    // browser — reconnect immediately instead of waiting out the backoff.
+    if (!this.visibilityHandler && typeof document !== 'undefined') {
+      this.visibilityHandler = () => {
+        if (!document.hidden && this.shouldReconnect && !this.isConnected) {
+          this.reconnectAttempts = 0;
+          this.connect();
+        }
+      };
+      document.addEventListener('visibilitychange', this.visibilityHandler);
+    }
+
     this.ws = new WebSocket(this.url);
 
     this.ws.onopen = () => {
       const isReconnect = this.hadConnection;
       this.hadConnection = true;
       this.reconnectAttempts = 0;
+      this.lastMessageAt = Date.now();
       this.notifyStatus(true);
       this.startHeartbeat();
       // Deliver queued actions typed while offline, oldest first.
@@ -60,6 +79,7 @@ export class GameWebSocket {
     };
 
     this.ws.onmessage = (event) => {
+      this.lastMessageAt = Date.now();
       try {
         const raw = JSON.parse(event.data);
         // Backend sends flat messages; normalize to { type, payload } format
@@ -94,6 +114,10 @@ export class GameWebSocket {
   disconnect(): void {
     this.shouldReconnect = false;
     this.stopHeartbeat();
+    if (this.visibilityHandler && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this.visibilityHandler);
+      this.visibilityHandler = null;
+    }
     this.ws?.close();
     this.ws = null;
   }
@@ -132,6 +156,13 @@ export class GameWebSocket {
 
   private startHeartbeat(): void {
     this.heartbeatInterval = setInterval(() => {
+      // Server answers every ping with a pong, so a healthy socket receives
+      // at least one frame per interval. Silence for >2.5 intervals means
+      // the connection is dead even if the browser still reports OPEN.
+      if (this.lastMessageAt && Date.now() - this.lastMessageAt > 75000) {
+        this.ws?.close(); // onclose schedules the reconnect
+        return;
+      }
       this.send({ type: 'ping' });
     }, 30000);
   }

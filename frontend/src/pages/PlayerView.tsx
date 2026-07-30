@@ -27,6 +27,22 @@ interface NarrativeEntry {
 
 type GamePhase = 'exploration' | 'combat';
 
+/** Rebuild a story feed from the server's authoritative narrative_history —
+ * used on load and after reconnects so missed narration isn't lost forever. */
+function narrativeFromHistory(history: unknown, limit = 30): NarrativeEntry[] {
+  if (!Array.isArray(history)) return [];
+  return history.slice(-limit).map((line, i) => {
+    const s = String(line);
+    const isDM = s.startsWith('DM: ');
+    return {
+      id: `hist-${i}-${s.length}`,
+      text: isDM ? s.slice(4) : s.replace(/^Player: /, ''),
+      type: isDM ? ('narration' as const) : ('action' as const),
+      timestamp: new Date().toISOString(),
+    };
+  });
+}
+
 interface QuickAction {
   emoji: string;
   label: string;
@@ -176,6 +192,9 @@ export function PlayerView() {
         if (ph === 'combat') setPhase('combat');
         else if (ph) setPhase('exploration');
         if (data.combat_state?.initiative_order?.length) setCombatState(data.combat_state);
+        // Backfill the story so a refreshed/rejoining phone isn't blank.
+        const hist = narrativeFromHistory(data.narrative_history);
+        if (hist.length) setNarrative((prev) => (prev.length ? prev : hist));
       })
       .catch(() => {});
 
@@ -193,11 +212,33 @@ export function PlayerView() {
     const last = messages[messages.length - 1];
 
     if ((last.type as string) === 'reconnected') {
-      // Re-sync authoritative state after a connection drop.
+      // Full resync of authoritative state after a connection drop — the
+      // world may have changed while offline (combat started/ended, turns
+      // advanced, narration happened), so sync EVERYTHING, not just gameState.
       if (sessionId) {
         fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
           .then((r) => r.json())
-          .then((data) => setGameState(data))
+          .then((data) => {
+            setGameState(data);
+            const ph = data.current_phase || data.phase;
+            if (ph === 'combat') setPhase('combat');
+            else if (ph) { setPhase('exploration'); setCombatState(null); }
+            if (data.combat_state?.initiative_order?.length) {
+              setCombatState(data.combat_state);
+            }
+            const ct = (data as GameState & { current_turn?: string }).current_turn;
+            if (ct !== undefined && character) setIsMyTurn(ct === character.id);
+            setWaitingForDM(false);
+            // Replace the feed with the authoritative history — anything
+            // broadcast while offline never reached this phone.
+            const hist = narrativeFromHistory(data.narrative_history);
+            if (hist.length) {
+              setNarrative([
+                ...hist,
+                { id: uuid(), text: '— reconnected, story synced —', type: 'system', timestamp: new Date().toISOString() },
+              ]);
+            }
+          })
           .catch(() => {});
       }
     }
