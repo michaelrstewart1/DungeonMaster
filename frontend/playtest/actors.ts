@@ -220,9 +220,21 @@ export class PhoneActor {
     if (outcome === 'picker') {
       await this.shots.beat(page, this.name, 'character-picker', bus);
       await thinkTime();
-      // Pick MY character by name; fall back to the first card
-      const mine = page.locator('.character-picker-card', { hasText: this.brain.persona.characterName });
-      const card = (await mine.count()) > 0 ? mine.first() : page.locator('.character-picker-card').first();
+      // Pick MY character by name; fall back to the first UNCLAIMED card.
+      // A silent .first() fallback once made all four phones claim the same
+      // hero, deadlocking combat — so warn loudly when the name is missing.
+      const mine = page.locator(
+        '.character-picker-card:not(.character-picker-card-taken)',
+        { hasText: this.brain.persona.characterName },
+      );
+      let card = mine.first();
+      if ((await mine.count()) === 0) {
+        bus.emit(this.name, 'warning', {
+          where: 'character-picker',
+          message: `character "${this.brain.persona.characterName}" not found/unclaimed; picking first free card`,
+        });
+        card = page.locator('.character-picker-card:not(.character-picker-card-taken)').first();
+      }
       await humanTap(card);
       await page.waitForURL('**/play/**', { timeout: 30_000 });
     } else if (outcome === 'timeout') {

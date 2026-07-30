@@ -15,8 +15,8 @@ export interface Persona {
 export const PERSONAS: Persona[] = [
   {
     playerName: 'Kit',
-    characterName: 'Lyra Nightwhisper',
-    style: 'cautious scout; scouts ahead, checks for traps, asks questions; short sentences',
+    characterName: 'Kael Shadowstep',
+    style: 'cautious rogue scout; scouts ahead, checks for traps, asks questions; short sentences',
     playbook: [
       'I scout ahead quietly, checking for traps',
       'I look for tracks or signs of danger',
@@ -26,8 +26,8 @@ export const PERSONAS: Persona[] = [
   },
   {
     playerName: 'Cohen',
-    characterName: 'Thorin Ironforge',
-    style: 'bold paladin; charges in, protects the weak, invokes his god dramatically',
+    characterName: 'Sera Dawnbringer',
+    style: 'bold paladin; charges in, protects the weak, invokes her god dramatically',
     playbook: [
       'I stride forward with my warhammer raised, ready for anything',
       'I call on Moradin to light our way',
@@ -37,8 +37,8 @@ export const PERSONAS: Persona[] = [
   },
   {
     playerName: 'Brody',
-    characterName: 'Zephyr Stormcaller',
-    style: 'chaotic sorcerer; flashy magic, jokes around, sometimes reckless',
+    characterName: 'Lyra Moonwhisper',
+    style: 'chaotic wizard; flashy magic, jokes around, sometimes reckless',
     playbook: [
       'I send a few dancing sparks ahead to light the corridor',
       'I check the walls for magic auras',
@@ -48,8 +48,8 @@ export const PERSONAS: Persona[] = [
   },
   {
     playerName: 'Michael',
-    characterName: 'Grimshaw the Unbroken',
-    style: 'practical fighter; direct, tactical, watches the flanks',
+    characterName: 'Thorne Ironfist',
+    style: 'practical dwarf fighter; direct, tactical, watches the flanks',
     playbook: [
       'I take point and advance carefully',
       'I check our rear for anything following us',

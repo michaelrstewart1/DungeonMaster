@@ -144,7 +144,20 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 # running without an LLM key, which made multiplayer unusable.
                 narrator = getattr(websocket.app.state, "narrator", None)
                 db_factory = getattr(websocket.app.state, "db_factory", None)
-                player_text = f"{character_id}: {action}" if character_id else action
+
+                # Resolve the character's NAME — raw UUIDs must never leak
+                # into the LLM prompt, narrative history, or player feeds.
+                actor_name = None
+                if character_id and db_factory is not None:
+                    try:
+                        async with db_factory() as db:
+                            character = await repo.get_character(db, character_id)
+                            if character:
+                                actor_name = character.get("name")
+                    except Exception:
+                        actor_name = None
+                actor_label = actor_name or character_id
+                player_text = f"{actor_label}: {action}" if actor_label else action
 
                 if db_factory is not None:
                     # Stream LLM tokens live to all clients so the DM display
@@ -179,6 +192,7 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 turn_result = {
                     "type": "turn_result",
                     "character_id": character_id,
+                    "character_name": actor_name,
                     "action": action,
                     "narration": narration,
                     "timestamp": datetime.now().isoformat(),
@@ -197,7 +211,6 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                         async with db_factory() as db:
                             session_data = await repo.get_game_session(db, session_id)
                             if session_data:
-                                player_text = f"{character_id}: {action}" if character_id else (action or "")
                                 session_data.setdefault("narrative_history", []).append(f"Player: {player_text}")
                                 session_data["narrative_history"].append(f"DM: {narration}")
                                 session_data["turn_count"] = session_data.get("turn_count", 0) + 1

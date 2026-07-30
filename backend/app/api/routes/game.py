@@ -2144,6 +2144,56 @@ async def get_session_players(session_id: str, db: AsyncSession = Depends(get_db
     return {"players": storage.session_players.get(session_id, [])}
 
 
+class SelectCharacterRequest(BaseModel):
+    """Schema for claiming a character in a multiplayer session."""
+    player_id: str = Field(..., description="Player ID from /game/join")
+    character_id: str = Field(..., description="Character to claim")
+
+
+@router.post("/sessions/{session_id}/select-character")
+async def select_character(
+    session_id: str, body: SelectCharacterRequest, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Claim a character for a player — enforces one player per character.
+
+    Without this, two phones could silently pick the same hero and combat
+    turns for the unclaimed characters would stall forever.
+    """
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+
+    players = storage.session_players.get(session_id, [])
+    me = next((p for p in players if p.get("id") == body.player_id), None)
+    if me is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found in session")
+
+    taken_by = next(
+        (
+            p for p in players
+            if p.get("character_id") == body.character_id and p.get("id") != body.player_id
+        ),
+        None,
+    )
+    if taken_by is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Character already claimed by {taken_by.get('name', 'another player')}",
+        )
+
+    me["character_id"] = body.character_id
+    storage.flush("session_players")
+
+    from app.api.websockets.game_ws import manager
+    await manager.broadcast(session_id, {
+        "type": "player_update",
+        "players": players,
+        "connection_count": manager.get_connection_count(session_id),
+    })
+
+    return {"ok": True, "player_id": body.player_id, "character_id": body.character_id}
+
+
 # ─── TTS Narration ──────────────────────────────────────────────────────
 
 

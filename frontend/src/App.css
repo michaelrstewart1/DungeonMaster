@@ -6423,6 +6423,21 @@
   box-shadow: 0 6px 20px rgba(212, 168, 70, 0.2);
 }
 
+.character-picker-card-taken,
+.character-picker-card-taken:hover {
+  opacity: 0.45;
+  cursor: not-allowed;
+  border-color: var(--gold-border, rgba(212, 168, 70, 0.3));
+  transform: none;
+  box-shadow: none;
+}
+
+.character-picker-taken-label {
+  font-size: 0.68rem;
+  color: var(--gold-dim);
+  font-style: italic;
+}
+
 .character-picker-portrait {
   width: 70px;
   height: 70px;

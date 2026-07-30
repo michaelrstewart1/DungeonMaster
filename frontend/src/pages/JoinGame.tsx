@@ -23,7 +23,25 @@ export function JoinGame() {
   const [joining, setJoining] = useState(false);
   const [phase, setPhase] = useState<'join' | 'pick-character'>('join');
   const [sessionId, setSessionId] = useState('');
+  const [playerId, setPlayerId] = useState('');
   const [characters, setCharacters] = useState<SimpleCharacter[]>([]);
+  const [takenBy, setTakenBy] = useState<Record<string, string>>({});
+  const [claiming, setClaiming] = useState(false);
+  const [pickError, setPickError] = useState('');
+
+  /** Map character_id -> claiming player's name (excluding ourselves). */
+  async function refreshTaken(sid: string, myPlayerId: string) {
+    try {
+      const res = await fetch(`${API_BASE}/game/sessions/${sid}/players`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const map: Record<string, string> = {};
+      for (const p of data.players || []) {
+        if (p.character_id && p.id !== myPlayerId) map[p.character_id] = p.name || 'another player';
+      }
+      setTakenBy(map);
+    } catch { /* non-fatal — picker still works */ }
+  }
 
   // Auto-join if code + name are both in URL
   useEffect(() => {
@@ -73,6 +91,7 @@ export function JoinGame() {
         roomCode: finalCode,
       });
       setSessionId(data.session_id);
+      setPlayerId(data.player_id);
 
       // Rejoining with a character already selected — skip the picker
       if (data.rejoined && data.character_id) {
@@ -88,6 +107,7 @@ export function JoinGame() {
             const chars = await charRes.json();
             if (Array.isArray(chars) && chars.length > 0) {
               setCharacters(chars);
+              refreshTaken(data.session_id, data.player_id);
               setPhase('pick-character');
               return;
             }
@@ -104,9 +124,30 @@ export function JoinGame() {
     }
   }
 
-  function selectCharacter(charId: string) {
-    updateIdentity(sessionId, { characterId: charId });
-    navigate(`/play/${sessionId}`);
+  async function selectCharacter(charId: string) {
+    if (claiming) return;
+    setClaiming(true);
+    setPickError('');
+    try {
+      // Claim server-side so two phones can't pick the same hero.
+      const res = await fetch(`${API_BASE}/game/sessions/${sessionId}/select-character`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ player_id: playerId, character_id: charId }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ detail: 'Character unavailable' }));
+        setPickError(typeof data.detail === 'string' ? data.detail : 'Character unavailable');
+        refreshTaken(sessionId, playerId);
+        return;
+      }
+      updateIdentity(sessionId, { characterId: charId });
+      navigate(`/play/${sessionId}`);
+    } catch {
+      setPickError('Failed to claim character — check your connection');
+    } finally {
+      setClaiming(false);
+    }
   }
 
   // Character picker phase
@@ -116,12 +157,16 @@ export function JoinGame() {
         <div className="join-game-card join-game-card-wide">
           <h1>Choose Your Character</h1>
           <p className="join-game-subtitle">Select the character you'll be playing</p>
+          {pickError && <div className="join-error">{pickError}</div>}
           <div className="character-picker-grid">
-            {characters.map((c) => (
+            {characters.map((c) => {
+              const taken = takenBy[c.id];
+              return (
               <button
                 key={c.id}
-                className="character-picker-card"
+                className={`character-picker-card${taken ? ' character-picker-card-taken' : ''}`}
                 onClick={() => selectCharacter(c.id)}
+                disabled={!!taken || claiming}
               >
                 <div className="character-picker-portrait">
                   {c.portrait_url ? (
@@ -133,9 +178,11 @@ export function JoinGame() {
                 <div className="character-picker-info">
                   <strong>{c.name}</strong>
                   <span>Lvl {c.level} {c.race} {c.class_name}</span>
+                  {taken && <span className="character-picker-taken-label">Taken by {taken}</span>}
                 </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>
