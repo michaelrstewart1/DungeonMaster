@@ -6385,6 +6385,90 @@
   cursor: not-allowed;
 }
 
+/* Read-only spectator entry — deliberately quiet next to the join CTA */
+.join-watch-btn {
+  background: transparent;
+  color: var(--gold-dim);
+  border: 1px solid var(--gold-border);
+  border-radius: 8px;
+  padding: 0.6rem 1.25rem;
+  font-size: 0.95rem;
+  font-family: 'Cinzel', serif;
+  cursor: pointer;
+  transition: color 0.2s, border-color 0.2s, background 0.2s;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.join-watch-btn:hover:not(:disabled) {
+  color: var(--gold-light);
+  border-color: var(--gold);
+  background: var(--gold-bg);
+}
+
+.join-watch-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ─── Observer View (read-only spectator) ─── */
+.observer-view .pv-topbar {
+  gap: 0.6rem;
+}
+
+.ov-badge {
+  font-family: 'Cinzel', serif;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  color: var(--gold-dim);
+  border: 1px solid var(--gold-border);
+  border-radius: 4px;
+  padding: 0.15rem 0.5rem;
+  background: var(--gold-bg);
+}
+
+.ov-roster {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid var(--border, rgba(212, 168, 70, 0.15));
+}
+
+.ov-roster-chip {
+  font-size: 0.8rem;
+  color: var(--gold-light);
+  background: var(--gold-bg);
+  border: 1px solid var(--gold-border);
+  border-radius: 999px;
+  padding: 0.15rem 0.65rem;
+}
+
+.ov-footer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.75rem 1rem;
+  font-size: 0.8rem;
+  font-style: italic;
+  color: var(--text-dim, #8b8b9e);
+  border-top: 1px solid var(--border, rgba(212, 168, 70, 0.15));
+  text-align: center;
+}
+
+.ov-join-link {
+  color: var(--gold);
+  font-style: normal;
+  text-decoration: none;
+}
+
+.ov-join-link:hover {
+  color: var(--gold-light);
+  text-decoration: underline;
+}
+
 /* Wider card variant for character picker phase */
 .join-game-card.join-game-card-wide {
   max-width: 640px;

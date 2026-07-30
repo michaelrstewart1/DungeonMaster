@@ -53,6 +53,28 @@ export function JoinGame() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  async function handleWatch() {
+    // Observer path: resolve the code WITHOUT joining the roster, then open
+    // the read-only spectator view. Zero side effects on the game.
+    const finalCode = roomCode.trim().toUpperCase();
+    if (!finalCode) { setError('Enter a room code'); return; }
+    setJoining(true);
+    setError('');
+    try {
+      const res = await fetch(`${API_BASE}/game/resolve-code/${finalCode}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({ detail: 'Invalid room code' }));
+        throw new Error(data.detail || 'Invalid room code');
+      }
+      const data = await res.json();
+      navigate(`/watch/${data.session_id}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to find that table');
+    } finally {
+      setJoining(false);
+    }
+  }
+
   async function handleJoin(code?: string, name?: string) {
     const finalCode = (code || roomCode).trim().toUpperCase();
     const finalName = (name || playerName).trim();
@@ -235,6 +257,15 @@ export function JoinGame() {
             disabled={joining || !roomCode.trim() || !playerName.trim()}
           >
             {joining ? 'Joining...' : '🗡️ Enter the Dungeon'}
+          </button>
+
+          <button
+            className="join-watch-btn"
+            onClick={() => handleWatch()}
+            disabled={joining || !roomCode.trim()}
+            title="Spectate without affecting the game"
+          >
+            👁 Just watching? Observe the table
           </button>
         </div>
       </div>

@@ -7,7 +7,7 @@ export type WSMessageType =
   | 'chat' | 'turn_update' | 'vision_update'
   | 'trade_offer' | 'trade_resolved'
   | 'item_used' | 'item_equipped' | 'item_unequipped'
-  | 'player_joined' | 'player_left' | 'error' | 'reconnected';
+  | 'player_joined' | 'player_left' | 'error' | 'reconnected' | 'observer_ack';
 
 export interface WSMessage {
   type: WSMessageType;
@@ -41,9 +41,9 @@ export class GameWebSocket {
   private outbox: Record<string, unknown>[] = [];
   private maxOutbox = 50;
 
-  constructor(sessionId: string, baseUrl?: string) {
+  constructor(sessionId: string, baseUrl?: string, role?: 'observer') {
     const wsBase = baseUrl || import.meta.env.VITE_WS_URL || `ws://${window.location.host}`;
-    this.url = `${wsBase}/ws/game/${sessionId}`;
+    this.url = `${wsBase}/ws/game/${sessionId}${role ? `?role=${role}` : ''}`;
   }
 
   connect(): void {

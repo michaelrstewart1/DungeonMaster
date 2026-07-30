@@ -23,17 +23,23 @@ class ConnectionManager:
     def __init__(self):
         """Initialize the connection manager."""
         self.active_connections: dict[str, list[WebSocket]] = {}
+        # session_id -> set of connections that joined as read-only observers.
+        # Observers receive every broadcast but are excluded from player
+        # counts and never trigger join/leave broadcasts.
+        self.observer_connections: dict[str, set[WebSocket]] = {}
         # session_id -> {player_id: WebSocket} for targeted (private) sends.
         # A player's id is the one reconciled after `player_join` (the HTTP
         # join id when supplied, otherwise the WS-generated id).
         self.player_connections: dict[str, dict[str, WebSocket]] = {}
 
-    async def connect(self, session_id: str, websocket: WebSocket):
+    async def connect(self, session_id: str, websocket: WebSocket, observer: bool = False):
         """Accept and register a new WebSocket connection."""
         await websocket.accept()
         if session_id not in self.active_connections:
             self.active_connections[session_id] = []
         self.active_connections[session_id].append(websocket)
+        if observer:
+            self.observer_connections.setdefault(session_id, set()).add(websocket)
 
     def disconnect(self, session_id: str, websocket: WebSocket):
         """Remove a WebSocket connection from the session."""
@@ -41,6 +47,11 @@ class ConnectionManager:
             self.active_connections[session_id].remove(websocket)
             if not self.active_connections[session_id]:
                 del self.active_connections[session_id]
+        observers = self.observer_connections.get(session_id)
+        if observers:
+            observers.discard(websocket)
+            if not observers:
+                del self.observer_connections[session_id]
         # Forget any player_id -> websocket mappings for this connection.
         players = self.player_connections.get(session_id)
         if players:
@@ -83,8 +94,18 @@ class ConnectionManager:
                 pass
 
     def get_connection_count(self, session_id: str) -> int:
-        """Get the number of active connections in a session."""
-        return len(self.active_connections.get(session_id, []))
+        """Get the number of active PLAYER connections in a session.
+
+        Observers are intentionally excluded — a spectator connecting or
+        leaving must never change what players and displays see.
+        """
+        total = len(self.active_connections.get(session_id, []))
+        observers = len(self.observer_connections.get(session_id, set()))
+        return max(total - observers, 0)
+
+    def get_observer_count(self, session_id: str) -> int:
+        """Get the number of read-only observer connections in a session."""
+        return len(self.observer_connections.get(session_id, set()))
 
 
 # Global connection manager instance
@@ -93,19 +114,34 @@ manager = ConnectionManager()
 
 @router.websocket("/game/{session_id}")
 async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
-    """WebSocket endpoint for real-time game session updates."""
+    """WebSocket endpoint for real-time game session updates.
+
+    Connect with `?role=observer` for a read-only spectator connection:
+    observers receive every broadcast but cannot send game-mutating
+    messages, never appear in rosters or connection counts, and their
+    join/leave is invisible to players.
+    """
     player_id = str(uuid.uuid4())
-    
-    await manager.connect(session_id, websocket)
-    
+    is_observer = websocket.query_params.get("role") == "observer"
+
+    await manager.connect(session_id, websocket, observer=is_observer)
+
     try:
-        # Notify other players that someone joined
-        connection_count = manager.get_connection_count(session_id)
-        await manager.broadcast(session_id, {
-            "type": "player_joined",
-            "player_id": player_id,
-            "connection_count": connection_count,
-        })
+        if is_observer:
+            # Private ack only — players must never notice an observer.
+            await websocket.send_json({
+                "type": "observer_ack",
+                "observer_count": manager.get_observer_count(session_id),
+                "timestamp": datetime.now().isoformat(),
+            })
+        else:
+            # Notify other players that someone joined
+            connection_count = manager.get_connection_count(session_id)
+            await manager.broadcast(session_id, {
+                "type": "player_joined",
+                "player_id": player_id,
+                "connection_count": connection_count,
+            })
         
         # Main message loop
         while True:
@@ -121,8 +157,18 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     "type": "pong",
                     "timestamp": datetime.now().isoformat(),
                 })
-            
-            elif message_type == "chat":
+                continue
+
+            if is_observer:
+                # Server-enforced read-only: ignore every game-mutating
+                # message from observers, whatever the client claims to be.
+                await websocket.send_json({
+                    "type": "error",
+                    "message": "Observers are read-only and cannot interact with the game.",
+                })
+                continue
+
+            if message_type == "chat":
                 chat_message = {
                     "type": "chat",
                     "message": message.get("message", ""),
@@ -340,15 +386,16 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
     
     finally:
         manager.disconnect(session_id, websocket)
-        connection_count = manager.get_connection_count(session_id)
 
-        try:
-            await manager.broadcast(session_id, {
-                "type": "player_left",
-                "player_id": player_id,
-                "connection_count": connection_count,
-            })
-        except Exception:
-            # Never let a farewell broadcast raise through the ASGI stack
-            # (e.g. racing sends against sockets that closed simultaneously).
-            pass
+        if not is_observer:
+            connection_count = manager.get_connection_count(session_id)
+            try:
+                await manager.broadcast(session_id, {
+                    "type": "player_left",
+                    "player_id": player_id,
+                    "connection_count": connection_count,
+                })
+            except Exception:
+                # Never let a farewell broadcast raise through the ASGI stack
+                # (e.g. racing sends against sockets that closed simultaneously).
+                pass

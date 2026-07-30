@@ -2135,6 +2135,23 @@ async def join_game(body: JoinRequest, db: AsyncSession = Depends(get_db)) -> di
     }
 
 
+@router.get("/resolve-code/{room_code}")
+async def resolve_room_code(room_code: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """Resolve a room code to its session WITHOUT joining the roster.
+
+    Used by read-only observers so they can find the session from the
+    table's room code with zero side effects on the game.
+    """
+    code = room_code.strip().upper()
+    session_id = storage.room_codes.get(code)
+    if not session_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid room code")
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid room code")
+    return {"session_id": session_id, "campaign_id": session.get("campaign_id", "")}
+
+
 @router.get("/sessions/{session_id}/players")
 async def get_session_players(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     """Get the list of players in a session."""

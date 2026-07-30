@@ -7,6 +7,7 @@ import { JoinGame } from './pages/JoinGame'
 import { Lobby } from './pages/Lobby'
 import { PlayerView } from './pages/PlayerView'
 import { DMDisplay } from './pages/DMDisplay'
+import { ObserverView } from './pages/ObserverView'
 import { NotFound } from './pages/NotFound'
 import { Footer } from './components/Footer'
 import { ToastProvider } from './components/Toast'
@@ -74,6 +75,7 @@ function AppLayout() {
           <Route path="/lobby/:sessionId" element={<Lobby />} />
           <Route path="/play/:sessionId" element={<PlayerView />} />
           <Route path="/dm/:sessionId" element={<DMDisplay />} />
+          <Route path="/watch/:sessionId" element={<ObserverView />} />
           <Route path="*" element={<NotFound />} />
         </Routes>
       </main>

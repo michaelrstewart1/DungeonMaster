@@ -25,9 +25,13 @@ export interface UseGameSocketReturn {
   setReady: (ready: boolean) => void;
 }
 
-export function useGameSocket(sessionId: string | undefined): UseGameSocketReturn {
+export function useGameSocket(
+  sessionId: string | undefined,
+  options?: { observer?: boolean },
+): UseGameSocketReturn {
   const wsRef = useRef<GameWebSocket | null>(null);
   const seqRef = useRef(0);
+  const observer = options?.observer ?? false;
   const [connected, setConnected] = useState(false);
   const [players, setPlayers] = useState<PlayerInfo[]>([]);
   const [messages, setMessages] = useState<WSMessage[]>([]);
@@ -36,7 +40,7 @@ export function useGameSocket(sessionId: string | undefined): UseGameSocketRetur
   useEffect(() => {
     if (!sessionId) return;
 
-    const ws = new GameWebSocket(sessionId);
+    const ws = new GameWebSocket(sessionId, undefined, observer ? 'observer' : undefined);
     wsRef.current = ws;
 
     const unsubStatus = ws.onStatusChange((isConnected) => {
@@ -53,8 +57,9 @@ export function useGameSocket(sessionId: string | undefined): UseGameSocketRetur
       if (msg.type === 'reconnected') {
         // Connection dropped and came back (wifi blip, backend restart):
         // automatically re-register this player so the server rebinds the
-        // socket for private messages and roster state.
-        const identity = loadIdentity(sessionId);
+        // socket for private messages and roster state. Observers never
+        // re-join — they must stay invisible to the game.
+        const identity = observer || !sessionId ? null : loadIdentity(sessionId);
         if (identity) {
           ws.send({
             type: 'player_join',
@@ -127,7 +132,7 @@ export function useGameSocket(sessionId: string | undefined): UseGameSocketRetur
       ws.disconnect();
       wsRef.current = null;
     };
-  }, [sessionId]);
+  }, [sessionId, observer]);
 
   const send = useCallback((msg: Record<string, unknown>) => {
     wsRef.current?.send(msg);
