@@ -13,3 +13,5 @@ runs/
 
 # Playtest simulator run artifacts
 playtest-runs/
+
+dungeon_master.db
