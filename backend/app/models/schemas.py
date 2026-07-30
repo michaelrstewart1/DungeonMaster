@@ -212,6 +212,9 @@ class CombatState(BaseModel):
     initiative_order: List[str] = Field(..., description="Order of combatants in initiative")
     current_turn_index: int = Field(..., ge=0, description="Current turn index in initiative order")
     round_number: int = Field(..., ge=1, description="Current combat round number")
+    # Full rules-engine combat: per-combatant HP/AC/death-save state + event log
+    combatants: List[Dict[str, Any]] = Field(default_factory=list, description="Serialized combatants (rules engine)")
+    log: List[str] = Field(default_factory=list, description="Recent combat event log")
 
 
 class GameStateResponse(BaseModel):

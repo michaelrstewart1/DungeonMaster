@@ -212,3 +212,60 @@ class WhisperSTT(STTProvider):
         for partial in partial_results:
             await asyncio.sleep(0.1)
             yield partial
+
+
+class OpenAIWhisperSTT(STTProvider):
+    """OpenAI Whisper API STT — accepts browser-native webm/opus directly.
+
+    No local model download, no GPU contention with Ollama; ideal for the
+    phone push-to-talk path where clients send MediaRecorder webm blobs.
+    """
+
+    TRANSCRIPTION_URL = "https://api.openai.com/v1/audio/transcriptions"
+
+    def __init__(self, api_key: str, model: str = "whisper-1") -> None:
+        self.model = model
+        self._api_key = api_key
+        self._client: object | None = None
+
+    def _get_client(self):
+        if self._client is None:
+            try:
+                import httpx
+            except ImportError as exc:
+                raise ImportError(
+                    "httpx is required for OpenAIWhisperSTT. pip install httpx"
+                ) from exc
+            self._client = httpx.AsyncClient(
+                headers={"Authorization": f"Bearer {self._api_key}"},
+                timeout=30,
+            )
+        return self._client
+
+    async def transcribe(
+        self, audio_bytes: bytes, language: str = "en"
+    ) -> TranscriptionResult:
+        if not audio_bytes:
+            raise ValueError("audio_bytes cannot be empty")
+
+        client = self._get_client()
+        response = await client.post(
+            self.TRANSCRIPTION_URL,
+            data={"model": self.model, "language": language},
+            files={"file": ("audio.webm", audio_bytes, "audio/webm")},
+        )
+        response.raise_for_status()
+        payload = response.json()
+        return TranscriptionResult(
+            text=(payload.get("text") or "").strip(),
+            language=language,
+            confidence=1.0,
+            duration_seconds=float(payload.get("duration", 0.0) or 0.0),
+        )
+
+    async def transcribe_stream(
+        self, audio_chunks: bytes
+    ) -> AsyncGenerator[str, None]:
+        """The API is not streaming — yield the final transcription once."""
+        result = await self.transcribe(audio_chunks)
+        yield result.text

@@ -13,7 +13,7 @@ import { TradeOfferModal, IncomingTradeModal, OutgoingTradeBadge } from '../comp
 import { useToast } from '../components/Toast';
 import type { Trade } from '../api/client';
 import { useItem, equipItem } from '../api/client';
-import type { Character, GameState, GameMap, DiceResult } from '../types';
+import type { Character, GameState, GameMap, DiceResult, CombatState } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -67,6 +67,7 @@ export function PlayerView() {
   const [tab, setTab] = useState<'play' | 'sheet' | 'map' | 'dice'>('play');
   const [gameMap, setGameMap] = useState<GameMap | null>(null);
   const [phase, setPhase] = useState<GamePhase>('exploration');
+  const [combatState, setCombatState] = useState<CombatState | null>(null);
   const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null);
   const [waitingForDM, setWaitingForDM] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
@@ -151,19 +152,31 @@ export function PlayerView() {
       .catch(() => {});
   }, []);
 
-  // Determine turn status from game state
+  // Determine turn status from game state / combat initiative
   useEffect(() => {
-    if (!gameState || !character) return;
+    if (!character) return;
+    if (phase === 'combat' && combatState?.initiative_order?.length) {
+      const upNow = combatState.initiative_order[combatState.current_turn_index];
+      setIsMyTurn(upNow === character.name || upNow === character.id);
+      return;
+    }
+    if (!gameState) return;
     const currentTurn = (gameState as GameState & { current_turn?: string }).current_turn;
     setIsMyTurn(currentTurn === character.id);
-  }, [gameState, character]);
+  }, [gameState, character, phase, combatState]);
 
   // Load game state and character
   useEffect(() => {
     if (!sessionId) return;
     fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
       .then((r) => r.json())
-      .then((data) => setGameState(data))
+      .then((data) => {
+        setGameState(data);
+        const ph = data.current_phase || data.phase;
+        if (ph === 'combat') setPhase('combat');
+        else if (ph) setPhase('exploration');
+        if (data.combat_state?.initiative_order?.length) setCombatState(data.combat_state);
+      })
       .catch(() => {});
 
     if (characterId) {
@@ -220,11 +233,58 @@ export function PlayerView() {
       ]);
     }
 
+    if (last.type === 'combat_started') {
+      const p = last.payload as { combat_state?: CombatState };
+      setPhase('combat');
+      if (p.combat_state) setCombatState(p.combat_state);
+      setNarrative((prev) => [
+        ...prev,
+        { id: uuid(), text: '⚔️ Combat begins — roll for initiative!', type: 'system', timestamp: new Date().toISOString() },
+      ]);
+    }
+
+    if (last.type === 'combat_update') {
+      const p = last.payload as {
+        events?: string[];
+        combat_state?: CombatState | null;
+        phase?: string;
+        combat_over?: boolean;
+        next_turn?: string;
+      };
+      setWaitingForDM(false);
+      if (p.events?.length) {
+        setNarrative((prev) => [
+          ...prev,
+          ...p.events!.map((ev) => ({
+            id: uuid(), text: ev, type: 'narration' as const, timestamp: new Date().toISOString(),
+          })),
+        ]);
+      }
+      if (p.combat_over) {
+        setPhase('exploration');
+        setCombatState(null);
+      } else if (p.combat_state) {
+        setCombatState(p.combat_state);
+      }
+      // Sync my HP from the authoritative combat state
+      const me = p.combat_state?.combatants?.find((c) => c.id === characterId);
+      if (me) {
+        setCharacter((prev) => prev ? { ...prev, hp: me.hp } : prev);
+      } else if (p.combat_over && characterId) {
+        fetch(`${API_BASE}/characters/${characterId}`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((c) => { if (c) setCharacter(c); })
+          .catch(() => undefined);
+      }
+    }
+
     if (last.type === 'game_state' as string) {
-      const gs = last.payload as GameState;
+      const gs = last.payload as GameState & { current_phase?: string };
       setGameState(gs);
-      if (gs.phase === 'combat') setPhase('combat');
-      else setPhase('exploration');
+      const ph = gs.current_phase || gs.phase;
+      if (ph === 'combat') setPhase('combat');
+      else if (ph) setPhase('exploration');
+      if (gs.combat_state?.initiative_order?.length) setCombatState(gs.combat_state);
       if (character) {
         const ct = (gs as GameState & { current_turn?: string }).current_turn;
         setIsMyTurn(ct === character.id);
@@ -405,6 +465,41 @@ export function PlayerView() {
     setActionText('');
   }
 
+  // Rules-engine combat: quick actions hit the authoritative endpoint —
+  // dice, HP, and death saves are computed server-side, never by the LLM.
+  const ENGINE_COMBAT_MAP: Record<string, 'attack' | 'dodge' | 'heal'> = {
+    'Attack': 'attack',
+    'Defend': 'dodge',
+    'Dodge': 'dodge',
+    'Use Potion': 'heal',
+  };
+  const inEngineCombat = phase === 'combat' && !!combatState?.combatants?.length;
+
+  async function handleCombatAction(actionType: 'attack' | 'dodge' | 'heal') {
+    if (!sessionId || !characterId) return;
+    setWaitingForDM(true);
+    try {
+      const res = await fetch(`${API_BASE}/game/sessions/${sessionId}/combat-action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actor_id: characterId,
+          action_type: actionType,
+          target_id: actionType === 'heal' ? characterId : undefined,
+        }),
+      });
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => null))?.detail;
+        addToast({ type: 'error', message: typeof detail === 'string' ? detail : 'Action failed' });
+      }
+      // UI updates arrive via the combat_update broadcast
+    } catch {
+      addToast({ type: 'error', message: 'Action failed — check your connection' });
+    } finally {
+      setWaitingForDM(false);
+    }
+  }
+
   function handleDiceRoll(notation: string) {
     const match = notation.match(/(\d+)d(\d+)/);
     if (match) {
@@ -508,19 +603,38 @@ export function PlayerView() {
             )}
           </div>
 
+          {/* Combat initiative strip */}
+          {inEngineCombat && combatState && (
+            <div className="pv-initiative-strip">
+              <span className="pv-round-chip">R{combatState.round_number}</span>
+              {combatState.initiative_order.map((n, i) => (
+                <span
+                  key={`${n}-${i}`}
+                  className={`pv-init-chip ${i === combatState.current_turn_index ? 'pv-init-chip-active' : ''}`}
+                >
+                  {n}
+                </span>
+              ))}
+            </div>
+          )}
+
           {/* Quick Actions */}
           <div className="pv-quick-actions">
-            {quickActions.map((action) => (
-              <button
-                key={action.label}
-                className="pv-quick-action-btn"
-                onClick={() => handleSendAction(`${action.emoji} ${action.label}`)}
-                disabled={waitingForDM}
-              >
-                <span>{action.emoji}</span>
-                <span>{action.label}</span>
-              </button>
-            ))}
+            {quickActions.map((action) => {
+              const engineAction = inEngineCombat ? ENGINE_COMBAT_MAP[action.label] : undefined;
+              return (
+                <button
+                  key={action.label}
+                  className="pv-quick-action-btn"
+                  onClick={() => engineAction ? handleCombatAction(engineAction) : handleSendAction(`${action.emoji} ${action.label}`)}
+                  disabled={waitingForDM || (!!engineAction && !isMyTurn)}
+                  title={engineAction && !isMyTurn ? 'Wait for your turn' : undefined}
+                >
+                  <span>{action.emoji}</span>
+                  <span>{action.label}</span>
+                </button>
+              );
+            })}
           </div>
 
           <div className="pv-action-bar">

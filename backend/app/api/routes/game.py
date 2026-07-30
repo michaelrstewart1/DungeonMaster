@@ -398,11 +398,14 @@ def _merge_detected_npcs(session: dict, detected: list[dict]) -> None:
             existing_names.add(npc["name"].lower())
 
 
-async def _generate_dm_response(player_action: str, session: dict, narrator=None, db=None) -> str:
+async def _generate_dm_response(player_action: str, session: dict, narrator=None, db=None, on_chunk=None) -> str:
     """Generate a DM narrative response.
 
     Uses the real LLM narrator when available; falls back to keyword-matching
     mock responses so tests (which have no API key) continue to pass.
+
+    When ``on_chunk`` is provided, LLM tokens are streamed to it as they
+    arrive (used by the WS path to live-render narration on the DM display).
     """
     from app.services.llm.narrator import _strip_action_echo
 
@@ -452,8 +455,9 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                     npcs=npcs,
                     session_history=session.get("narrative_history", []),
                     history_summary=session.get("history_summary", "") or "",
+                    on_chunk=on_chunk,
                 ),
-                timeout=45.0,
+                timeout=90.0 if on_chunk is not None else 45.0,
             )
             # Safety net: strip echoed player action even if narrator missed it
             stripped = _strip_action_echo(result, player_action)
@@ -867,21 +871,119 @@ async def generate_world(request: Request, body: WorldGenerateRequest, db: Async
     return {"world_context": world_context}
 
 
+class StartCombatRequest(BaseModel):
+    """Optional encounter payload — when provided, full initiative is rolled."""
+    enemies: List[dict] = Field(default_factory=list, description="[{name,hp,ac,cr,count}] e.g. from /encounter")
+
+
 @router.post("/sessions/{session_id}/start-combat", response_model=GameStateResponse)
-async def start_combat(session_id: str, db: AsyncSession = Depends(get_db)) -> GameStateResponse:
-    """Start combat encounter in the session."""
+async def start_combat(session_id: str, body: StartCombatRequest | None = None, db: AsyncSession = Depends(get_db)) -> GameStateResponse:
+    """Start combat encounter in the session.
+
+    With an enemies payload, the deterministic rules engine rolls initiative
+    for the whole party + monsters and builds the full combat state. Without
+    one, a bare combat phase is opened (legacy behavior).
+    """
     session = await repo.get_game_session(db, session_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
-    
+
     session["current_phase"] = GamePhase.COMBAT.value
-    session["combat_state"] = {
-        "initiative_order": [],
-        "current_turn_index": 0,
-        "round_number": 1,
-    }
+    if body is not None and body.enemies:
+        from app.services.game.combat_loop import start_encounter
+
+        campaign = await repo.get_campaign(db, session.get("campaign_id", "")) or {}
+        characters = []
+        for cid in campaign.get("character_ids", []):
+            c = await repo.get_character(db, cid)
+            if c:
+                characters.append(c)
+        combat_state = start_encounter(characters, body.enemies)
+        session["combat_state"] = combat_state
+        opening = "Combat begins! Initiative: " + ", ".join(combat_state["initiative_order"])
+        session.setdefault("narrative_history", []).append(f"DM: {opening}")
+    else:
+        session["combat_state"] = {
+            "initiative_order": [],
+            "current_turn_index": 0,
+            "round_number": 1,
+        }
     await repo.save_game_session(db, session)
+
+    # Notify all connected clients (phones + DM display)
+    from app.api.websockets.game_ws import manager
+    await manager.broadcast(session_id, {
+        "type": "combat_started",
+        "combat_state": session["combat_state"],
+    })
     return GameStateResponse(**session)
+
+
+class CombatActionRequest(BaseModel):
+    """A player's combat action, resolved by the deterministic rules engine."""
+    actor_id: str = Field(..., description="Combatant id (character id)")
+    action_type: str = Field(..., description="attack | heal | dodge | pass")
+    target_id: Optional[str] = Field(None, description="Target combatant id")
+
+
+@router.post("/sessions/{session_id}/combat-action")
+async def combat_action(session_id: str, body: CombatActionRequest, request: Request, db: AsyncSession = Depends(get_db)) -> dict:
+    """Resolve a combat action authoritatively (dice, HP, death saves are
+    computed by the rules engine — the LLM only narrates afterwards)."""
+    from app.services.game.combat_loop import resolve_player_action
+
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+    combat_state = session.get("combat_state")
+    if not combat_state or not combat_state.get("combatants"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No active combat with initiative — call start-combat with enemies first")
+
+    result = resolve_player_action(
+        combat_state, body.actor_id, body.action_type, body.target_id
+    )
+    if result.get("error"):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result["error"])
+
+    # Persist deterministic outcomes into the narrative record
+    for ev in result["events"]:
+        session.setdefault("narrative_history", []).append(f"DM: {ev}")
+
+    if result.get("combat_over"):
+        session["current_phase"] = GamePhase.EXPLORATION.value
+        session["combat_state"] = None
+    else:
+        session["combat_state"] = combat_state
+    await repo.save_game_session(db, session)
+
+    # Optional flavor narration from the LLM (outcomes already decided)
+    narration = ""
+    narrator = getattr(request.app.state, "narrator", None)
+    if narrator is not None:
+        try:
+            import asyncio as _asyncio
+            narration = await _asyncio.wait_for(
+                narrator.narrate_combat_action(
+                    combat_state or {},
+                    {"description": " ".join(result["events"])},
+                    [],
+                    session_history=session.get("narrative_history", []),
+                ),
+                timeout=20.0,
+            )
+        except Exception:
+            narration = ""
+
+    payload = {
+        **result,
+        "narration": narration or " ".join(result["events"]),
+        "combat_state": session.get("combat_state"),
+        "phase": session["current_phase"],
+    }
+
+    from app.api.websockets.game_ws import manager
+    await manager.broadcast(session_id, {"type": "combat_update", **payload})
+    return payload
 
 
 @router.post("/sessions/{session_id}/end-combat", response_model=GameStateResponse)

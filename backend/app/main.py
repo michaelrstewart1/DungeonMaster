@@ -99,6 +99,38 @@ def _init_app_state(app: FastAPI) -> None:
     app.state.narrator = narrator
     app.state.tts = tts
 
+    # STT: real speech-to-text for push-to-talk (phones send webm/opus)
+    from app.services.voice.pipeline import VoicePipeline
+    from app.services.voice.stt import FakeSTT, OpenAIWhisperSTT, WhisperSTT
+    from app.services.voice.vad import VADProcessor
+
+    stt = None
+    stt_pref = (settings.stt_provider or "auto").lower()
+    if stt_pref in ("auto", "openai") and settings.openai_api_key:
+        try:
+            stt = OpenAIWhisperSTT(api_key=settings.openai_api_key)
+            logger.info("STT: OpenAI Whisper API ready")
+        except Exception as exc:  # pragma: no cover
+            logger.warning("STT: could not init OpenAI Whisper (%s)", exc)
+    if stt is None and stt_pref in ("auto", "whisper"):
+        import importlib.util
+        if importlib.util.find_spec("faster_whisper") is not None:
+            stt = WhisperSTT(
+                model_size=settings.stt_model,
+                device=settings.stt_device,
+            )
+            logger.info("STT: local faster-whisper ready (model=%s, device=%s)",
+                        settings.stt_model, settings.stt_device)
+        elif stt_pref == "whisper":
+            logger.warning("STT: faster-whisper requested but not installed — using FakeSTT")
+    if stt is None:
+        if stt_pref not in ("fake",):
+            logger.warning("STT: no real provider available (pref=%s) — using FakeSTT", stt_pref)
+        stt = FakeSTT()
+
+    app.state.stt = stt
+    app.state.voice_pipeline = VoicePipeline(stt=stt, tts=tts, vad=VADProcessor())
+
     # Vision: wire GPT-4o analyzer when OpenAI key is available
     vision_analyzer = None
     if settings.openai_api_key:
@@ -109,6 +141,17 @@ def _init_app_state(app: FastAPI) -> None:
         except Exception as exc:  # pragma: no cover
             logger.warning("Vision: could not init GPT-4o analyzer (%s) — using fake", exc)
     app.state.vision_analyzer = vision_analyzer
+
+    # Board camera: real device capture when configured (DM_VISION_CAMERA_DEVICE >= 0)
+    camera = None
+    if settings.vision_camera_device >= 0:
+        try:
+            from app.services.vision.capture import OpenCVCamera
+            camera = OpenCVCamera(device_index=settings.vision_camera_device)
+            logger.info("Vision: OpenCV camera ready (device=%d)", settings.vision_camera_device)
+        except Exception as exc:  # pragma: no cover
+            logger.warning("Vision: could not init camera (%s) — using fake", exc)
+    app.state.camera = camera
 
 
 @asynccontextmanager

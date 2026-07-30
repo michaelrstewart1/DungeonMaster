@@ -58,6 +58,7 @@ interface GameChatProps {
   npcs?: NPCInfo[]
   disabled?: boolean
   isWaitingForDM?: boolean
+  streamingText?: string
   phase?: GamePhase
   characterName?: string
   characterClass?: string
@@ -235,7 +236,7 @@ function getQuickActions(phase: GamePhase): QuickAction[] {
   return EXPLORATION_ACTIONS
 }
 
-export function GameChat({ messages, onSubmitAction, onTalkToNPC, npcs = [], disabled = false, isWaitingForDM = false, phase = 'exploration', characterName, characterClass, displayOnly = false }: GameChatProps) {
+export function GameChat({ messages, onSubmitAction, onTalkToNPC, npcs = [], disabled = false, isWaitingForDM = false, streamingText = '', phase = 'exploration', characterName, characterClass, displayOnly = false }: GameChatProps) {
   const [input, setInput] = useState('')
   const [showScrollBtn, setShowScrollBtn] = useState(false)
   const [typedMessageCount, setTypedMessageCount] = useState(0)
@@ -389,7 +390,17 @@ export function GameChat({ messages, onSubmitAction, onTalkToNPC, npcs = [], dis
           </div>
           )
         })}
-        {isWaitingForDM && (
+        {isWaitingForDM && streamingText ? (
+          <div className="chat-message message-dm message-latest message-streaming">
+            <div className="message-header">
+              <span className="message-role">🎲 DM</span>
+            </div>
+            <div className="message-text">
+              {formatMessage(streamingText)}
+              <span className="stream-cursor">▌</span>
+            </div>
+          </div>
+        ) : isWaitingForDM && (
           <div className="chat-message message-dm typing-message dm-thinking-aura">
             <div className="thinking-content">
               <div className="thinking-icon-ring">

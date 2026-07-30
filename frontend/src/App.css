@@ -9049,3 +9049,117 @@ button.trade-item-row {
 .trade-arb-veto-btn:hover:not(:disabled) { background:rgba(180,40,40,.5); }
 .trade-arb-veto-btn:disabled { opacity:.4; cursor:not-allowed; }
 
+
+/* ═══════════ Streaming narration (live LLM tokens) ═══════════ */
+.message-streaming .message-text {
+  opacity: 0.95;
+}
+
+.stream-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--gold);
+  animation: stream-cursor-blink 0.9s steps(2, start) infinite;
+}
+
+@keyframes stream-cursor-blink {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+/* ═══════════ Live board camera (DM display) ═══════════ */
+.dm-live-camera {
+  margin-top: 8px;
+  border: 1px solid var(--gold-border);
+  border-radius: 8px;
+  overflow: hidden;
+  background: #000;
+}
+
+.dm-camera-preview {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+}
+
+/* ── PlayerView combat initiative strip ─────────────────────────── */
+.pv-initiative-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background: rgba(0, 0, 0, 0.35);
+  border-top: 1px solid var(--gold-border);
+  border-bottom: 1px solid var(--gold-border);
+  flex-shrink: 0;
+}
+
+.pv-round-chip {
+  font-family: 'Cinzel', serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--gold-light);
+  background: var(--gold-bg);
+  border: 1px solid var(--gold-border);
+  border-radius: 10px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.pv-init-chip {
+  font-size: 0.75rem;
+  color: var(--gold-dim);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 2px 8px;
+  white-space: nowrap;
+}
+
+.pv-init-chip-active {
+  color: var(--gold-light);
+  border-color: var(--gold);
+  background: var(--gold-bg);
+  font-weight: 700;
+  box-shadow: 0 0 8px rgba(212, 175, 55, 0.35);
+}
+
+/* ── DM Display initiative HP bars ──────────────────────────────── */
+.dm-init-name {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  flex: 1;
+  min-width: 0;
+}
+
+.dm-init-hp-bar {
+  display: block;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+}
+
+.dm-init-hp-fill {
+  display: block;
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.4s ease;
+}
+
+.dm-init-hp-num {
+  font-size: 0.85rem;
+  color: var(--gold-dim);
+  white-space: nowrap;
+  margin-left: 8px;
+}
+
+.dm-init-down {
+  opacity: 0.45;
+  filter: grayscale(0.7);
+}
+

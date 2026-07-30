@@ -101,10 +101,24 @@ export interface Campaign extends CampaignCreate {
 }
 
 // Game State
+export interface CombatantEntry {
+  id: string;
+  name: string;
+  is_player: boolean;
+  initiative: number;
+  hp: number;
+  max_hp: number;
+  ac: number;
+  is_alive?: boolean;
+  is_stable?: boolean;
+}
+
 export interface CombatState {
   initiative_order: string[];
   current_turn_index: number;
   round_number: number;
+  combatants?: CombatantEntry[];
+  log?: string[];
 }
 
 export interface GameState {

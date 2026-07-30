@@ -11,7 +11,8 @@ from app.services.voice.vad import VADProcessor
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
 
-# Initialize voice services (with Fake implementations for now)
+# Fallback fakes — real providers are wired via app.state.voice_pipeline
+# in main._init_app_state (OpenAI Whisper / faster-whisper + OpenAI TTS).
 _stt = FakeSTT()
 _tts = FakeTTS()
 _vad = VADProcessor()
@@ -40,9 +41,10 @@ async def websocket_audio_endpoint(websocket: WebSocket, session_id: str):
             # Handle binary frames (audio data)
             if "bytes" in message:
                 audio_bytes = message["bytes"]
+                pipeline = getattr(websocket.app.state, "voice_pipeline", None) or _pipeline
                 # Process audio through VAD + STT pipeline (even if empty)
                 try:
-                    transcription = await _pipeline.process_audio_input(audio_bytes)
+                    transcription = await pipeline.process_audio_input(audio_bytes)
                     await websocket.send_json(
                         {
                             "type": "transcription",

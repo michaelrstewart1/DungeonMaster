@@ -1,7 +1,13 @@
 /** WebSocket connection manager for real-time game events. */
 import type { GameState, TurnResult } from '../types';
 
-export type WSMessageType = 'game_state' | 'turn_result' | 'player_joined' | 'player_left' | 'error' | 'reconnected';
+export type WSMessageType =
+  | 'game_state' | 'turn_result' | 'narration_chunk'
+  | 'combat_started' | 'combat_update'
+  | 'chat' | 'turn_update' | 'vision_update'
+  | 'trade_offer' | 'trade_resolved'
+  | 'item_used' | 'item_equipped' | 'item_unequipped'
+  | 'player_joined' | 'player_left' | 'error' | 'reconnected';
 
 export interface WSMessage {
   type: WSMessageType;

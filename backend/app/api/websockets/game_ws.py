@@ -142,6 +142,20 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 player_text = f"{character_id}: {action}" if character_id else action
 
                 if db_factory is not None:
+                    # Stream LLM tokens live to all clients so the DM display
+                    # renders narration as it is generated instead of blocking.
+                    chunk_seq = 0
+
+                    async def _broadcast_chunk(text: str) -> None:
+                        nonlocal chunk_seq
+                        chunk_seq += 1
+                        await manager.broadcast(session_id, {
+                            "type": "narration_chunk",
+                            "character_id": character_id,
+                            "chunk": text,
+                            "seq": chunk_seq,
+                        })
+
                     try:
                         async with db_factory() as db:
                             session_data = await repo.get_game_session(db, session_id) or {}
@@ -150,6 +164,7 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                                 session_data,
                                 narrator=narrator,
                                 db=db,
+                                on_chunk=_broadcast_chunk,
                             )
                     except Exception:
                         narration = await _generate_dm_response(player_text, {}, narrator=None, db=None)

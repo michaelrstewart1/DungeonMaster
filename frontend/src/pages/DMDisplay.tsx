@@ -39,9 +39,14 @@ export function DMDisplay() {
     gaze: { x: 0, y: 0 },
   });
   const [currentNarration, setCurrentNarration] = useState('');
+  const [streamingNarration, setStreamingNarration] = useState('');
   const [gameMap, setGameMap] = useState<GameMap | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [liveCamera, setLiveCamera] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
+  const autoScanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const narrativeRef = useRef<HTMLDivElement>(null);
 
   // Load initial data
@@ -90,6 +95,7 @@ export function DMDisplay() {
     if (last.type === 'turn_result') {
       const p = last.payload as { narration?: string };
       const text = p.narration || '';
+      setStreamingNarration('');
       setCurrentNarration(text);
       setNarrative((prev) => [
         ...prev.slice(-50),
@@ -101,6 +107,46 @@ export function DMDisplay() {
 
     if (last.type === 'game_state' as string) {
       setGameState(last.payload as GameState);
+    }
+
+    if (last.type === 'narration_chunk' as string) {
+      // Live LLM token stream — the TV shows narration as it is written
+      const p = last.payload as { chunk?: string };
+      if (p.chunk) setStreamingNarration((prev) => prev + p.chunk);
+    }
+
+    if (last.type === 'combat_started' as string) {
+      const p = last.payload as { combat_state?: GameState['combat_state'] };
+      setGameState((prev) => prev ? { ...prev, phase: 'combat', combat_state: p.combat_state ?? prev.combat_state } : prev);
+      const text = '⚔️ Roll for initiative!';
+      setNarrative((prevN) => [
+        ...prevN.slice(-50),
+        { id: uuid(), text, type: 'narration', timestamp: new Date().toISOString() },
+      ]);
+    }
+
+    if (last.type === 'combat_update' as string) {
+      const p = last.payload as {
+        events?: string[];
+        narration?: string;
+        combat_state?: GameState['combat_state'];
+        phase?: string;
+        combat_over?: boolean;
+      };
+      setGameState((prev) => prev ? {
+        ...prev,
+        phase: (p.phase as GameState['phase']) ?? prev.phase,
+        combat_state: p.combat_state ?? (p.combat_over ? null : prev.combat_state),
+      } : prev);
+      const text = p.narration || (p.events || []).join(' ');
+      if (text) {
+        setCurrentNarration(text);
+        setNarrative((prevN) => [
+          ...prevN.slice(-50),
+          { id: uuid(), text, type: 'narration', timestamp: new Date().toISOString() },
+        ]);
+        speakNarration(text);
+      }
     }
 
     if (last.type === 'vision_update' as string) {
@@ -122,10 +168,16 @@ export function DMDisplay() {
   async function handleBoardUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !sessionId) return;
+    await uploadBoardBlob(file);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  }
+
+  async function uploadBoardBlob(blob: Blob) {
+    if (!sessionId) return;
     setUploading(true);
     try {
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('file', blob, 'board.jpg');
       const res = await fetch(`${API_BASE}/vision/${sessionId}/upload`, {
         method: 'POST',
         body: formData,
@@ -147,9 +199,49 @@ export function DMDisplay() {
       // Vision upload failed silently
     } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   }
+
+  // Live board camera: getUserMedia preview + periodic auto-scan uploads
+  async function startLiveCamera() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } },
+      });
+      cameraStreamRef.current = stream;
+      setLiveCamera(true);
+      // Attach after render
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          videoRef.current.play().catch(() => {});
+        }
+      }, 50);
+      autoScanTimerRef.current = setInterval(captureFrame, 30000);
+    } catch {
+      // Camera permission denied or unavailable
+    }
+  }
+
+  function stopLiveCamera() {
+    if (autoScanTimerRef.current) clearInterval(autoScanTimerRef.current);
+    autoScanTimerRef.current = null;
+    cameraStreamRef.current?.getTracks().forEach((t) => t.stop());
+    cameraStreamRef.current = null;
+    setLiveCamera(false);
+  }
+
+  function captureFrame() {
+    const video = videoRef.current;
+    if (!video || video.videoWidth === 0) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d')?.drawImage(video, 0, 0);
+    canvas.toBlob((blob) => { if (blob) uploadBoardBlob(blob); }, 'image/jpeg', 0.85);
+  }
+
+  useEffect(() => () => stopLiveCamera(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // TTS audio playback
   async function speakNarration(text: string) {
@@ -215,10 +307,17 @@ export function DMDisplay() {
         <div className="dm-title">Dungeon Master</div>
       </div>
 
-      {/* Current Narration — large display text */}
+      {/* Current Narration — large display text (streams live while the DM writes) */}
       <div className="dm-narration-section">
         <div className="dm-narration-text">
-          {currentNarration || 'The adventure begins...'}
+          {streamingNarration ? (
+            <>
+              {streamingNarration}
+              <span className="stream-cursor" />
+            </>
+          ) : (
+            currentNarration || 'The adventure begins...'
+          )}
         </div>
       </div>
 
@@ -262,7 +361,24 @@ export function DMDisplay() {
             >
               {uploading ? '⏳ Analyzing...' : '📷 Scan Board'}
             </button>
+            <button
+              className="dm-camera-btn"
+              onClick={() => (liveCamera ? stopLiveCamera() : startLiveCamera())}
+              title={liveCamera ? 'Stop live board camera' : 'Start live board camera (auto-scans every 30s)'}
+            >
+              {liveCamera ? '🔴 Stop Camera' : '🎥 Live Camera'}
+            </button>
+            {liveCamera && (
+              <button className="dm-camera-btn" onClick={captureFrame} disabled={uploading} title="Scan the board now">
+                ⚡ Scan Now
+              </button>
+            )}
           </div>
+          {liveCamera && (
+            <div className="dm-live-camera">
+              <video ref={videoRef} muted playsInline className="dm-camera-preview" />
+            </div>
+          )}
         </div>
 
         {/* Initiative / Turn Order (combat) or Player list (non-combat) */}
@@ -271,16 +387,35 @@ export function DMDisplay() {
             <div className="dm-initiative">
               <h3>⚔️ Initiative</h3>
               <div className="dm-init-list">
-                {combatState.initiative_order.map((name, i) => (
-                  <div
-                    key={name}
-                    className={`dm-init-entry ${i === combatState.current_turn_index ? 'dm-init-active' : ''}`}
-                  >
-                    <span className="dm-init-order">{i + 1}</span>
-                    <span className="dm-init-name">{name}</span>
-                    {i === combatState.current_turn_index && <span className="dm-init-arrow">◄</span>}
-                  </div>
-                ))}
+                {combatState.initiative_order.map((name, i) => {
+                  const cb = combatState.combatants?.find((c) => c.name === name);
+                  const cbPct = cb ? Math.max(0, Math.round((cb.hp / (cb.max_hp || 1)) * 100)) : null;
+                  const down = cb ? cb.hp <= 0 : false;
+                  return (
+                    <div
+                      key={`${name}-${i}`}
+                      className={`dm-init-entry ${i === combatState.current_turn_index ? 'dm-init-active' : ''} ${down ? 'dm-init-down' : ''}`}
+                    >
+                      <span className="dm-init-order">{i + 1}</span>
+                      <span className="dm-init-name">
+                        {name}
+                        {cb && cbPct !== null && (
+                          <span className="dm-init-hp-bar">
+                            <span
+                              className="dm-init-hp-fill"
+                              style={{
+                                width: `${cbPct}%`,
+                                background: cbPct > 50 ? '#4caf50' : cbPct > 25 ? '#ff9800' : '#f44336',
+                              }}
+                            />
+                          </span>
+                        )}
+                      </span>
+                      {cb && <span className="dm-init-hp-num">{down ? '💀' : `${cb.hp}/${cb.max_hp}`}</span>}
+                      {i === combatState.current_turn_index && <span className="dm-init-arrow">◄</span>}
+                    </div>
+                  );
+                })}
               </div>
               <div className="dm-round">Round {combatState.round_number}</div>
             </div>

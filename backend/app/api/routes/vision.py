@@ -22,6 +22,13 @@ def _get_analyzer(app_state=None) -> BoardAnalyzer:
     return fake_analyzer
 
 
+def _get_camera(app_state=None):
+    """Get the real board camera when configured, else the fake."""
+    if app_state and getattr(app_state, "camera", None) is not None:
+        return app_state.camera
+    return fake_camera
+
+
 def _serialize_analysis(analysis):
     """Serialize a BoardAnalysis to dict."""
     return {
@@ -39,13 +46,29 @@ def _serialize_analysis(analysis):
 @router.post("/vision/{session_id}/capture")
 async def capture_board(session_id: str, request: Request) -> JSONResponse:
     """Trigger camera capture and board analysis."""
-    capture_result = await fake_camera.capture()
+    camera = _get_camera(request.app.state)
+    try:
+        capture_result = await camera.capture()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Board camera capture failed: {exc}",
+        )
     analyzer = _get_analyzer(request.app.state)
     analysis = await analyzer.analyze(capture_result.image_bytes)
 
     result = _serialize_analysis(analysis)
     storage.vision_analyses[session_id] = result
     storage.flush("vision_analyses")
+
+    # Broadcast to connected clients (same contract as /upload)
+    from app.api.websockets.game_ws import manager
+    await manager.broadcast(session_id, {
+        "type": "vision_update",
+        "tokens": result["tokens"],
+        "grid_width": result["grid_width"],
+        "grid_height": result["grid_height"],
+    })
     return JSONResponse(status_code=200, content=result)
 
 

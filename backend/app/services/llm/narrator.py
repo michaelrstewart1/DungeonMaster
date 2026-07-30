@@ -144,6 +144,7 @@ class DMNarrator:
         npcs: list[dict] | None = None,
         session_history: list[str] | None = None,
         history_summary: str = "",
+        on_chunk=None,
     ) -> str:
         """Narrate an exploration action.
         
@@ -156,6 +157,8 @@ class DMNarrator:
             npcs: Known NPCs in the scene (optional, for canon protection)
             session_history: Session's narrative_history strings for context
             history_summary: Rolling "story so far" summary of older history
+            on_chunk: Optional async callback(str) invoked per streamed token
+                chunk — enables live narration on the DM display
             
         Returns:
             Narration string describing what happens
@@ -215,25 +218,44 @@ class DMNarrator:
 
             max_tokens = 200 if self._compact else 500
 
-            # Generate narration
-            logger.info("Calling LLM generate (system_prompt=%d chars, messages=%d, compact=%s)", len(system_prompt), len(messages), self._compact)
-            response = await self._llm.generate(
-                messages=messages,
-                system_prompt=system_prompt,
-                temperature=0.8,
-                max_tokens=max_tokens,
-            )
-            logger.info("LLM response received (%d chars)", len(response.content))
+            # Generate narration — stream when a chunk callback is provided
+            logger.info("Calling LLM generate (system_prompt=%d chars, messages=%d, compact=%s, streaming=%s)", len(system_prompt), len(messages), self._compact, on_chunk is not None)
+            raw = ""
+            if on_chunk is not None:
+                try:
+                    async for chunk in self._llm.stream(
+                        messages=messages,
+                        system_prompt=system_prompt,
+                        temperature=0.8,
+                        max_tokens=max_tokens,
+                    ):
+                        if chunk.content:
+                            raw += chunk.content
+                            try:
+                                await on_chunk(chunk.content)
+                            except Exception:
+                                pass  # a dead listener must not kill narration
+                except Exception as exc:
+                    logger.warning("LLM stream failed (%s) — falling back to generate", exc)
+                    raw = ""
+            if not raw:
+                response = await self._llm.generate(
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    temperature=0.8,
+                    max_tokens=max_tokens,
+                )
+                raw = response.content
+            logger.info("LLM response received (%d chars)", len(raw))
 
             # Only update global fallback history when session_history wasn't provided;
             # production always passes session_history so we avoid cross-session leakage.
             if session_history is None:
                 self._add_to_history(
                     LLMMessage(role="user", content=user_message),
-                    LLMMessage(role="assistant", content=response.content),
+                    LLMMessage(role="assistant", content=raw),
                 )
 
-            raw = response.content
             stripped = _strip_action_echo(raw, player_action)
             if stripped != raw:
                 logger.info("Narrator echo stripped: '%s...' → '%s...'", raw[:60], stripped[:60])

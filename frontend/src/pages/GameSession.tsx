@@ -54,6 +54,7 @@ export function GameSession() {
 
   const [gameState, setGameState] = useState<GameState | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
+  const [streamingNarration, setStreamingNarration] = useState('')
   const [combatants, setCombatants] = useState<CombatantDisplay[]>([])
   const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null)
   const [mapData, setMapData] = useState<GameMap | null>(null)
@@ -650,7 +651,16 @@ export function GameSession() {
         case 'game_state':
           setGameState(msg.payload as GameState)
           break
+        case 'narration_chunk': {
+          // Live LLM token stream — render narration as it is generated
+          const chunkPayload = msg.payload as { chunk?: string }
+          if (chunkPayload.chunk) {
+            setStreamingNarration(prev => prev + chunkPayload.chunk)
+          }
+          break
+        }
         case 'turn_result': {
+          setStreamingNarration('')
           const result = msg.payload as { narration?: string; narrative?: string; mood?: string; dice_results?: DiceResult[]; detected_scene?: string; detected_npcs?: Array<{name: string; npc_type: string}>; environment?: Record<string, string> }
           const text = result.narration || result.narrative || 'The DM ponders...'
           setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
@@ -1029,7 +1039,7 @@ export function GameSession() {
             </div>
           )}
           <div className={`chat-area ${!mapData ? '' : ''}`}>
-            <GameChat messages={messages} onSubmitAction={handleSubmitAction} onTalkToNPC={handleTalkToNPC} npcs={sessionNPCs} isWaitingForDM={waitingForDM} phase={gameState?.phase === 'combat' ? 'combat' : 'exploration'} characterName={partyCharacters[0]?.name} characterClass={partyCharacters[0]?.class_name} />
+            <GameChat messages={messages} onSubmitAction={handleSubmitAction} onTalkToNPC={handleTalkToNPC} npcs={sessionNPCs} isWaitingForDM={waitingForDM} streamingText={streamingNarration} phase={gameState?.phase === 'combat' ? 'combat' : 'exploration'} characterName={partyCharacters[0]?.name} characterClass={partyCharacters[0]?.class_name} />
           </div>
         </div>
 
