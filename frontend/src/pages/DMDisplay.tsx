@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
 import { useGameSocket } from '../hooks/useGameSocket';
+import type { WSMessage } from '../api/websocket';
 import { useWakeLock } from '../hooks/useWakeLock';
 import BattleMap from '../components/BattleMap';
 import type { GameState, GameMap, Character } from '../types';
@@ -102,10 +103,16 @@ export function DMDisplay() {
     return () => clearInterval(interval);
   }, [sessionId]);
 
-  // Process WebSocket messages
+  // Process WebSocket messages — EVERY unseen one, in order (bursts like
+  // combat_started + combat_update arrive within one render batch).
+  const lastSeqRef = useRef(0);
   useEffect(() => {
-    if (messages.length === 0) return;
-    const last = messages[messages.length - 1];
+    const unseen = messages.filter((m) => (m.seq ?? 0) > lastSeqRef.current);
+    if (unseen.length === 0) return;
+    lastSeqRef.current = unseen[unseen.length - 1].seq ?? lastSeqRef.current;
+    unseen.forEach((m) => handleWsMessage(m));
+
+    function handleWsMessage(last: WSMessage) {
 
     if (last.type === 'reconnected' as string) {
       // Resync after a drop — the TV must never sit stale on the wall while
@@ -192,6 +199,7 @@ export function DMDisplay() {
           fog_of_war: prev?.fog_of_war || Array.from({ length: v.grid_height! }, () => Array(v.grid_width!).fill(false)),
         }));
       }
+    }
     }
   }, [messages]);
 

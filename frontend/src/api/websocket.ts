@@ -12,6 +12,9 @@ export type WSMessageType =
 export interface WSMessage {
   type: WSMessageType;
   payload: GameState | TurnResult | { player_id: string } | { message: string };
+  /** Monotonic per-connection sequence stamped by useGameSocket so consumers
+   * can process EVERY message, not just the newest one in a render batch. */
+  seq?: number;
 }
 
 type MessageHandler = (message: WSMessage) => void;

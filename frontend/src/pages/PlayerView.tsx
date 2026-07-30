@@ -7,6 +7,7 @@ import { useParams } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
 import { loadIdentity } from '../utils/playerIdentity';
 import { useGameSocket } from '../hooks/useGameSocket';
+import type { WSMessage } from '../api/websocket';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { DiceRoller } from '../components/DiceRoller';
 import BattleMap from '../components/BattleMap';
@@ -210,10 +211,18 @@ export function PlayerView() {
     }
   }, [sessionId, characterId]);
 
-  // Process incoming WebSocket messages
+  // Process incoming WebSocket messages — EVERY unseen one, in order.
+  // Handling only messages[length-1] dropped frames whenever the server sent
+  // a burst (combat_started immediately followed by combat_update), leaving
+  // phones stuck in exploration mode with no initiative bar.
+  const lastSeqRef = useRef(0);
   useEffect(() => {
-    if (messages.length === 0) return;
-    const last = messages[messages.length - 1];
+    const unseen = messages.filter((m) => (m.seq ?? 0) > lastSeqRef.current);
+    if (unseen.length === 0) return;
+    lastSeqRef.current = unseen[unseen.length - 1].seq ?? lastSeqRef.current;
+    unseen.forEach((m) => handleWsMessage(m));
+
+    function handleWsMessage(last: WSMessage) {
 
     if ((last.type as string) === 'reconnected') {
       // Full resync of authoritative state after a connection drop — the
@@ -310,6 +319,9 @@ export function PlayerView() {
         setCombatState(null);
       } else if (p.combat_state) {
         setCombatState(p.combat_state);
+        // Defensive: if combat is live, make sure the phone is IN combat mode
+        // even if the combat_started frame was somehow missed.
+        if (p.phase === 'combat' || p.combat_state.combatants?.length) setPhase('combat');
       }
       // Sync my HP from the authoritative combat state
       const me = p.combat_state?.combatants?.find((c) => c.id === characterId);
@@ -420,6 +432,7 @@ export function PlayerView() {
           .then((c) => { if (c) setCharacter(c); })
           .catch(() => undefined);
       }
+    }
     }
   }, [messages, character, playerId, characterId, addToast, pendingOutgoing, incomingTrade, sessionId]);
 

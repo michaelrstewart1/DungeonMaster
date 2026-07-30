@@ -27,6 +27,7 @@ export interface UseGameSocketReturn {
 
 export function useGameSocket(sessionId: string | undefined): UseGameSocketReturn {
   const wsRef = useRef<GameWebSocket | null>(null);
+  const seqRef = useRef(0);
   const [connected, setConnected] = useState(false);
   const [players, setPlayers] = useState<PlayerInfo[]>([]);
   const [messages, setMessages] = useState<WSMessage[]>([]);
@@ -43,7 +44,11 @@ export function useGameSocket(sessionId: string | undefined): UseGameSocketRetur
     });
 
     const unsubMessage = ws.onMessage((msg) => {
-      setMessages((prev) => [...prev.slice(-200), msg]); // keep last 200
+      // Stamp a monotonic seq so consumers can catch up on message BURSTS —
+      // reading only messages[length-1] drops frames when the server sends
+      // several messages back-to-back (e.g. combat_started + combat_update).
+      const stamped: WSMessage = { ...msg, seq: ++seqRef.current };
+      setMessages((prev) => [...prev.slice(-200), stamped]); // keep last 200
 
       if (msg.type === 'reconnected') {
         // Connection dropped and came back (wifi blip, backend restart):
