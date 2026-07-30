@@ -255,23 +255,29 @@ export class PhoneActor {
     return entries.length ? entries[entries.length - 1] : '';
   }
 
-  /** Human loop: read the scene, think, type an action, send it. */
-  async takeExplorationTurn(scene: string): Promise<string> {
+  /** Human loop: read the scene, think, type an action, send it.
+   * Returns the action text and the SUBMIT timestamp — probes must measure
+   * system latency from submit, not from when the human started reading/
+   * typing (human pacing inflated latency numbers by 20-40s). */
+  async takeExplorationTurn(scene: string): Promise<{ action: string; submittedAt: number }> {
     const { page, bus } = this;
     await readTime(scene);
     const action = await this.brain.decideAction(scene);
     await thinkTime();
-    const t0 = Date.now();
     bus.emit(this.name, 'action', { name: 'exploration-action', text: action });
     await humanType(page.locator('.pv-action-input'), action);
     await humanTap(page.locator('.pv-action-btn'));
-    // waitingForDM shows "DM is composing…" — wait for it to clear (narration done)
-    await page.waitForSelector('.pv-entry-system', { timeout: 10_000 }).catch(() => {});
+    const submittedAt = Date.now();
+    // waitingForDM shows "DM is composing…" — wait for it to clear (narration done).
+    // Must target .pv-composing specifically: permanent feed entries (e.g.
+    // "⚔️ Combat begins") also carry .pv-entry-system, which made every
+    // post-combat exploration turn falsely time out at 120s.
+    await page.waitForSelector('.pv-composing', { timeout: 10_000 }).catch(() => {});
     await page
-      .waitForFunction(() => !document.querySelector('.pv-entry-system'), undefined, { timeout: 120_000 })
+      .waitForFunction(() => !document.querySelector('.pv-composing'), undefined, { timeout: 120_000 })
       .catch(() => bus.emit(this.name, 'error', { where: 'exploration-turn', error: 'DM response >120s' }));
-    bus.emit(this.name, 'probe', { name: 'action-to-narration', ms: Date.now() - t0 });
-    return action;
+    bus.emit(this.name, 'probe', { name: 'action-to-narration', ms: Date.now() - submittedAt });
+    return { action, submittedAt };
   }
 
   async isMyTurn(): Promise<boolean> {

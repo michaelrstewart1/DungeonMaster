@@ -655,7 +655,7 @@ export function PlayerView() {
               </div>
             ))}
             {waitingForDM && (
-              <div className="pv-narrative-entry pv-entry-system">
+              <div className="pv-narrative-entry pv-entry-system pv-composing">
                 <span className="pv-entry-text">🎲 DM is composing...</span>
               </div>
             )}

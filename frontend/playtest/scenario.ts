@@ -67,13 +67,13 @@ export async function runGameNight(browser: Browser, cfg: PlaytestConfig, bus: E
       for (const phone of phones) {
         const scene = await phone.latestNarration() || 'The adventure begins in a torch-lit dungeon entrance.';
         const tvBefore = await tv.narrationText();
-        const t0 = Date.now();
-        const action = await phone.takeExplorationTurn(scene);
+        const { action, submittedAt } = await phone.takeExplorationTurn(scene);
         // Probe: does the TV narration react to this player's action?
+        // Measured from SUBMIT — human read/think/type time is not latency.
         const tvUpdated = await pollUntil(async () => (await tv.narrationText()) !== tvBefore, 90_000);
         bus.emit('runner', 'probe', {
           name: 'action-to-tv-narration', player: phone.brain.persona.playerName,
-          ms: Date.now() - t0, updated: tvUpdated, action,
+          ms: Date.now() - submittedAt, updated: tvUpdated, action,
         });
         if (!tvUpdated) {
           bus.emit('runner', 'issue', {
