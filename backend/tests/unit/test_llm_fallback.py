@@ -72,3 +72,42 @@ async def test_stream_falls_back_when_primary_dies_before_output():
 async def test_name_reflects_chain():
     provider = FallbackLLMProvider(FakeLLM(), FakeLLM())
     assert "fallback" in provider.name
+
+
+class CountingExplodingLLM(ExplodingLLM):
+    def __init__(self):
+        super().__init__()
+        self.attempts = 0
+
+    async def generate(self, **kwargs):
+        self.attempts += 1
+        raise RuntimeError("api down")
+
+
+@pytest.mark.asyncio
+async def test_cooldown_skips_primary_after_failure():
+    """After a primary failure the breaker trips: subsequent calls go straight
+    to the fallback without touching the primary until the cooldown expires."""
+    primary = CountingExplodingLLM()
+    fallback = FakeLLM(default_response="fallback narration")
+    provider = FallbackLLMProvider(primary, fallback, cooldown_seconds=60.0)
+
+    await provider.generate(messages=[LLMMessage(role="user", content="one")])
+    await provider.generate(messages=[LLMMessage(role="user", content="two")])
+    await provider.generate(messages=[LLMMessage(role="user", content="three")])
+
+    assert primary.attempts == 1
+    assert len(fallback.call_history) == 3
+
+
+@pytest.mark.asyncio
+async def test_cooldown_expiry_retries_primary():
+    primary = CountingExplodingLLM()
+    fallback = FakeLLM(default_response="fallback narration")
+    provider = FallbackLLMProvider(primary, fallback, cooldown_seconds=0.0)
+
+    await provider.generate(messages=[LLMMessage(role="user", content="one")])
+    await provider.generate(messages=[LLMMessage(role="user", content="two")])
+
+    # cooldown of 0 means the primary is retried every call
+    assert primary.attempts == 2

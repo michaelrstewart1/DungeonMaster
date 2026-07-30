@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from typing import AsyncIterator, Optional
 
 from app.services.llm.base import (
@@ -29,10 +30,16 @@ class FallbackLLMProvider(LLMProvider):
         primary: LLMProvider,
         fallback: LLMProvider,
         primary_timeout: float = 30.0,
+        cooldown_seconds: float = 120.0,
     ):
         self._primary = primary
         self._fallback = fallback
         self._primary_timeout = primary_timeout
+        # Circuit breaker: after a primary failure, route straight to the
+        # fallback for this long instead of paying the primary's retry/timeout
+        # tax on every request (e.g. Gemini 429 storms added 3-9s per call).
+        self._cooldown_seconds = cooldown_seconds
+        self._primary_down_until = 0.0
         # Ollama-detection heuristic used by DMNarrator for compact prompts —
         # mirror the primary so prompt sizing matches the model actually used.
         if hasattr(primary, "_base_url"):
@@ -42,6 +49,12 @@ class FallbackLLMProvider(LLMProvider):
     def name(self) -> str:
         return f"{self._primary.name}+fallback:{self._fallback.name}"
 
+    def _primary_available(self) -> bool:
+        return time.monotonic() >= self._primary_down_until
+
+    def _trip_breaker(self) -> None:
+        self._primary_down_until = time.monotonic() + self._cooldown_seconds
+
     async def generate(
         self,
         messages: list[LLMMessage],
@@ -49,21 +62,26 @@ class FallbackLLMProvider(LLMProvider):
         temperature: float = 0.7,
         max_tokens: int = 2000,
     ) -> LLMResponse:
-        try:
-            return await asyncio.wait_for(
-                self._primary.generate(
-                    messages=messages,
-                    system_prompt=system_prompt,
-                    temperature=temperature,
-                    max_tokens=max_tokens,
-                ),
-                timeout=self._primary_timeout,
-            )
-        except Exception as exc:
-            logger.warning(
-                "Primary LLM (%s) failed (%s: %s) — falling back to %s",
-                self._primary.name, type(exc).__name__, exc, self._fallback.name,
-            )
+        if self._primary_available():
+            try:
+                result = await asyncio.wait_for(
+                    self._primary.generate(
+                        messages=messages,
+                        system_prompt=system_prompt,
+                        temperature=temperature,
+                        max_tokens=max_tokens,
+                    ),
+                    timeout=self._primary_timeout,
+                )
+                self._primary_down_until = 0.0
+                return result
+            except Exception as exc:
+                self._trip_breaker()
+                logger.warning(
+                    "Primary LLM (%s) failed (%s: %s) — falling back to %s for %.0fs",
+                    self._primary.name, type(exc).__name__, exc,
+                    self._fallback.name, self._cooldown_seconds,
+                )
         return await self._fallback.generate(
             messages=messages,
             system_prompt=system_prompt,
@@ -79,28 +97,32 @@ class FallbackLLMProvider(LLMProvider):
         max_tokens: int = 2000,
     ) -> AsyncIterator[LLMStreamChunk]:
         yielded = False
-        try:
-            async for chunk in self._primary.stream(
-                messages=messages,
-                system_prompt=system_prompt,
-                temperature=temperature,
-                max_tokens=max_tokens,
-            ):
-                yielded = True
-                yield chunk
-            return
-        except Exception as exc:
-            if yielded:
-                # Mid-stream failure: can't restart without duplicating output.
-                logger.error(
-                    "Primary LLM (%s) died mid-stream (%s) — truncating",
-                    self._primary.name, exc,
-                )
+        if self._primary_available():
+            try:
+                async for chunk in self._primary.stream(
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                ):
+                    yielded = True
+                    yield chunk
+                self._primary_down_until = 0.0
                 return
-            logger.warning(
-                "Primary LLM (%s) stream failed (%s: %s) — falling back to %s",
-                self._primary.name, type(exc).__name__, exc, self._fallback.name,
-            )
+            except Exception as exc:
+                if yielded:
+                    # Mid-stream failure: can't restart without duplicating output.
+                    logger.error(
+                        "Primary LLM (%s) died mid-stream (%s) — truncating",
+                        self._primary.name, exc,
+                    )
+                    return
+                self._trip_breaker()
+                logger.warning(
+                    "Primary LLM (%s) stream failed (%s: %s) — falling back to %s for %.0fs",
+                    self._primary.name, type(exc).__name__, exc,
+                    self._fallback.name, self._cooldown_seconds,
+                )
         async for chunk in self._fallback.stream(
             messages=messages,
             system_prompt=system_prompt,

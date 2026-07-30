@@ -3,6 +3,7 @@ import uuid
 from datetime import datetime
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from starlette.websockets import WebSocketState
 
 import app.repository as repo
 from app.api.routes.game import (
@@ -70,9 +71,13 @@ class ConnectionManager:
         """Send a message to all connections in a session."""
         if session_id not in self.active_connections:
             return
-        
-        for connection in self.active_connections[session_id]:
+
+        # Iterate over a snapshot — sends can yield to the loop, during which
+        # connections may disconnect and mutate the list.
+        for connection in list(self.active_connections[session_id]):
             try:
+                if connection.client_state != WebSocketState.CONNECTED:
+                    continue
                 await connection.send_json(message)
             except Exception:
                 pass
@@ -323,9 +328,14 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
     finally:
         manager.disconnect(session_id, websocket)
         connection_count = manager.get_connection_count(session_id)
-        
-        await manager.broadcast(session_id, {
-            "type": "player_left",
-            "player_id": player_id,
-            "connection_count": connection_count,
-        })
+
+        try:
+            await manager.broadcast(session_id, {
+                "type": "player_left",
+                "player_id": player_id,
+                "connection_count": connection_count,
+            })
+        except Exception:
+            # Never let a farewell broadcast raise through the ASGI stack
+            # (e.g. racing sends against sockets that closed simultaneously).
+            pass

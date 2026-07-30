@@ -24,6 +24,10 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/game", tags=["game"])
 
+# Strong references to fire-and-forget narration tasks (asyncio only keeps
+# weak refs, so untracked tasks can be garbage-collected mid-flight).
+_background_tasks: set = set()
+
 
 class GameSessionCreate(BaseModel):
     """Schema for creating a game session."""
@@ -960,33 +964,51 @@ async def combat_action(session_id: str, body: CombatActionRequest, request: Req
         session["combat_state"] = combat_state
     await repo.save_game_session(db, session)
 
-    # Optional flavor narration from the LLM (outcomes already decided)
-    narration = ""
-    narrator = getattr(request.app.state, "narrator", None)
-    if narrator is not None:
-        try:
-            import asyncio as _asyncio
-            narration = await _asyncio.wait_for(
-                narrator.narrate_combat_action(
-                    combat_state or {},
-                    {"description": " ".join(result["events"])},
-                    [],
-                    session_history=session.get("narrative_history", []),
-                ),
-                timeout=20.0,
-            )
-        except Exception:
-            narration = ""
-
+    # The deterministic outcome is broadcast IMMEDIATELY — flavor narration
+    # from the LLM runs as a background task so a slow/rate-limited provider
+    # can never stall the request (previously requests queued behind serial
+    # LLM calls and hit the reverse-proxy 60s timeout as 504s).
     payload = {
         **result,
-        "narration": narration or " ".join(result["events"]),
+        "narration": " ".join(result["events"]),
         "combat_state": session.get("combat_state"),
         "phase": session["current_phase"],
     }
 
     from app.api.websockets.game_ws import manager
     await manager.broadcast(session_id, {"type": "combat_update", **payload})
+
+    narrator = getattr(request.app.state, "narrator", None)
+    if narrator is not None:
+        import asyncio as _asyncio
+
+        events_text = " ".join(result["events"])
+        history_snapshot = list(session.get("narrative_history", []))
+        combat_snapshot = dict(combat_state or {})
+
+        async def _narrate_in_background() -> None:
+            try:
+                narration = await _asyncio.wait_for(
+                    narrator.narrate_combat_action(
+                        combat_snapshot,
+                        {"description": events_text},
+                        [],
+                        session_history=history_snapshot,
+                    ),
+                    timeout=30.0,
+                )
+            except Exception:
+                return
+            if narration:
+                await manager.broadcast(session_id, {
+                    "type": "turn_result",
+                    "narration": narration,
+                })
+
+        task = _asyncio.create_task(_narrate_in_background())
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+
     return payload
 
 
