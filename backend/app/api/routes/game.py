@@ -897,8 +897,9 @@ async def start_combat(session_id: str, body: StartCombatRequest | None = None, 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
 
     session["current_phase"] = GamePhase.COMBAT.value
+    opening_events: list[str] = []
     if body is not None and body.enemies:
-        from app.services.game.combat_loop import start_encounter
+        from app.services.game.combat_loop import start_encounter, run_pending_monster_turns
 
         campaign = await repo.get_campaign(db, session.get("campaign_id", "")) or {}
         characters = []
@@ -907,9 +908,18 @@ async def start_combat(session_id: str, body: StartCombatRequest | None = None, 
             if c:
                 characters.append(c)
         combat_state = start_encounter(characters, body.enemies)
-        session["combat_state"] = combat_state
+        # If monsters won initiative, run their opening turns NOW — otherwise
+        # combat deadlocks: no phone shows "your turn" and monster turns only
+        # run inside resolve_player_action, which nobody can call.
+        pre = run_pending_monster_turns(combat_state)
+        opening_events = pre["events"]
+        session["combat_state"] = None if pre["combat_over"] else combat_state
+        if pre["combat_over"]:
+            session["current_phase"] = GamePhase.EXPLORATION.value
         opening = "Combat begins! Initiative: " + ", ".join(combat_state["initiative_order"])
         session.setdefault("narrative_history", []).append(f"DM: {opening}")
+        for ev in opening_events:
+            session["narrative_history"].append(f"DM: {ev}")
     else:
         session["combat_state"] = {
             "initiative_order": [],
@@ -924,6 +934,15 @@ async def start_combat(session_id: str, body: StartCombatRequest | None = None, 
         "type": "combat_started",
         "combat_state": session["combat_state"],
     })
+    if opening_events:
+        # Monsters acted before any player turn — tell the table what happened.
+        await manager.broadcast(session_id, {
+            "type": "combat_update",
+            "events": opening_events,
+            "narration": " ".join(opening_events),
+            "combat_state": session["combat_state"],
+            "phase": session["current_phase"],
+        })
     return GameStateResponse(**session)
 
 

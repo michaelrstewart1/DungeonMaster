@@ -41,9 +41,14 @@ class FallbackLLMProvider(LLMProvider):
         self._cooldown_seconds = cooldown_seconds
         self._primary_down_until = 0.0
         # Ollama-detection heuristic used by DMNarrator for compact prompts —
-        # mirror the primary so prompt sizing matches the model actually used.
+        # if EITHER provider in the chain is local, advertise it: the local
+        # model serves most requests whenever the cloud primary is rate
+        # limited, and feeding it the rich cloud prompt (and 500-token
+        # budget) more than doubles narration latency on the GPU.
         if hasattr(primary, "_base_url"):
             self._base_url = primary._base_url
+        elif hasattr(fallback, "_base_url"):
+            self._base_url = fallback._base_url
 
     @property
     def name(self) -> str:

@@ -6,6 +6,7 @@ from app.services.game.combat_loop import (
     combatant_from_character,
     combatant_from_enemy,
     resolve_player_action,
+    run_pending_monster_turns,
     start_encounter,
 )
 
@@ -66,6 +67,34 @@ class TestStartEncounter:
         state = start_encounter([_char()], [{"name": "Goblin", "hp": 7, "ac": 15, "cr": 0.25, "count": 3}])
         inits = [c["initiative"] for c in state["combatants"]]
         assert inits == sorted(inits, reverse=True)
+
+
+class TestPendingMonsterTurns:
+    def test_monster_first_initiative_no_longer_deadlocks(self):
+        """If monsters win initiative, run_pending_monster_turns advances the
+        fight to the first player's turn — previously combat stalled forever
+        because phones only act on a player turn and monster turns only ran
+        inside resolve_player_action."""
+        state = start_encounter(
+            [_char()], [{"name": "Goblin", "hp": 7, "ac": 15, "cr": 0.25, "count": 2}]
+        )
+        result = run_pending_monster_turns(state)
+        assert "events" in result and "combat_over" in result
+        if not result["combat_over"]:
+            current = state["combatants"][state["current_turn_index"]]
+            assert current["is_player"] is True
+
+    def test_player_first_initiative_is_untouched(self):
+        state = start_encounter(
+            [_char()], [{"name": "Goblin", "hp": 7, "ac": 15, "cr": 0.25}]
+        )
+        # Force a player-first order
+        state["combatants"].sort(key=lambda e: not e["is_player"])
+        state["current_turn_index"] = 0
+        result = run_pending_monster_turns(state)
+        assert result["events"] == []
+        assert state["current_turn_index"] == 0
+        assert result["combat_over"] is False
 
 
 class TestResolveAction:

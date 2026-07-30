@@ -237,6 +237,19 @@ def _run_monster_turns(state: dict, engine: RulesEngine, events: list[str]) -> t
     return over, victory
 
 
+def run_pending_monster_turns(state: dict) -> dict:
+    """Run monster turns at the top of combat (or any point where no player
+    input is possible). Without this, a monster winning initiative deadlocks
+    the fight: phones only enable actions on a player's turn, and monster
+    turns otherwise run only inside resolve_player_action.
+
+    Returns {"events": [...], "combat_over": bool, "victory": bool}."""
+    engine = RulesEngine(DiceRoller())
+    events: list[str] = []
+    over, victory = _run_monster_turns(state, engine, events)
+    return {"events": events, "combat_over": over, "victory": victory}
+
+
 def resolve_player_action(
     state: dict,
     actor_id: str,
