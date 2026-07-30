@@ -5,6 +5,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
 import { useGameSocket } from '../hooks/useGameSocket';
+import { useWakeLock } from '../hooks/useWakeLock';
 import BattleMap from '../components/BattleMap';
 import type { GameState, GameMap, Character } from '../types';
 
@@ -27,6 +28,8 @@ interface AvatarState {
 export function DMDisplay() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const { connected, messages, connectionCount } = useGameSocket(sessionId);
+  // The TV must never sleep mid-session.
+  useWakeLock();
 
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);

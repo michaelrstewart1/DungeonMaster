@@ -7,6 +7,7 @@ import { useParams } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
 import { loadIdentity } from '../utils/playerIdentity';
 import { useGameSocket } from '../hooks/useGameSocket';
+import { useWakeLock } from '../hooks/useWakeLock';
 import { DiceRoller } from '../components/DiceRoller';
 import BattleMap from '../components/BattleMap';
 import { TradeOfferModal, IncomingTradeModal, OutgoingTradeBadge } from '../components/TradePanel';
@@ -74,6 +75,9 @@ export function PlayerView() {
   const playerId = identity?.playerId || sessionStorage.getItem('playerId') || '';
   const { connected, messages, players, sendChat, sendAction, joinAsPlayer } = useGameSocket(sessionId);
   const { addToast } = useToast();
+  // Keep the phone screen awake — players may not touch it for minutes
+  // between turns, and a locked phone drops off the game.
+  useWakeLock();
 
   const [character, setCharacter] = useState<Character | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);

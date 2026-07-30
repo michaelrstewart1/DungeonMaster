@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { useGameSocket } from '../hooks/useGameSocket';
+import { useWakeLock } from '../hooks/useWakeLock';
 import type { Character } from '../types';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
@@ -11,6 +12,8 @@ export function Lobby() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const navigate = useNavigate();
   const { connected, players, connectionCount } = useGameSocket(sessionId);
+  // Keep the host screen awake while the room code is displayed.
+  useWakeLock();
   const [roomCode, setRoomCode] = useState('');
   const [characters, setCharacters] = useState<Character[]>([]);
   const [, setSessionInfo] = useState<{ campaign_id?: string }>({});
