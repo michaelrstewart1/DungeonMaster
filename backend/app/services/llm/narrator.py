@@ -7,6 +7,7 @@ to guide the LLM's responses.
 """
 
 import logging
+import re
 from typing import Optional
 
 from .base import LLMProvider, LLMMessage, LLMResponse
@@ -61,6 +62,27 @@ def _strip_action_echo(response: str, player_action: str) -> str:
             return rest[0].upper() + rest[1:]
 
     return response
+
+
+def _strip_meta_preamble(response: str) -> str:
+    """Remove a leading meta-commentary line before the actual content.
+
+    Models asked to "write a summary" often preface it with an
+    acknowledgement of the instruction itself, e.g. "Here's a 2-4 sentence
+    summary of the session:" — that meta text isn't part of the in-world
+    recap and shouldn't be shown/spoken to players.
+    """
+    if not response:
+        return response
+    text = response.strip()
+    match = re.match(
+        r"^(?:here'?s?|here is|sure|certainly|of course)\b[^\n:]{0,120}:\s*",
+        text,
+        re.IGNORECASE,
+    )
+    if match:
+        text = text[match.end():].strip()
+    return text
 
 # Fallback narrations when LLM fails
 FALLBACK_NARRATIONS = {
@@ -296,10 +318,18 @@ class DMNarrator:
             Narration string describing the combat action
         """
         try:
-            # Extract combat information
-            initiative_order = combat_state.get("initiative", [])
-            current_turn = combat_state.get("current_turn", "Unknown")
-            round_num = combat_state.get("round", 1)
+            # Extract combat information — combat_state is the real
+            # rules-engine state (see CombatState schema), not a display alias.
+            initiative_order = combat_state.get("initiative_order", [])
+            round_num = combat_state.get("round_number", 1)
+            combatants = combat_state.get("combatants", [])
+            current_turn_index = combat_state.get("current_turn_index", 0)
+            if 0 <= current_turn_index < len(combatants):
+                current_turn = combatants[current_turn_index].get("name", "Unknown")
+            elif initiative_order:
+                current_turn = initiative_order[0]
+            else:
+                current_turn = "Unknown"
 
             # Build recent actions
             recent_actions = [
@@ -307,11 +337,21 @@ class DMNarrator:
                 f"{action_result.get('description', 'An action occurs')}"
             ]
 
+            positions = None
+            if combatants:
+                positions = "; ".join(
+                    f"{c.get('name', '?')} at ({c.get('x', 0)},{c.get('y', 0)})"
+                    for c in combatants
+                    if c.get("is_alive", True)
+                )
+
             # Create combat narration prompt
             combat_prompt = PromptTemplates.combat_narration(
                 initiative_order=initiative_order,
                 current_turn=current_turn,
                 recent_actions=recent_actions,
+                round_number=round_num,
+                positions=positions,
             )
 
             # Create user message
@@ -765,7 +805,9 @@ class DMNarrator:
                 "Write a 2-4 sentence summary in past tense covering: where the party went, "
                 "the most important event, and how the session ended. "
                 "Be specific about names, places, and outcomes. "
-                "This will be read aloud at the start of the next session as a recap."
+                "This will be read aloud at the start of the next session as a recap. "
+                "Output ONLY the summary itself — no preamble, no label like "
+                "'Here's a summary:', no meta-commentary of any kind."
             )
             user_message = (
                 f"Campaign: {campaign_name or 'Untitled'}\n\nSession events:\n{history_text}"
@@ -776,7 +818,7 @@ class DMNarrator:
                 temperature=0.5,
                 max_tokens=200,
             )
-            return response.content
+            return _strip_meta_preamble(response.content)
         except Exception as e:
             logger.error("Error in generate_session_summary: %s", e)
             return "The party ventured forth and faced great challenges. Their deeds shall be remembered."

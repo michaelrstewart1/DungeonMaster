@@ -112,7 +112,8 @@ export function GameSession() {
   const audioQueueRef = useRef<Blob[]>([])
   const isMutedRef = useRef(false)
   const dmPersonalityRef = useRef('classic_wizard')
-
+
+
   // Keep ref in sync for WS callback closure
   useEffect(() => { partyCharsRef.current = partyCharacters }, [partyCharacters])
   useEffect(() => { dmPersonalityRef.current = dmPersonality }, [dmPersonality])
@@ -602,7 +603,7 @@ export function GameSession() {
 
     // Audio WebSocket for TTS voice (auto-reconnects — narration audio must
     // survive wifi blips and backend restarts during a live session)
-    const wsBase = import.meta.env.VITE_WS_URL || `ws://${window.location.host}`
+    const wsBase = import.meta.env.VITE_WS_URL || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`
     let audioDisposed = false
     let audioRetry = 0
     let audioTimer: ReturnType<typeof setTimeout> | null = null

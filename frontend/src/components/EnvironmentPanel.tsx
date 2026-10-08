@@ -144,10 +144,35 @@ export function EnvironmentPanel({ sessionId }: EnvironmentPanelProps) {
         </span>
       </div>
 
-      {/* Weather-specific animated effects */}
-      {environment.weather === 'rain' && <div className="weather-effect rain-effect" />}
-      {environment.weather === 'snow' && <div className="weather-effect snow-effect" />}
-      {environment.weather === 'storm' && <div className="weather-effect storm-effect" />}
+      {/* Weather-specific animated effects — real DOM elements (falling
+          streaks/flakes/gusts) animated with per-child CSS custom
+          properties, rather than a single repeating background pattern,
+          so each one moves independently instead of reading as a
+          scrolling band. */}
+      {environment.weather === 'rain' && (
+        <div className="weather-effect rain-effect" aria-hidden="true">
+          {Array.from({ length: 14 }, (_, i) => <i key={i} />)}
+        </div>
+      )}
+      {environment.weather === 'snow' && (
+        <div className="weather-effect snow-effect" aria-hidden="true">
+          {['❄', '•', '❅', '•', '❆', '•', '❄', '•', '❅', '•'].map((glyph, i) => (
+            <i key={i}>{glyph}</i>
+          ))}
+        </div>
+      )}
+      {environment.weather === 'storm' && (
+        <div className="weather-effect storm-effect" aria-hidden="true">
+          {Array.from({ length: 18 }, (_, i) => <i key={i} />)}
+        </div>
+      )}
+      {environment.weather === 'wind' && (
+        <div className="weather-effect wind-effect" aria-hidden="true">
+          {Array.from({ length: 5 }, (_, i) => <i key={i} />)}
+          <span>🍃</span>
+          <span>🍂</span>
+        </div>
+      )}
     </div>
   );
 }

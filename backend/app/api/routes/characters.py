@@ -1,4 +1,5 @@
 """Character management endpoints."""
+import base64
 import json
 import os
 import urllib.parse
@@ -221,19 +222,23 @@ async def generate_portrait(character_id: str, db: AsyncSession = Depends(get_db
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "dall-e-3",
+                    "model": "gpt-image-1",
                     "prompt": prompt,
                     "n": 1,
                     "size": "1024x1024",
-                    "response_format": "url",
                 },
             )
             resp.raise_for_status()
-            image_url = resp.json()["data"][0]["url"]
+            image_data = resp.json()["data"][0]
 
-            # Download the generated image
-            image_resp = await client.get(image_url)
-            image_resp.raise_for_status()
+            # API defaults to b64_json for this model/account; fall back to
+            # downloading the url if the account's API version returns one.
+            if "b64_json" in image_data:
+                image_bytes = base64.b64decode(image_data["b64_json"])
+            else:
+                image_resp = await client.get(image_data["url"])
+                image_resp.raise_for_status()
+                image_bytes = image_resp.content
     except httpx.HTTPStatusError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
@@ -249,7 +254,7 @@ async def generate_portrait(character_id: str, db: AsyncSession = Depends(get_db
     filename = f"{character_id}.png"
     filepath = os.path.join(PORTRAITS_DIR, filename)
     with open(filepath, "wb") as f:
-        f.write(image_resp.content)
+        f.write(image_bytes)
 
     character["portrait_url"] = f"/api/portraits/{filename}"
     await repo.save_character(db, character)

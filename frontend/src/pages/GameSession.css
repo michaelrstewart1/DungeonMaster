@@ -213,6 +213,16 @@
   background: linear-gradient(180deg, var(--gold-border), transparent);
 }
 
+/* Flexbox shrinks every direct child (default flex-shrink: 1) to force
+   the whole column to fit without scrolling — that was silently
+   squashing sections (QR code, environment panel, etc.) down to a few
+   px, clipping their content via overflow: hidden. Keep every section
+   at its natural height and let the sidebar itself scroll instead
+   (overflow-y: auto above already supports that). */
+.game-sidebar-left > * {
+  flex-shrink: 0;
+}
+
 /* DM Avatar — Overhaul (Iteration 15) */
 /* ============================================================
    DM Avatar — SVG-based hooded figure
@@ -221,15 +231,15 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
-  padding: 1rem 0.5rem;
+  gap: 0.5rem;
+  padding: 0.5rem 0.5rem;
   position: relative;
 }
 
 .dm-avatar-frame {
   position: relative;
-  width: 150px;
-  height: 150px;
+  width: 90px;
+  height: 90px;
 }
 
 .dm-avatar-svg {
@@ -5359,6 +5369,15 @@
   background: rgba(180, 50, 50, 0.08);
 }
 
+.combat-log-type-heal {
+  border-left-color: rgba(80, 200, 120, 0.5);
+  background: rgba(80, 200, 120, 0.06);
+}
+
+.combat-log-type-initiative {
+  border-left-color: rgba(212, 175, 55, 0.4);
+}
+
 .combat-log-type-defeat .combat-log-text {
   text-decoration: line-through;
   color: var(--text-dim);
@@ -7222,6 +7241,16 @@
   transform: scale(0.9);
 }
 
+.spell-slot-cantrip-tag {
+  padding: 0.3rem 0.6rem;
+  border: 1px solid rgba(180, 100, 240, 0.4);
+  border-radius: 999px;
+  background: rgba(180, 100, 240, 0.12);
+  color: #b48efa;
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+
 .spell-slot-diamond {
   width: 36px;
   height: 36px;
@@ -7815,22 +7844,24 @@
     radial-gradient(circle at 20% 70%, rgba(212, 168, 70, 0.15) 0%, transparent 8%);
 }
 
-/* Cave layout: Branching tunnels */
+/* Cave layout: a main corridor with one branching side-tunnel forking
+   off it — previously used two diagonal gradients both centered on the
+   corridor's midpoint, which crossed to form a literal "X" that read as
+   a blocked passage rather than a fork. */
 .mini-map-cave .mini-map-layout {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(45deg, transparent 48%, var(--gold-dim) 48%, var(--gold-dim) 52%, transparent 52%),
-    linear-gradient(135deg, transparent 48%, var(--gold-dim) 48%, var(--gold-dim) 52%, transparent 52%),
-    linear-gradient(90deg, var(--gold-dim) 45%, transparent 45%, transparent 55%, var(--gold-dim) 55%);
+    /* Side tunnel branching away from the main corridor */
+    linear-gradient(45deg, transparent 46%, var(--gold-dim) 46%, var(--gold-dim) 54%, transparent 54%),
+    /* Main corridor */
+    linear-gradient(180deg, transparent 42%, var(--gold-dim) 42%, var(--gold-dim) 58%, transparent 58%);
   background-position:
-    50% 30%,
-    50% 50%,
+    72% 50%,
     0 50%;
   background-size:
-    60px 60px,
-    60px 60px,
-    100% 40px;
+    90px 90px,
+    100% 100%;
   background-repeat: no-repeat;
 }
 
@@ -8500,313 +8531,11 @@
 
 /* ============================================================
    Environment Panel — Weather & Time of Day Display
+   Styles live in components/EnvironmentPanel.css (co-located with the
+   component, which imports it directly) — this used to be a full
+   duplicate copy that could drift out of sync with the real stylesheet
+   and mask fixes made there.
    ============================================================ */
-
-.environment-panel {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.5rem 0.75rem;
-  background: linear-gradient(135deg, rgba(212, 168, 70, 0.08) 0%, rgba(212, 168, 70, 0.04) 100%);
-  border: 1px solid var(--gold-dim);
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-family: var(--font-ui);
-  color: var(--gold-light);
-  position: relative;
-  overflow: hidden;
-  transition: all 0.3s ease;
-}
-
-.environment-panel::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: radial-gradient(circle at 50% 0%, rgba(212, 168, 70, 0.1) 0%, transparent 70%);
-  pointer-events: none;
-}
-
-/* Loading and error states */
-.environment-loading,
-.environment-error {
-  opacity: 0.6;
-  gap: 0.4rem;
-}
-
-.environment-error {
-  background: rgba(200, 50, 50, 0.1);
-  border-color: rgba(200, 50, 50, 0.3);
-  color: #ff8080;
-}
-
-/* Individual environment items */
-.env-item {
-  display: flex;
-  align-items: center;
-  gap: 0.3rem;
-  padding: 0.2rem 0.4rem;
-  border-radius: 4px;
-  transition: all 0.2s ease;
-  position: relative;
-  z-index: 1;
-}
-
-.env-icon {
-  font-size: 1rem;
-  display: inline-block;
-  transition: transform 0.3s ease;
-}
-
-.env-label {
-  font-size: 0.8rem;
-  text-transform: capitalize;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
-
-/* Time of Day */
-.time-of-day {
-  background: rgba(212, 168, 70, 0.1);
-  border: 1px solid rgba(212, 168, 70, 0.2);
-}
-
-.time-of-day .env-icon {
-  animation: float-gentle 3s ease-in-out infinite;
-}
-
-@keyframes float-gentle {
-  0%, 100% {
-    transform: translateY(0);
-  }
-  50% {
-    transform: translateY(-2px);
-  }
-}
-
-/* Weather */
-.weather {
-  background: rgba(212, 168, 70, 0.08);
-  border: 1px solid rgba(212, 168, 70, 0.15);
-}
-
-/* Weather-specific styling */
-.weather-type-clear {
-  color: #ffeb3b;
-}
-
-.weather-type-cloudy {
-  color: #bdbdbd;
-}
-
-.weather-type-rain {
-  color: #64b5f6;
-}
-
-.weather-type-storm {
-  color: #424242;
-}
-
-.weather-type-snow {
-  color: #e0e0e0;
-}
-
-.weather-type-fog {
-  color: #9e9e9e;
-}
-
-.weather-type-wind {
-  color: #81c784;
-}
-
-/* Weather effects for rain */
-.rain-effect {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: 
-    repeating-linear-gradient(
-      90deg,
-      transparent,
-      transparent 2px,
-      rgba(100, 181, 246, 0.3) 2px,
-      rgba(100, 181, 246, 0.3) 4px
-    ),
-    repeating-linear-gradient(
-      45deg,
-      transparent,
-      transparent 10px,
-      rgba(100, 181, 246, 0.15) 10px,
-      rgba(100, 181, 246, 0.15) 12px
-    );
-  animation: rain-fall 1.5s linear infinite;
-  pointer-events: none;
-  opacity: 0.4;
-  border-radius: 4px;
-}
-
-@keyframes rain-fall {
-  0% {
-    transform: translateY(-100%);
-  }
-  100% {
-    transform: translateY(100%);
-  }
-}
-
-/* Weather effects for snow */
-.snow-effect {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: 
-    radial-gradient(circle, rgba(224, 224, 224, 0.8) 1px, transparent 1px),
-    radial-gradient(circle, rgba(224, 224, 224, 0.6) 1px, transparent 1px),
-    radial-gradient(circle, rgba(224, 224, 224, 0.4) 1px, transparent 1px);
-  background-size: 20px 20px, 35px 35px, 50px 50px;
-  background-position: 0 0, 10px 10px, 20px 20px;
-  animation: snow-fall 3s linear infinite;
-  pointer-events: none;
-  opacity: 0.3;
-  border-radius: 4px;
-}
-
-@keyframes snow-fall {
-  0% {
-    background-position: 0 0, 10px 10px, 20px 20px;
-  }
-  100% {
-    background-position: 0 30px, 10px 40px, 20px 50px;
-  }
-}
-
-/* Weather effects for storm */
-.storm-effect {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: radial-gradient(circle at 50% 50%, rgba(66, 66, 66, 0.4) 0%, transparent 70%);
-  animation: storm-flash 4s ease-in-out infinite;
-  pointer-events: none;
-  border-radius: 4px;
-}
-
-@keyframes storm-flash {
-  0%, 10%, 15%, 100% {
-    opacity: 0;
-  }
-  12% {
-    opacity: 0.6;
-  }
-  13% {
-    opacity: 0;
-  }
-  14% {
-    opacity: 0.6;
-  }
-}
-
-/* Temperature */
-.temperature {
-  background: rgba(212, 168, 70, 0.08);
-  border: 1px solid rgba(212, 168, 70, 0.15);
-  font-size: 0.75rem;
-}
-
-/* Season indicator */
-.season {
-  background: linear-gradient(135deg, var(--gold-dim), var(--gold));
-  border: 1px solid var(--gold);
-  padding: 0.3rem 0.5rem;
-  border-radius: 3px;
-  font-weight: 700;
-  font-size: 0.7rem;
-  color: #1a1a26;
-  letter-spacing: 0.05em;
-  text-shadow: none;
-}
-
-.season-abbr {
-  display: block;
-}
-
-/* Season-specific colors */
-.season-spring {
-  --season-color: #81c784;
-}
-
-.season-summer {
-  --season-color: #ffeb3b;
-}
-
-.season-autumn {
-  --season-color: #ff9800;
-}
-
-.season-winter {
-  --season-color: #64b5f6;
-}
-
-/* Hover effects */
-.env-item:hover {
-  background: rgba(212, 168, 70, 0.15);
-  border-color: rgba(212, 168, 70, 0.4);
-  transform: translateY(-1px);
-}
-
-/* Compact version (for header integration) */
-.environment-panel.compact {
-  gap: 0.5rem;
-  padding: 0.4rem 0.6rem;
-}
-
-.environment-panel.compact .env-item {
-  padding: 0.15rem 0.3rem;
-}
-
-.environment-panel.compact .env-label {
-  font-size: 0.75rem;
-}
-
-/* Dark theme adjustments */
-@media (prefers-color-scheme: dark) {
-  .environment-panel {
-    background: linear-gradient(135deg, rgba(212, 168, 70, 0.05) 0%, rgba(212, 168, 70, 0.02) 100%);
-    border-color: var(--gold-dim);
-  }
-
-  .env-item {
-    background: rgba(212, 168, 70, 0.08);
-    border-color: rgba(212, 168, 70, 0.15);
-  }
-
-  .env-item:hover {
-    background: rgba(212, 168, 70, 0.12);
-    border-color: rgba(212, 168, 70, 0.3);
-  }
-}
-
-/* Animation for weather changes */
-.environment-panel.weather-changing {
-  animation: weather-pulse 0.6s ease-out;
-}
-
-@keyframes weather-pulse {
-  0% {
-    box-shadow: 0 0 0 0 rgba(212, 168, 70, 0.4);
-  }
-  70% {
-    box-shadow: 0 0 0 6px rgba(212, 168, 70, 0);
-  }
-  100% {
-    box-shadow: 0 0 0 0 rgba(212, 168, 70, 0);
-  }
-}
 
 /* ─── Level-Up Modal ───────────────────────────────────────────────────── */
 .levelup-overlay {
@@ -9135,6 +8864,48 @@
 .feat-input:focus {
   border-color: var(--gold);
   box-shadow: 0 0 8px rgba(212, 168, 70, 0.2);
+}
+
+/* Spell picker (level-up) */
+.spell-pick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.spell-pick-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--gold-border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.2s;
+}
+
+.spell-pick-item:hover:not(:disabled) {
+  border-color: var(--gold);
+  background: rgba(212, 168, 70, 0.1);
+}
+
+.spell-pick-item.selected {
+  border-color: var(--gold);
+  background: rgba(212, 168, 70, 0.2);
+}
+
+.spell-pick-item:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.spell-pick-level {
+  color: var(--gold-light);
+  font-size: 0.75rem;
 }
 
 /* Status messages */

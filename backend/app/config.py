@@ -36,7 +36,7 @@ class Settings(BaseSettings):
     # OpenAI TTS — gpt-4o-mini-tts supports 'instructions' for dramatic narration
     openai_tts_voice: str = "onyx"   # onyx = deep, gravelly, perfect for wizard DM
     openai_tts_model: str = "gpt-4o-mini-tts"  # supports instructions for dramatic delivery
-    openai_tts_speed: float = 0.9  # slightly slower for dramatic weight
+    openai_tts_speed: float = 1.17  # ~30% faster than the previous 0.9 default
 
     # Board vision: server-attached camera device index for /vision/capture
     # (-1 = disabled; browsers can still upload frames via /vision/upload)

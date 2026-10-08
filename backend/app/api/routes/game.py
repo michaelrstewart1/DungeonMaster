@@ -1,6 +1,7 @@
 """Game session management endpoints."""
 from typing import Any, Dict, List, Optional
 from datetime import datetime, timezone
+import base64
 import hashlib
 import logging
 import os
@@ -1085,9 +1086,149 @@ async def generate_world(request: Request, body: WorldGenerateRequest, db: Async
     return {"world_context": world_context}
 
 
+async def _sync_combatants_to_characters(db: AsyncSession, combat_state: dict) -> None:
+    """Write combat-snapshot resource changes back to durable character
+    records. Combat state is a self-contained JSON snapshot (see
+    combat_loop.py's module docstring) — HP, consumed potions, and spent
+    spell slots only ever change on that snapshot, never on the DB record,
+    while a fight is in progress. This must run BEFORE the snapshot is
+    discarded (combat end or manual end-combat), or every combat resource
+    silently resets to its pre-fight value on the next encounter.
+    """
+    for c in combat_state.get("combatants", []):
+        if not c.get("is_player"):
+            continue
+        character = await repo.get_character(db, c["id"])
+        if character is None:
+            continue
+
+        character["hp"] = max(0, int(c.get("hp", character.get("hp", 0))))
+        if not c.get("is_alive", True):
+            character["is_dead"] = True
+
+        # Potions: the combat mirror (`healing_potions`) only ever shrinks —
+        # match by item id against the character's real inventory and either
+        # update the remaining quantity or drop the stack if it was fully
+        # consumed (absent from the final mirror).
+        final_potions = {
+            p["id"]: int(p.get("quantity", 0))
+            for p in c.get("healing_potions", []) if p.get("id")
+        }
+        inv = character.get("structured_inventory") or []
+        new_inv = []
+        for item in inv:
+            if not isinstance(item, dict):
+                new_inv.append(item)
+                continue
+            effect = item.get("effect")
+            is_heal_potion = isinstance(effect, dict) and effect.get("type") == "heal"
+            item_id = item.get("id")
+            if is_heal_potion and item_id:
+                remaining = final_potions.get(item_id, 0)
+                if remaining <= 0:
+                    continue  # fully consumed during combat
+                new_inv.append({**item, "quantity": remaining})
+            else:
+                new_inv.append(item)
+        character["structured_inventory"] = new_inv
+
+        # Spell slots: persist what's left so casters don't get a full
+        # refill on their next encounter — only a rest restores them.
+        if c.get("spellcasting_ability"):
+            character["spell_slots_current"] = dict(c.get("spell_slots", {}))
+
+        await repo.save_character(db, character)
+
+
+class RestRequest(BaseModel):
+    """A short or long rest for some/all of the party."""
+    rest_type: str = Field(..., description="'short' or 'long'")
+    character_ids: List[str] = Field(default_factory=list, description="Characters to rest (empty = whole campaign party)")
+
+
+class RestResult(BaseModel):
+    character_id: str
+    character_name: str
+    hp_before: int
+    hp_after: int
+
+
+class RestResponse(BaseModel):
+    rest_type: str
+    results: List[RestResult]
+
+
+@router.post("/sessions/{session_id}/rest", response_model=RestResponse)
+async def rest(session_id: str, body: RestRequest, db: AsyncSession = Depends(get_db)) -> RestResponse:
+    """Short rest: heal half max HP, no slot recovery (warlock pact-slot
+    recovery on short rest is not modeled). Long rest: full HP, spell slots
+    reset to max, conditions cleared. Dead characters are unaffected."""
+    if body.rest_type not in ("short", "long"):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="rest_type must be 'short' or 'long'")
+
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+    if session.get("combat_state"):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot rest during combat")
+
+    campaign = await repo.get_campaign(db, session.get("campaign_id", "")) or {}
+    char_ids = body.character_ids or list(campaign.get("character_ids", []))
+
+    results: list[RestResult] = []
+    for cid in char_ids:
+        character = await repo.get_character(db, cid)
+        if character is None or character.get("is_dead"):
+            continue
+        max_hp = int(character.get("max_hp") or character.get("hp") or 1)
+        hp_before = int(character.get("hp", max_hp))
+        if body.rest_type == "long":
+            character["hp"] = max_hp
+            # NOTE: repo.save_character only merges/overwrites extra_data
+            # keys, it never deletes them — pop() here would silently no-op
+            # against the persisted record, so slots must be reset to None
+            # explicitly (combatant_from_character treats None as "full").
+            character["spell_slots_current"] = None
+            character["conditions"] = []
+        else:
+            character["hp"] = min(max_hp, hp_before + max_hp // 2)
+        await repo.save_character(db, character)
+        results.append(RestResult(
+            character_id=cid,
+            character_name=character.get("name", "Unknown"),
+            hp_before=hp_before,
+            hp_after=character["hp"],
+        ))
+
+    session.setdefault("narrative_history", []).append(f"DM: The party takes a {body.rest_type} rest.")
+    await repo.save_game_session(db, session)
+
+    from app.api.websockets.game_ws import manager
+    await manager.broadcast(session_id, {
+        "type": "rest_complete",
+        "rest_type": body.rest_type,
+        "results": [r.model_dump() for r in results],
+    })
+
+    return RestResponse(rest_type=body.rest_type, results=results)
+
+
+class StartCombatEnemy(BaseModel):
+    """One enemy group for /start-combat — same shape as /encounter's
+    EnemyData, plus optional combat-only fields the generator doesn't set."""
+    name: str = Field(..., description="Enemy name")
+    hp: int = Field(..., gt=0, description="Hit points")
+    ac: int = Field(..., ge=0, description="Armor class")
+    cr: float = Field(..., ge=0, description="Challenge rating")
+    count: int = Field(default=1, ge=1, description="How many of this enemy")
+    damage_type: Optional[str] = Field(None, description="Damage type dealt, e.g. 'fire' (default: bludgeoning)")
+    damage_resistances: List[str] = Field(default_factory=list, description="Damage types this enemy resists")
+    damage_vulnerabilities: List[str] = Field(default_factory=list, description="Damage types this enemy is vulnerable to")
+
+
 class StartCombatRequest(BaseModel):
     """Optional encounter payload — when provided, full initiative is rolled."""
-    enemies: List[dict] = Field(default_factory=list, description="[{name,hp,ac,cr,count}] e.g. from /encounter")
+    enemies: List[StartCombatEnemy] = Field(default_factory=list, description="e.g. from /encounter")
 
 
 @router.post("/sessions/{session_id}/start-combat", response_model=GameStateResponse)
@@ -1104,6 +1245,7 @@ async def start_combat(session_id: str, body: StartCombatRequest | None = None, 
 
     session["current_phase"] = GamePhase.COMBAT.value
     opening_events: list[str] = []
+    opening_rolls: list[dict] = []
     if body is not None and body.enemies:
         from app.services.game.combat_loop import start_encounter, run_pending_monster_turns
 
@@ -1113,12 +1255,13 @@ async def start_combat(session_id: str, body: StartCombatRequest | None = None, 
             c = await repo.get_character(db, cid)
             if c:
                 characters.append(c)
-        combat_state = start_encounter(characters, body.enemies)
+        combat_state = start_encounter(characters, [e.model_dump(exclude_none=True) for e in body.enemies])
         # If monsters won initiative, run their opening turns NOW — otherwise
         # combat deadlocks: no phone shows "your turn" and monster turns only
         # run inside resolve_player_action, which nobody can call.
         pre = run_pending_monster_turns(combat_state)
         opening_events = pre["events"]
+        opening_rolls = pre.get("rolls", [])
         session["combat_state"] = None if pre["combat_over"] else combat_state
         if pre["combat_over"]:
             session["current_phase"] = GamePhase.EXPLORATION.value
@@ -1145,6 +1288,7 @@ async def start_combat(session_id: str, body: StartCombatRequest | None = None, 
         await manager.broadcast(session_id, {
             "type": "combat_update",
             "events": opening_events,
+            "rolls": opening_rolls,
             "narration": " ".join(opening_events),
             "combat_state": session["combat_state"],
             "phase": session["current_phase"],
@@ -1155,8 +1299,18 @@ async def start_combat(session_id: str, body: StartCombatRequest | None = None, 
 class CombatActionRequest(BaseModel):
     """A player's combat action, resolved by the deterministic rules engine."""
     actor_id: str = Field(..., description="Combatant id (character id)")
-    action_type: str = Field(..., description="attack | heal | dodge | pass")
-    target_id: Optional[str] = Field(None, description="Target combatant id")
+    action_type: str = Field(
+        ..., description="attack | heal | dodge | pass | move | dash | disengage | retreat | cast_spell | shove | stand_up | climb_out"
+    )
+    target_id: Optional[str] = Field(None, description="Target combatant id (for attack/heal/cast_spell/shove)")
+    target_x: Optional[int] = Field(None, description="Destination x (for move)")
+    target_y: Optional[int] = Field(None, description="Destination y (for move)")
+    spell_name: Optional[str] = Field(None, description="Spell name (for cast_spell)")
+    slot_level: Optional[int] = Field(None, description="Slot level to cast at, defaults to the spell's base level")
+    shove_type: Optional[str] = Field(None, description="'push' or 'prone' (for shove), defaults to 'prone'")
+    player_id: Optional[str] = Field(
+        None, description="Player id claiming this action. Required once players have joined the session via room code; ignored for solo/desktop sessions with no registered players."
+    )
 
 
 @router.post("/sessions/{session_id}/combat-action")
@@ -1168,12 +1322,24 @@ async def combat_action(session_id: str, body: CombatActionRequest, request: Req
     session = await repo.get_game_session(db, session_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+
+    # Once players have joined via room code, a combat action must be claimed
+    # by the player who owns that character — prevents one phone from acting
+    # for someone else's character. Solo/desktop sessions with no registered
+    # roster (and all existing tests) are unaffected.
+    registered_players = storage.session_players.get(session_id) or []
+    if registered_players:
+        from app.api.routes.items import _player_owns_character
+        if not body.player_id or not _player_owns_character(session_id, body.player_id, body.actor_id):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="That isn't your character")
+
     combat_state = session.get("combat_state")
     if not combat_state or not combat_state.get("combatants"):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No active combat with initiative — call start-combat with enemies first")
 
     result = resolve_player_action(
-        combat_state, body.actor_id, body.action_type, body.target_id
+        combat_state, body.actor_id, body.action_type, body.target_id, body.target_x, body.target_y,
+        spell_name=body.spell_name, slot_level=body.slot_level, shove_type=body.shove_type,
     )
     if result.get("error"):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result["error"])
@@ -1182,12 +1348,38 @@ async def combat_action(session_id: str, body: CombatActionRequest, request: Req
     for ev in result["events"]:
         session.setdefault("narrative_history", []).append(f"DM: {ev}")
 
+    # Double-award guard: if combat is ending, re-check the persisted session
+    # for a concurrent request that already finished it (cleared
+    # combat_state) before we get here. If so, another in-flight request
+    # already ran the sync/XP/broadcast for this same kill — skip doing it
+    # again rather than double-persisting or double-awarding XP.
+    already_finished_elsewhere = False
     if result.get("combat_over"):
-        session["current_phase"] = GamePhase.EXPLORATION.value
+        fresh = await repo.get_game_session(db, session_id)
+        already_finished_elsewhere = fresh is not None and fresh.get("combat_state") is None
+
+    xp_awards: list[dict] = []
+    if already_finished_elsewhere:
         session["combat_state"] = None
+        session["current_phase"] = GamePhase.EXPLORATION.value
     else:
-        session["combat_state"] = combat_state
-    await repo.save_game_session(db, session)
+        if result.get("combat_over"):
+            session["current_phase"] = GamePhase.EXPLORATION.value
+            await _sync_combatants_to_characters(db, combat_state)
+            session["combat_state"] = None
+        else:
+            session["combat_state"] = combat_state
+        await repo.save_game_session(db, session)
+
+        # On victory, persist the deterministic XP award to each player
+        # character so pending level-ups are queued for LevelUpModal to pick
+        # up — combat_loop itself never touches the DB (see module
+        # docstring), so this is the one spot where the authoritative
+        # xp_awarded number actually lands on a character record.
+        if result.get("combat_over") and result.get("victory") and result.get("xp_awarded"):
+            player_ids = [c["id"] for c in combat_state.get("combatants", []) if c.get("is_player")]
+            if player_ids:
+                _, xp_awards = await _apply_xp_award(db, player_ids, result["xp_awarded"])
 
     # The deterministic outcome is broadcast IMMEDIATELY — flavor narration
     # from the LLM runs as a background task so a slow/rate-limited provider
@@ -1198,7 +1390,11 @@ async def combat_action(session_id: str, body: CombatActionRequest, request: Req
         "narration": " ".join(result["events"]),
         "combat_state": session.get("combat_state"),
         "phase": session["current_phase"],
+        "xp_awards": xp_awards,
     }
+
+    if already_finished_elsewhere:
+        return payload
 
     from app.api.websockets.game_ws import manager
     await manager.broadcast(session_id, {"type": "combat_update", **payload})
@@ -1243,7 +1439,11 @@ async def end_combat(session_id: str, db: AsyncSession = Depends(get_db)) -> Gam
     session = await repo.get_game_session(db, session_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
-    
+
+    combat_state = session.get("combat_state")
+    if combat_state:
+        await _sync_combatants_to_characters(db, combat_state)
+
     session["current_phase"] = GamePhase.EXPLORATION.value
     session["combat_state"] = None
     await repo.save_game_session(db, session)
@@ -1451,6 +1651,7 @@ class EnemyData(BaseModel):
     ac: int = Field(..., description="Armor class")
     cr: float = Field(..., description="Challenge rating")
     count: int = Field(default=1, description="How many of this enemy")
+    damage_type: Optional[str] = Field(None, description="Best-effort damage type parsed from SRD data (default: bludgeoning)")
 
 
 class EncounterRequest(BaseModel):
@@ -1805,6 +2006,25 @@ def _get_cr_value(difficulty: str, party_level: int) -> tuple[float, float]:
     return (max(0.125, base_cr + adj_low), base_cr + adj_high)
 
 
+_DAMAGE_TYPE_RE = re.compile(r"(\w+)\s+damage")
+
+
+def _srd_damage_type(name: str) -> Optional[str]:
+    """Best-effort damage type for a named monster, parsed from the SRD
+    monster's free-text `actions` description (e.g. "...Hit: 5 (1d6+2)
+    slashing damage." -> "slashing"). Returns None when the monster isn't
+    in the SRD table or no damage type could be parsed — callers fall back
+    to combat_loop's "bludgeoning" default in that case."""
+    from app.services.srd.data import srd_monsters
+
+    name_lower = name.lower()
+    for monster in srd_monsters:
+        if monster.name.lower() == name_lower:
+            match = _DAMAGE_TYPE_RE.search(monster.actions or "")
+            return match.group(1).lower() if match else None
+    return None
+
+
 @router.post("/sessions/{session_id}/encounter", response_model=EncounterResponse)
 async def generate_encounter(session_id: str, body: EncounterRequest, db: AsyncSession = Depends(get_db)) -> EncounterResponse:
     """Generate a random encounter based on party level and environment."""
@@ -1867,7 +2087,8 @@ async def generate_encounter(session_id: str, body: EncounterRequest, db: AsyncS
             hp=monster_template["hp"],
             ac=monster_template["ac"],
             cr=selected_cr,
-            count=count
+            count=count,
+            damage_type=_srd_damage_type(monster_template["name"]),
         )
         enemies.append(enemy)
         total_xp += int(cr_xp * count)
@@ -1881,7 +2102,8 @@ async def generate_encounter(session_id: str, body: EncounterRequest, db: AsyncS
             hp=monster_template["hp"],
             ac=monster_template["ac"],
             cr=selected_cr,
-            count=1
+            count=1,
+            damage_type=_srd_damage_type(monster_template["name"]),
         )]
         total_xp = int(selected_cr * 100)
     
@@ -2046,42 +2268,11 @@ class XPEventResponse(BaseModel):
     awards: List[dict]
 
 
-@router.post("/sessions/{session_id}/xp-event", response_model=XPEventResponse)
-async def award_xp_event(session_id: str, body: XPEventRequest, db: AsyncSession = Depends(get_db)) -> XPEventResponse:
-    """Award XP to characters from a game event (combat, quest, etc)."""
-    session = await repo.get_game_session(db, session_id)
-    if session is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
-
-    campaign_id = session.get("campaign_id", "")
-    campaign = await repo.get_campaign(db, campaign_id) or {}
-
-    # Determine total XP
-    if body.xp_total is not None:
-        total_xp = body.xp_total
-    elif body.cr is not None:
-        per_creature = CR_XP_VALUES.get(body.cr, 0)
-        total_xp = per_creature * body.creature_count
-    else:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                            detail="Must provide either xp_total or cr")
-
-    # Determine recipients
-    if body.character_ids:
-        char_ids = []
-        for cid in body.character_ids:
-            if await repo.character_exists(db, cid):
-                char_ids.append(cid)
-    else:
-        char_ids = []
-        for cid in campaign.get("character_ids", []):
-            if await repo.character_exists(db, cid):
-                char_ids.append(cid)
-
-    if not char_ids:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No valid characters to award XP to")
-
-    xp_each = total_xp // len(char_ids)
+async def _apply_xp_award(db: AsyncSession, char_ids: List[str], total_xp: int) -> tuple[int, list[dict]]:
+    """Split total_xp evenly across char_ids, persist to each character
+    (bumping level + queuing pending_level_ups when a threshold is crossed),
+    and return (xp_each, awards)."""
+    xp_each = total_xp // len(char_ids) if char_ids else 0
     awards = []
 
     for cid in char_ids:
@@ -2117,6 +2308,46 @@ async def award_xp_event(session_id: str, body: XPEventRequest, db: AsyncSession
             "leveled_up": leveled_up,
         })
 
+    return xp_each, awards
+
+
+@router.post("/sessions/{session_id}/xp-event", response_model=XPEventResponse)
+async def award_xp_event(session_id: str, body: XPEventRequest, db: AsyncSession = Depends(get_db)) -> XPEventResponse:
+    """Award XP to characters from a game event (combat, quest, etc)."""
+    session = await repo.get_game_session(db, session_id)
+    if session is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+
+    campaign_id = session.get("campaign_id", "")
+    campaign = await repo.get_campaign(db, campaign_id) or {}
+
+    # Determine total XP
+    if body.xp_total is not None:
+        total_xp = body.xp_total
+    elif body.cr is not None:
+        per_creature = CR_XP_VALUES.get(body.cr, 0)
+        total_xp = per_creature * body.creature_count
+    else:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Must provide either xp_total or cr")
+
+    # Determine recipients
+    if body.character_ids:
+        char_ids = []
+        for cid in body.character_ids:
+            if await repo.character_exists(db, cid):
+                char_ids.append(cid)
+    else:
+        char_ids = []
+        for cid in campaign.get("character_ids", []):
+            if await repo.character_exists(db, cid):
+                char_ids.append(cid)
+
+    if not char_ids:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No valid characters to award XP to")
+
+    xp_each, awards = await _apply_xp_award(db, char_ids, total_xp)
+
     # Log the event to session
     xp_log = session.get("xp_log", [])
     xp_log.append({
@@ -2133,14 +2364,16 @@ async def award_xp_event(session_id: str, body: XPEventRequest, db: AsyncSession
     return XPEventResponse(total_xp=total_xp, xp_per_character=xp_each, awards=awards)
 
 
+
 # ─── Level-Up Management ──────────────────────────────────────────────
 
 
 class LevelUpChoices(BaseModel):
     """Player's choices for a level-up."""
     ability_score_increase: Optional[dict] = Field(None, description="ASI choices, e.g. {'strength': 2} or {'dex': 1, 'con': 1}")
-    hp_roll: Optional[int] = Field(None, description="HP roll result (if rolling; None = take average)")
-    new_spells: List[str] = Field(default_factory=list, description="New spells learned")
+    hp_method: Optional[str] = Field(None, description="'average' or 'roll' — when 'roll', the server rolls the hit die itself")
+    hp_roll: Optional[int] = Field(None, description="Legacy client-supplied HP roll result; validated against the class hit die (1..hit_die)")
+    new_spells: List[str] = Field(default_factory=list, description="New spells learned (max 2 per level-up)")
     new_skill: Optional[str] = Field(None, description="New skill proficiency (if applicable)")
     feat: Optional[str] = Field(None, description="Feat chosen (instead of ASI)")
 
@@ -2154,6 +2387,25 @@ _HIT_DICE = {
 
 # ASI levels (standard D&D 5e)
 _ASI_LEVELS = {4, 8, 12, 16, 19}
+
+MAX_NEW_SPELLS_PER_LEVEL_UP = 2
+
+
+@router.get("/spellbook")
+async def get_spellbook() -> dict:
+    """Curated combat-capable spells (see rules/spellbook.py) for the
+    level-up spell picker. Not the full SRD spell list — only spells the
+    deterministic combat engine can actually cast."""
+    from app.services.rules.spellbook import SPELLBOOK
+
+    spells = sorted(
+        (
+            {"name": s.name, "level": s.level, "is_cantrip": s.is_cantrip, "school": s.school.value}
+            for s in SPELLBOOK.values()
+        ),
+        key=lambda s: (s["level"], s["name"]),
+    )
+    return {"spells": spells}
 
 
 @router.get("/characters/{character_id}/pending-level-ups")
@@ -2185,10 +2437,23 @@ async def apply_level_up(character_id: str, body: LevelUpChoices, db: AsyncSessi
     to_level = level_up["to_level"]
     class_name = character.get("class_name", "fighter").lower()
 
-    # 1. HP increase
+    # 1. HP increase — 'roll' asks the server to roll the hit die itself
+    # (a client-supplied roll can't be trusted); a bare hp_roll is kept for
+    # older callers but validated against the die so it can't be forged.
     hit_die = _HIT_DICE.get(class_name, 8)
     con_mod = (character.get("constitution", 10) - 10) // 2
-    if body.hp_roll is not None:
+    hp_roll_result: Optional[int] = None
+    if body.hp_method == "roll":
+        from app.services.dice import DiceRoller
+        hp_roll_result = DiceRoller().roll(f"1d{hit_die}").total
+        hp_gain = max(1, hp_roll_result + con_mod)
+    elif body.hp_roll is not None:
+        if not (1 <= body.hp_roll <= hit_die):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"hp_roll must be between 1 and {hit_die} for this class",
+            )
+        hp_roll_result = body.hp_roll
         hp_gain = max(1, body.hp_roll + con_mod)
     else:
         # Take the average (rounded up)
@@ -2200,7 +2465,9 @@ async def apply_level_up(character_id: str, body: LevelUpChoices, db: AsyncSessi
     else:
         character["max_hp"] = character["hp"]
 
-    # 2. ASI or Feat (only at ASI levels)
+    # 2. ASI or Feat (only at ASI levels) — validate the full ASI budget
+    # BEFORE mutating any ability score, so a request that goes over +2
+    # never leaves the character partially modified.
     if to_level in _ASI_LEVELS:
         if body.feat:
             features = character.get("features", [])
@@ -2215,20 +2482,26 @@ async def apply_level_up(character_id: str, body: LevelUpChoices, db: AsyncSessi
                 "wis": "wisdom", "wisdom": "wisdom",
                 "cha": "charisma", "charisma": "charisma",
             }
-            total_increase = 0
+            if sum(body.ability_score_increase.values()) > 2:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                                    detail="ASI total cannot exceed +2")
             for ability, increase in body.ability_score_increase.items():
                 full_name = ability_map.get(ability.lower(), ability.lower())
                 if full_name in character:
                     character[full_name] = min(20, character[full_name] + increase)
-                    total_increase += increase
-            if total_increase > 2:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
-                                    detail="ASI total cannot exceed +2")
 
-    # 3. New spells
+    # 3. New spells (capped + deduped — full class-spell-list validation is
+    # out of scope for this curated combat engine, see rules/spellbook.py)
     if body.new_spells:
+        if len(body.new_spells) > MAX_NEW_SPELLS_PER_LEVEL_UP:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot learn more than {MAX_NEW_SPELLS_PER_LEVEL_UP} new spells per level-up",
+            )
         spells = character.get("spells_known", [])
-        spells.extend(body.new_spells)
+        for name in body.new_spells:
+            if name not in spells:
+                spells.append(name)
         character["spells_known"] = spells
 
     # 4. New skill
@@ -2253,6 +2526,7 @@ async def apply_level_up(character_id: str, body: LevelUpChoices, db: AsyncSessi
         "character_id": character_id,
         "level": character.get("level", 1),
         "hp_gained": hp_gain,
+        "hp_roll_result": hp_roll_result,
         "changes_applied": True,
         "remaining_level_ups": len(pending),
         "character": character,
@@ -2500,7 +2774,7 @@ def _get_cached_scene_path(scene_type: str) -> str | None:
 
 
 async def _generate_scene_dalle(scene_type: str) -> str | None:
-    """Generate scene image via OpenAI DALL-E 3. Returns file path or None."""
+    """Generate scene image via OpenAI's image API (gpt-image-1). Returns file path or None."""
     if not settings.openai_api_key:
         return None
 
@@ -2516,31 +2790,34 @@ async def _generate_scene_dalle(scene_type: str) -> str | None:
                     "Content-Type": "application/json",
                 },
                 json={
-                    "model": "dall-e-3",
+                    "model": "gpt-image-1",
                     "prompt": prompt,
                     "n": 1,
-                    "size": "1792x1024",
-                    "quality": "standard",
-                    "response_format": "url",
+                    "size": "1536x1024",
+                    "quality": "medium",
                 },
             )
             resp.raise_for_status()
-            data = resp.json()
-            image_url = data["data"][0]["url"]
+            image_data = resp.json()["data"][0]
 
-            # Download the image
-            img_resp = await client.get(image_url)
-            img_resp.raise_for_status()
+            # API defaults to b64_json for this model/account; fall back to
+            # downloading the url if the account's API version returns one.
+            if "b64_json" in image_data:
+                image_bytes = base64.b64decode(image_data["b64_json"])
+            else:
+                img_resp = await client.get(image_data["url"])
+                img_resp.raise_for_status()
+                image_bytes = img_resp.content
 
             key = _scene_cache_key(scene_type)
             path = os.path.join(SCENE_IMAGES_DIR, f"{key}.jpg")
             with open(path, "wb") as f:
-                f.write(img_resp.content)
+                f.write(image_bytes)
 
-            logger.info("DALL-E scene image generated for '%s' (%d bytes)", scene_type, len(img_resp.content))
+            logger.info("Scene image generated for '%s' (%d bytes)", scene_type, len(image_bytes))
             return path
     except Exception as e:
-        logger.warning("DALL-E scene generation failed for '%s': %s", scene_type, e)
+        logger.warning("Scene image generation failed for '%s': %s", scene_type, e)
         return None
 
 

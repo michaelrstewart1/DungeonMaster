@@ -42,7 +42,7 @@ export class GameWebSocket {
   private maxOutbox = 50;
 
   constructor(sessionId: string, baseUrl?: string, role?: 'observer') {
-    const wsBase = baseUrl || import.meta.env.VITE_WS_URL || `ws://${window.location.host}`;
+    const wsBase = baseUrl || import.meta.env.VITE_WS_URL || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
     this.url = `${wsBase}/ws/game/${sessionId}${role ? `?role=${role}` : ''}`;
   }
 

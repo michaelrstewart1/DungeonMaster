@@ -121,7 +121,7 @@ export function PlayerView() {
   // must keep working through wifi blips and backend restarts).
   useEffect(() => {
     if (!sessionId) return;
-    const wsBase = import.meta.env.VITE_WS_URL || `ws://${window.location.host}`;
+    const wsBase = import.meta.env.VITE_WS_URL || `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}`;
     let disposed = false;
     let retry = 0;
     let timer: ReturnType<typeof setTimeout> | null = null;

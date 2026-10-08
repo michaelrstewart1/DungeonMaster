@@ -1,0 +1,234 @@
+/* ============================================================
+   WeatherOverlay — ambient rain/snow/storm/wind, reused as a
+   background layer over the scene art and behind the chat log.
+   Same technique as EnvironmentPanel's badge effects (real DOM
+   elements animated via transform, clipped by overflow: hidden
+   on this wrapper) just scaled up for much larger containers.
+   ============================================================ */
+
+.weather-overlay {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.weather-overlay-scene {
+  z-index: 1;
+  opacity: 0.85;
+}
+
+.weather-overlay-chat {
+  z-index: 0;
+  opacity: 0.3;
+}
+
+/* --- Rain --- */
+.wx-rain i {
+  --x: 50%;
+  --delay: 0s;
+  --duration: 0.9s;
+  position: absolute;
+  top: -30px;
+  left: var(--x);
+  width: 2px;
+  height: 26px;
+  opacity: 0.75;
+  background: linear-gradient(transparent, rgba(160, 210, 255, 0.9));
+  transform: rotate(12deg);
+  animation: wx-rainfall var(--duration) linear infinite;
+  animation-delay: var(--delay);
+}
+
+.wx-rain i:nth-child(1)  { --x: 2%;  --delay: -0.2s; --duration: 0.8s; }
+.wx-rain i:nth-child(2)  { --x: 7%;  --delay: -0.7s; --duration: 1s; }
+.wx-rain i:nth-child(3)  { --x: 12%; --delay: -0.4s; --duration: 0.85s; }
+.wx-rain i:nth-child(4)  { --x: 17%; --delay: -0.9s; --duration: 0.95s; }
+.wx-rain i:nth-child(5)  { --x: 22%; --delay: -0.1s; --duration: 0.78s; }
+.wx-rain i:nth-child(6)  { --x: 27%; --delay: -0.6s; --duration: 1.05s; }
+.wx-rain i:nth-child(7)  { --x: 32%; --delay: -0.3s; --duration: 0.88s; }
+.wx-rain i:nth-child(8)  { --x: 37%; --delay: -0.8s; --duration: 0.92s; }
+.wx-rain i:nth-child(9)  { --x: 42%; --delay: -0.5s; --duration: 0.82s; }
+.wx-rain i:nth-child(10) { --x: 47%; --delay: -1s;   --duration: 1.02s; }
+.wx-rain i:nth-child(11) { --x: 52%; --delay: -0.2s; --duration: 0.86s; }
+.wx-rain i:nth-child(12) { --x: 57%; --delay: -0.7s; --duration: 0.98s; }
+.wx-rain i:nth-child(13) { --x: 62%; --delay: -0.4s; --duration: 0.8s; }
+.wx-rain i:nth-child(14) { --x: 67%; --delay: -0.9s; --duration: 0.9s; }
+.wx-rain i:nth-child(15) { --x: 72%; --delay: -0.1s; --duration: 1.04s; }
+.wx-rain i:nth-child(16) { --x: 77%; --delay: -0.6s; --duration: 0.84s; }
+.wx-rain i:nth-child(17) { --x: 82%; --delay: -0.3s; --duration: 0.96s; }
+.wx-rain i:nth-child(18) { --x: 87%; --delay: -0.8s; --duration: 0.79s; }
+.wx-rain i:nth-child(19) { --x: 93%; --delay: -0.5s; --duration: 1.01s; }
+.wx-rain i:nth-child(20) { --x: 98%; --delay: -1s;   --duration: 0.87s; }
+
+@keyframes wx-rainfall {
+  from { transform: translate3d(0, 0, 0) rotate(12deg); }
+  to   { transform: translate3d(-24px, 420px, 0) rotate(12deg); }
+}
+
+/* --- Snow --- */
+.wx-snow i {
+  --x: 50%;
+  --size: 1.1rem;
+  --delay: 0s;
+  --duration: 7s;
+  --drift: 26px;
+  position: absolute;
+  top: -8%;
+  left: var(--x);
+  font-style: normal;
+  font-size: var(--size);
+  color: #f0f4ff;
+  opacity: 0.85;
+  filter: drop-shadow(0 0 3px rgba(255, 255, 255, 0.35));
+  animation: wx-snowfall var(--duration) linear infinite;
+  animation-delay: var(--delay);
+}
+
+.wx-snow i:nth-child(1)  { --x: 3%;  --size: 0.8rem; --delay: -2s;  --duration: 6s; }
+.wx-snow i:nth-child(2)  { --x: 11%; --size: 1.3rem; --delay: -5s;  --duration: 9s; }
+.wx-snow i:nth-child(3)  { --x: 19%; --size: 0.9rem; --delay: -1s;  --duration: 7.5s; }
+.wx-snow i:nth-child(4)  { --x: 27%; --size: 1.4rem; --delay: -6s;  --duration: 10s; }
+.wx-snow i:nth-child(5)  { --x: 35%; --size: 1rem;   --delay: -3s;  --duration: 6.8s; }
+.wx-snow i:nth-child(6)  { --x: 43%; --size: 0.85rem;--delay: -5.5s;--duration: 8.5s; }
+.wx-snow i:nth-child(7)  { --x: 51%; --size: 1.25rem;--delay: -1.5s;--duration: 7.8s; }
+.wx-snow i:nth-child(8)  { --x: 59%; --size: 0.9rem; --delay: -6.5s;--duration: 9.5s; }
+.wx-snow i:nth-child(9)  { --x: 67%; --size: 1.1rem; --delay: -3.5s;--duration: 7s; }
+.wx-snow i:nth-child(10) { --x: 75%; --size: 1.4rem; --delay: -0.5s;--duration: 9.8s; }
+.wx-snow i:nth-child(11) { --x: 83%; --size: 0.85rem;--delay: -5.8s;--duration: 6.5s; }
+.wx-snow i:nth-child(12) { --x: 91%; --size: 1.15rem;--delay: -2.5s;--duration: 8.2s; }
+
+@keyframes wx-snowfall {
+  0%   { transform: translate3d(0, -8%, 0) rotate(0deg); }
+  25%  { transform: translate3d(var(--drift), 22%, 0) rotate(90deg); }
+  50%  { transform: translate3d(calc(var(--drift) * -0.5), 55%, 0) rotate(180deg); }
+  75%  { transform: translate3d(var(--drift), 85%, 0) rotate(270deg); }
+  100% { transform: translate3d(0, 115%, 0) rotate(360deg); }
+}
+
+/* --- Storm: denser/faster rain plus an occasional flash --- */
+.wx-storm i {
+  --x: 50%;
+  --delay: 0s;
+  --duration: 0.55s;
+  position: absolute;
+  top: -30px;
+  left: var(--x);
+  width: 2px;
+  height: 24px;
+  opacity: 0.8;
+  background: linear-gradient(transparent, rgba(200, 210, 230, 0.95));
+  transform: rotate(14deg);
+  animation: wx-rainfall-storm var(--duration) linear infinite;
+  animation-delay: var(--delay);
+}
+
+.wx-storm i:nth-child(1)  { --x: 1%;  --delay: -0.1s; --duration: 0.45s; }
+.wx-storm i:nth-child(2)  { --x: 5%;  --delay: -0.3s; --duration: 0.55s; }
+.wx-storm i:nth-child(3)  { --x: 10%; --delay: -0.05s;--duration: 0.5s; }
+.wx-storm i:nth-child(4)  { --x: 15%; --delay: -0.2s; --duration: 0.4s; }
+.wx-storm i:nth-child(5)  { --x: 20%; --delay: -0.4s; --duration: 0.48s; }
+.wx-storm i:nth-child(6)  { --x: 25%; --delay: -0.15s;--duration: 0.52s; }
+.wx-storm i:nth-child(7)  { --x: 30%; --delay: -0.35s;--duration: 0.42s; }
+.wx-storm i:nth-child(8)  { --x: 35%; --delay: -0.08s;--duration: 0.58s; }
+.wx-storm i:nth-child(9)  { --x: 40%; --delay: -0.25s;--duration: 0.46s; }
+.wx-storm i:nth-child(10) { --x: 45%; --delay: -0.45s;--duration: 0.5s; }
+.wx-storm i:nth-child(11) { --x: 50%; --delay: -0.12s;--duration: 0.54s; }
+.wx-storm i:nth-child(12) { --x: 55%; --delay: -0.3s; --duration: 0.4s; }
+.wx-storm i:nth-child(13) { --x: 60%; --delay: -0.05s;--duration: 0.52s; }
+.wx-storm i:nth-child(14) { --x: 65%; --delay: -0.2s; --duration: 0.48s; }
+.wx-storm i:nth-child(15) { --x: 70%; --delay: -0.4s; --duration: 0.44s; }
+.wx-storm i:nth-child(16) { --x: 75%; --delay: -0.1s; --duration: 0.6s; }
+.wx-storm i:nth-child(17) { --x: 79%; --delay: -0.28s;--duration: 0.47s; }
+.wx-storm i:nth-child(18) { --x: 83%; --delay: -0.18s;--duration: 0.53s; }
+.wx-storm i:nth-child(19) { --x: 87%; --delay: -0.38s;--duration: 0.41s; }
+.wx-storm i:nth-child(20) { --x: 90%; --delay: -0.08s;--duration: 0.56s; }
+.wx-storm i:nth-child(21) { --x: 93%; --delay: -0.22s;--duration: 0.49s; }
+.wx-storm i:nth-child(22) { --x: 95%; --delay: -0.42s;--duration: 0.43s; }
+.wx-storm i:nth-child(23) { --x: 97%; --delay: -0.15s;--duration: 0.51s; }
+.wx-storm i:nth-child(24) { --x: 99%; --delay: -0.32s;--duration: 0.45s; }
+
+@keyframes wx-rainfall-storm {
+  from { transform: translate3d(0, 0, 0) rotate(14deg); }
+  to   { transform: translate3d(-32px, 420px, 0) rotate(14deg); }
+}
+
+.weather-overlay-scene .wx-storm::after,
+.weather-overlay-chat .wx-storm::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 30%, rgba(220, 225, 255, 0.5) 0%, transparent 70%);
+  animation: wx-storm-flash 5s ease-in-out infinite;
+}
+
+@keyframes wx-storm-flash {
+  0%, 10%, 15%, 100% { opacity: 0; }
+  12% { opacity: 0.55; }
+  13% { opacity: 0; }
+  14% { opacity: 0.55; }
+}
+
+/* --- Wind: horizontal gust streaks plus drifting leaves --- */
+.wx-wind i {
+  --y: 50%;
+  --delay: 0s;
+  --duration: 3s;
+  position: absolute;
+  top: var(--y);
+  left: -80px;
+  width: 70px;
+  height: 2px;
+  border-radius: 999px;
+  opacity: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85), transparent);
+  animation: wx-gust var(--duration) ease-in-out infinite;
+  animation-delay: var(--delay);
+}
+
+.wx-wind i:nth-child(1) { --y: 8%;  --delay: -0.5s; --duration: 3.4s; }
+.wx-wind i:nth-child(2) { --y: 20%; --delay: -1.8s; --duration: 2.8s; }
+.wx-wind i:nth-child(3) { --y: 35%; --delay: -0.2s; --duration: 3.8s; }
+.wx-wind i:nth-child(4) { --y: 50%; --delay: -2.4s; --duration: 3s; }
+.wx-wind i:nth-child(5) { --y: 65%; --delay: -1.1s; --duration: 3.6s; }
+.wx-wind i:nth-child(6) { --y: 80%; --delay: -2.9s; --duration: 2.9s; }
+.wx-wind i:nth-child(7) { --y: 92%; --delay: -0.8s; --duration: 3.2s; }
+
+@keyframes wx-gust {
+  0%   { opacity: 0; transform: translateX(0) scaleX(0.5); }
+  20%  { opacity: 0.85; }
+  100% { opacity: 0; transform: translateX(900px) scaleX(1.4); }
+}
+
+.wx-wind span {
+  --y: 50%;
+  --delay: 0s;
+  --duration: 8s;
+  position: absolute;
+  top: var(--y);
+  left: -2rem;
+  font-size: 1.1rem;
+  animation: wx-blow var(--duration) linear infinite;
+  animation-delay: var(--delay);
+}
+
+.wx-wind span:nth-of-type(1) { --y: 28%; --delay: -2s; --duration: 8s; }
+.wx-wind span:nth-of-type(2) { --y: 62%; --delay: -5s; --duration: 10s; }
+
+@keyframes wx-blow {
+  0%   { transform: translate3d(0, 0, 0) rotate(0deg); }
+  25%  { transform: translate3d(25%, -18px, 0) rotate(180deg); }
+  50%  { transform: translate3d(50%, 14px, 0) rotate(360deg); }
+  75%  { transform: translate3d(75%, -10px, 0) rotate(540deg); }
+  100% { transform: translate3d(110%, 10px, 0) rotate(720deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wx-rain i,
+  .wx-snow i,
+  .wx-storm i,
+  .wx-wind i,
+  .wx-wind span {
+    animation: none;
+  }
+}
