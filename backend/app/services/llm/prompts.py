@@ -371,6 +371,7 @@ class PromptTemplates:
         current_turn: str,
         recent_actions: list[str],
         round_number: int = 1,
+        positions: str | None = None,
     ) -> str:
         """Create a prompt for combat narration.
 
@@ -384,6 +385,7 @@ class PromptTemplates:
             current_turn: Name of the combatant whose turn it is
             recent_actions: List of recent actions in the combat
             round_number: Current combat round number
+            positions: Optional "Name at (x,y); ..." line for living combatants
 
         Returns:
             Prompt string for combat narration
@@ -396,6 +398,10 @@ class PromptTemplates:
             marker = " ← CURRENT TURN" if actor == current_turn else ""
             prompt += f"{i}. {actor}{marker}\n"
         prompt += "\n"
+
+        if positions:
+            prompt += "## Positions\n"
+            prompt += positions + "\n\n"
 
         # Recent actions
         if recent_actions:
