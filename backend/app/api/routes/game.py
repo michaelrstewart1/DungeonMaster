@@ -1247,7 +1247,11 @@ async def start_combat(session_id: str, body: StartCombatRequest | None = None, 
     opening_events: list[str] = []
     opening_rolls: list[dict] = []
     if body is not None and body.enemies:
-        from app.services.game.combat_loop import start_encounter, run_pending_monster_turns
+        from app.services.game.combat_loop import (
+            format_initiative_summary,
+            run_pending_monster_turns,
+            start_encounter,
+        )
 
         campaign = await repo.get_campaign(db, session.get("campaign_id", "")) or {}
         characters = []
@@ -1265,7 +1269,7 @@ async def start_combat(session_id: str, body: StartCombatRequest | None = None, 
         session["combat_state"] = None if pre["combat_over"] else combat_state
         if pre["combat_over"]:
             session["current_phase"] = GamePhase.EXPLORATION.value
-        opening = "Combat begins! Initiative: " + ", ".join(combat_state["initiative_order"])
+        opening = "Combat begins! " + format_initiative_summary(combat_state)
         session.setdefault("narrative_history", []).append(f"DM: {opening}")
         for ev in opening_events:
             session["narrative_history"].append(f"DM: {ev}")

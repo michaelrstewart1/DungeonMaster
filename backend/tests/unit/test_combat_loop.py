@@ -2,6 +2,7 @@
 import pytest
 
 from app.services.game.combat_loop import (
+    classify_combat_text,
     combat_over,
     combatant_from_character,
     combatant_from_enemy,
@@ -67,6 +68,45 @@ class TestStartEncounter:
         state = start_encounter([_char()], [{"name": "Goblin", "hp": 7, "ac": 15, "cr": 0.25, "count": 3}])
         inits = [c["initiative"] for c in state["combatants"]]
         assert inits == sorted(inits, reverse=True)
+
+    def test_initiative_totals_come_from_dice_not_seat_order(self, monkeypatch):
+        """Order and published totals follow the d20, not 3,2,1 placeholders."""
+        from app.services.dice import DiceResult
+
+        totals = [10, 5, 19]
+
+        class FixedRoller:
+            def __init__(self, *args, **kwargs):
+                self.i = 0
+
+            def roll(self, notation):
+                total = totals[self.i]
+                self.i += 1
+                return DiceResult(notation=notation, rolls=[total], modifier=0, total=total)
+
+        monkeypatch.setattr("app.services.game.combat_loop.DiceRoller", FixedRoller)
+        state = start_encounter(
+            [_char()], [{"name": "Goblin", "hp": 7, "ac": 15, "cr": 0.25, "count": 2}]
+        )
+        # DEX 12 and the goblin modifier are both +1, so totals are roll+1.
+        assert [c["initiative"] for c in state["combatants"]] == [20, 11, 6]
+        assert state["initiative_order"] == ["Goblin 2", "Thorin", "Goblin"]
+        assert state["log"][0] == (
+            "Initiative: Goblin 2 20 (d20+1), Thorin 11 (d20+1), Goblin 6 (d20+1)"
+        )
+        assert "roll for initiative" not in state["log"][0].lower()
+
+
+class TestClassifyCombatText:
+    def test_typed_attack_and_button_label_match(self):
+        assert classify_combat_text("Kael fires his shortbow at the tall robed leader.") == "attack"
+        assert classify_combat_text("⚔️ Attack") == "attack"
+        assert classify_combat_text("🛡️ Defend") == "dodge"
+        assert classify_combat_text("💊 Use Potion") == "heal"
+
+    def test_dice_report_is_not_an_attack(self):
+        assert classify_combat_text("🎲 Kael Shadowstep rolls d20: 15") == "roll"
+        assert classify_combat_text("I look around the chamber") is None
 
 
 class TestPendingMonsterTurns:

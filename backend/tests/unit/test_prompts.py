@@ -93,6 +93,25 @@ class TestDMSystemPrompt:
             or "describe" in text_lower
         )
 
+    def test_dm_system_prompt_does_not_ask_for_initiative_rolls(self):
+        """Initiative is already rolled; the DM must not request a useless roll."""
+        template = PromptTemplates.dm_system_prompt(
+            world_context="World",
+            characters=[],
+            game_state={},
+        )
+        lowered = template.lower()
+        assert "do not ask players to roll for initiative" in lowered
+        assert "tell all players to roll" not in lowered
+
+        compact = PromptTemplates.dm_system_prompt(
+            world_context="World",
+            characters=[],
+            game_state={},
+            compact=True,
+        )
+        assert "do not ask players to roll for initiative" in compact.lower()
+
     def test_dm_system_prompt_is_string(self):
         """DM system prompt returns a string."""
         result = PromptTemplates.dm_system_prompt(

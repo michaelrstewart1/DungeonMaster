@@ -1,4 +1,5 @@
 """WebSocket endpoint for real-time game session updates."""
+import logging
 import uuid
 from datetime import datetime
 
@@ -6,13 +7,24 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from starlette.websockets import WebSocketState
 
 import app.repository as repo
+from app.api import storage
 from app.api.routes.game import (
-    _extract_npcs_from_narration,
-    _merge_detected_npcs,
-    _detect_scene_type,
     _advance_time,
+    _apply_xp_award,
+    _detect_scene_type,
+    _extract_npcs_from_narration,
     _generate_dm_response,
+    _merge_detected_npcs,
+    _sync_combatants_to_characters,
 )
+from app.api.routes.items import _player_owns_character
+from app.services.game.combat_loop import (
+    classify_combat_text,
+    format_initiative_summary,
+    resolve_player_action,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/ws", tags=["websocket"])
 
@@ -112,6 +124,133 @@ class ConnectionManager:
 manager = ConnectionManager()
 
 
+def _owner_player_id(session_id: str, character_id: str | None, *candidates: str | None) -> str | None:
+    """First candidate seat that actually owns ``character_id``, if any."""
+    if not character_id:
+        return None
+    for pid in candidates:
+        if isinstance(pid, str) and pid and _player_owns_character(session_id, pid, character_id):
+            return pid
+    return None
+
+
+async def _handle_combat_ws_action(
+    websocket: WebSocket,
+    session_id: str,
+    player_id: str,
+    message: dict,
+) -> bool:
+    """Resolve a combat-phase action without waiting on the language model.
+
+    Returns True when the session is in engine combat and this message was
+    answered (rules result, initiative acknowledgement, ownership error, or
+    an immediate fallback). Exploration messages return False so the caller
+    keeps the existing narration path.
+
+    A dice report or a typed attack used to block this socket inside a 90s
+    model call, which left the phone on "DM is composing…" with every combat
+    button disabled. The rules engine already owns initiative and attacks.
+    """
+    db_factory = getattr(websocket.app.state, "db_factory", None)
+    if db_factory is None:
+        return False
+
+    character_id = message.get("character_id")
+    action = message.get("action") or ""
+    claimed_player = message.get("player_id") if isinstance(message.get("player_id"), str) else None
+
+    try:
+        async with db_factory() as db:
+            session = await repo.get_game_session(db, session_id) or {}
+            combat_state = session.get("combat_state") or {}
+            if session.get("current_phase") != "combat" or not combat_state.get("combatants"):
+                return False
+
+            kind = classify_combat_text(action)
+            if kind == "roll":
+                summary = format_initiative_summary(combat_state)
+                narration = f"{summary}. That roll is noted and does not change the turn order."
+                session.setdefault("narrative_history", []).append(f"Player: {action}")
+                session["narrative_history"].append(f"DM: {narration}")
+                await repo.save_game_session(db, session)
+                await db.commit()
+                await manager.broadcast(session_id, {
+                    "type": "turn_result",
+                    "character_id": character_id,
+                    "action": action,
+                    "narration": narration,
+                    "timestamp": datetime.now().isoformat(),
+                })
+                return True
+
+            if kind in ("attack", "dodge", "heal"):
+                registered = storage.session_players.get(session_id) or []
+                owner = _owner_player_id(session_id, character_id, claimed_player, player_id)
+                if registered and owner is None:
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": "That isn't your character",
+                    })
+                    return True
+
+                result = resolve_player_action(combat_state, character_id, kind, None)
+                if result.get("error"):
+                    await websocket.send_json({"type": "error", "message": result["error"]})
+                    return True
+
+                for ev in result.get("events") or []:
+                    session.setdefault("narrative_history", []).append(f"DM: {ev}")
+                if result.get("combat_over"):
+                    session["current_phase"] = "exploration"
+                    await _sync_combatants_to_characters(db, combat_state)
+                    if result.get("victory") and result.get("xp_awarded"):
+                        player_ids = [
+                            c["id"] for c in combat_state.get("combatants", []) if c.get("is_player")
+                        ]
+                        if player_ids:
+                            await _apply_xp_award(db, player_ids, result["xp_awarded"])
+                    session["combat_state"] = None
+                else:
+                    session["combat_state"] = combat_state
+                await repo.save_game_session(db, session)
+                await db.commit()
+                await manager.broadcast(session_id, {
+                    "type": "combat_update",
+                    **result,
+                    "narration": " ".join(result.get("events") or []),
+                    "combat_state": session.get("combat_state"),
+                    "phase": session["current_phase"],
+                })
+                return True
+
+            # Anything else said during a fight still gets an immediate reply.
+            # Waiting on the model here is what deadlocked round 1.
+            narration = await _generate_dm_response(action, session, narrator=None, db=None)
+            actor = character_id or "Player"
+            session.setdefault("narrative_history", []).append(f"Player: {actor}: {action}")
+            session["narrative_history"].append(f"DM: {narration}")
+            await repo.save_game_session(db, session)
+            await db.commit()
+            await manager.broadcast(session_id, {
+                "type": "turn_result",
+                "character_id": character_id,
+                "action": action,
+                "narration": narration,
+                "timestamp": datetime.now().isoformat(),
+            })
+            return True
+    except Exception:
+        logger.exception("Combat action failed for session %s", session_id)
+        try:
+            await websocket.send_json({
+                "type": "error",
+                "message": "The action could not be resolved. Try again.",
+            })
+        except Exception:
+            pass
+        return True
+
+
 @router.websocket("/game/{session_id}")
 async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
     """WebSocket endpoint for real-time game session updates.
@@ -178,6 +317,8 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 await manager.broadcast(session_id, chat_message)
             
             elif message_type == "action":
+                if await _handle_combat_ws_action(websocket, session_id, player_id, message):
+                    continue
                 character_id = message.get("character_id")
                 action = message.get("action") or ""
                 session_data: dict | None = None
@@ -307,47 +448,56 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 await manager.broadcast(session_id, map_sync_msg)
 
             elif message_type == "player_join":
-                from app.api import storage as _storage
-                name = message.get("name", "Unknown")
-                character_id = message.get("character_id")
-
-                # Phase 3 reconciliation: if the client supplies a player_id
-                # (typically the one returned by POST /api/game/join) and that
-                # id is already known to session_players, adopt it as THIS
-                # connection's id. This collapses the historical HTTP/WS
-                # double-id and makes player_update broadcasts coherent.
+                name = message.get("name") or "Unknown"
+                character_id = message.get("character_id") or None
                 supplied_id = message.get("player_id")
-                if (
-                    isinstance(supplied_id, str)
-                    and supplied_id
-                    and any(
-                        p.get("id") == supplied_id
-                        for p in _storage.session_players.get(session_id, [])
-                    )
-                ):
-                    player_id = supplied_id
+                if session_id not in storage.session_players:
+                    storage.session_players[session_id] = []
+                players = storage.session_players[session_id]
 
-                player_info = {
-                    "id": player_id,
-                    "name": name,
-                    "character_id": character_id,
-                    "is_ready": False,
-                    "joined_at": datetime.now().isoformat(),
-                }
-                if session_id not in _storage.session_players:
-                    _storage.session_players[session_id] = []
-                existing = [p for p in _storage.session_players[session_id] if p["id"] == player_id]
-                if existing:
-                    existing[0].update(player_info)
+                # Rebind this socket to the existing seat. A phone reload or a
+                # QR rejoin opens a new connection (new id) but the player is
+                # the same: prefer the id they already joined with, then the
+                # same display name. Never wipe a claimed character when the
+                # new socket doesn't repeat it, and never steal one.
+                existing = None
+                if isinstance(supplied_id, str) and supplied_id:
+                    existing = next((p for p in players if p.get("id") == supplied_id), None)
+                if existing is None and name and name != "Unknown":
+                    existing = next(
+                        (p for p in players if str(p.get("name", "")).lower() == name.lower()),
+                        None,
+                    )
+
+                if existing is not None:
+                    player_id = existing["id"]
+                    if not character_id:
+                        character_id = existing.get("character_id")
+                    elif any(
+                        p.get("character_id") == character_id and p.get("id") != existing["id"]
+                        for p in players
+                    ):
+                        character_id = existing.get("character_id")
+                    existing["name"] = name
+                    existing["character_id"] = character_id
+                    existing["rejoined_at"] = datetime.now().isoformat()
                 else:
-                    _storage.session_players[session_id].append(player_info)
-                _storage.flush("session_players")
+                    if character_id and any(p.get("character_id") == character_id for p in players):
+                        character_id = None
+                    players.append({
+                        "id": player_id,
+                        "name": name,
+                        "character_id": character_id,
+                        "is_ready": False,
+                        "joined_at": datetime.now().isoformat(),
+                    })
+                storage.flush("session_players")
                 # Bind player_id -> this websocket so the server can send
                 # private messages (e.g. trade offers) to a specific player.
                 manager.register_player(session_id, player_id, websocket)
                 await manager.broadcast(session_id, {
                     "type": "player_update",
-                    "players": _storage.session_players[session_id],
+                    "players": storage.session_players[session_id],
                     "connection_count": manager.get_connection_count(session_id),
                 })
 
@@ -359,9 +509,11 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     "type": "dice_roll",
                     "player_id": player_id,
                     "character_id": message.get("character_id"),
+                    "character_name": message.get("character_name"),
                     "notation": message.get("notation", ""),
                     "result": message.get("result"),
                     "breakdown": message.get("breakdown"),
+                    "note": message.get("note"),
                     "purpose": message.get("purpose"),
                     "timestamp": datetime.now().isoformat(),
                 })

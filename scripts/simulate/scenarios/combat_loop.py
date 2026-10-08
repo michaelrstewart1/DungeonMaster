@@ -9,6 +9,7 @@ via /combat-action, verifying:
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from ..api_client import ApiClient
@@ -61,6 +62,8 @@ async def build(api: ApiClient) -> dict[str, Any]:
     bots = [
         BotConfig(
             name=BOT_NAME,
+            # Join claims Bram, the same character combat-action will act as.
+            character_id=character["id"],
             policy=ScriptedPolicy(["I ready my sword and watch the treeline."]),
         )
     ]
@@ -95,12 +98,34 @@ async def post_setup(api: ApiClient, ctx: dict, bots: list) -> None:
     if "Bram" not in order:
         _PROBLEMS.append(f"party character missing from initiative: {order}")
 
+    # start-combat commits after the response is sent. Wait until the encounter
+    # is readable, otherwise the first attack sees no combatants and returns 409.
+    visible = False
+    for _ in range(10):
+        state = await api._client.get(f"/api/game/sessions/{session_id}/state")
+        if state.status_code == 200:
+            body = state.json()
+            combatants = (body.get("combat_state") or {}).get("combatants") or []
+            if combatants:
+                visible = True
+                break
+        await asyncio.sleep(0.05)
+    if not visible:
+        _PROBLEMS.append("combat state never became visible after start-combat")
+        return
+
+    # The bot joined and claimed this character. Send that seat's id so the
+    # ownership check accepts the actor — a different seat still gets 403.
+    player_id = None
+    if bots and getattr(bots[0], "joined", None) is not None:
+        player_id = bots[0].joined.player_id
+
     # Fight to the finish (bounded)
     finished = False
     for _ in range(40):
         r = await api._client.post(
             f"/api/game/sessions/{session_id}/combat-action",
-            json={"actor_id": char_id, "action_type": "attack"},
+            json={"actor_id": char_id, "action_type": "attack", "player_id": player_id},
         )
         if r.status_code == 409:
             finished = True  # combat already resolved
@@ -122,9 +147,15 @@ async def post_setup(api: ApiClient, ctx: dict, bots: list) -> None:
         _PROBLEMS.append("combat did not finish within 40 actions")
         return
 
-    # Session must be back in exploration with the fight in the record
-    r = await api._client.get(f"/api/game/sessions/{session_id}/state")
-    state = r.json()
+    # The winning action commits after its response. Poll until that write is visible.
+    state: dict = {}
+    for _ in range(10):
+        r = await api._client.get(f"/api/game/sessions/{session_id}/state")
+        state = r.json()
+        history = state.get("narrative_history") or []
+        if state.get("current_phase") == "exploration" and any("Victory" in line for line in history):
+            break
+        await asyncio.sleep(0.05)
     if state.get("current_phase") != "exploration":
         _PROBLEMS.append(f"phase after combat should be exploration, got {state.get('current_phase')}")
     if not any("Victory" in line for line in state.get("narrative_history", [])):
