@@ -143,8 +143,12 @@ export function useGameSocket(
   }, [send]);
 
   const sendAction = useCallback((characterId: string, action: string) => {
-    send({ type: 'action', character_id: characterId, action });
-  }, [send]);
+    const playerId =
+      (sessionId ? loadIdentity(sessionId)?.playerId : undefined) ||
+      sessionStorage.getItem('playerId') ||
+      undefined;
+    send({ type: 'action', character_id: characterId, action, player_id: playerId });
+  }, [send, sessionId]);
 
   const sendTokenMove = useCallback((tokenId: string, x: number, y: number) => {
     send({ type: 'token_move', token_id: tokenId, x, y });

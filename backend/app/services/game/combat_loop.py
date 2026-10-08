@@ -12,6 +12,7 @@ survives restarts like everything else.
 from __future__ import annotations
 
 import random
+import re
 
 from app.services.dice import DiceRoller
 from app.services.rules.combat import Combatant
@@ -119,6 +120,63 @@ def _sync_back(entry: dict, c: Combatant) -> None:
     entry["is_stable"] = c.is_stable
 
 
+def format_initiative_summary(state: dict) -> str:
+    """One line naming every combatant with the initiative total that placed them.
+
+    The order of `combatants` is the turn order. Totals are the rules-engine
+    d20 + Dexterity modifier, not a display placeholder.
+    """
+    parts: list[str] = []
+    for entry in state.get("combatants") or []:
+        name = entry.get("name") or "Unknown"
+        if entry.get("initiative") is None:
+            parts.append(name)
+            continue
+        total = int(entry.get("initiative") or 0)
+        mod = int(entry.get("initiative_modifier") or 0)
+        parts.append(f"{name} {total} (d20{mod:+d})")
+    if not parts:
+        return "Initiative: (none)"
+    return "Initiative: " + ", ".join(parts)
+
+
+_ATTACK_RE = re.compile(
+    r"\b(attack|attacks|attacking|shoot|shoots|shooting|fire|fires|firing|"
+    r"strike|strikes|striking|swing|swings|swinging|stab|stabs|stabbing|"
+    r"slash|slashes|slashing|bow|hit|hits|hitting|cast|casts|casting|spell|spells)\b",
+    re.I,
+)
+_HEAL_RE = re.compile(
+    r"\b(potion|potions|heal|heals|healing|drink|drinks|drinking)\b",
+    re.I,
+)
+_DODGE_RE = re.compile(
+    r"\b(dodge|dodges|dodging|defend|defends|defending|defense|defensive|"
+    r"retreat|retreats|retreating|flee|flees|fleeing|disengage)\b",
+    re.I,
+)
+_DICE_ROLL_RE = re.compile(r"\brolls?\s+d\d+\b", re.I)
+
+
+def classify_combat_text(text: str) -> str | None:
+    """Map a free-text combat message onto the rules engine, or a dice report.
+
+    Returns ``attack``, ``dodge``, ``heal``, ``roll``, or None.
+    Attack wording wins over a dice report so "I roll to attack" still attacks.
+    """
+    if not text:
+        return None
+    if _ATTACK_RE.search(text):
+        return "attack"
+    if _HEAL_RE.search(text):
+        return "heal"
+    if _DODGE_RE.search(text):
+        return "dodge"
+    if _DICE_ROLL_RE.search(text):
+        return "roll"
+    return None
+
+
 def start_encounter(characters: list[dict], enemies: list[dict]) -> dict:
     """Roll initiative and build the full combat state.
 
@@ -151,12 +209,13 @@ def start_encounter(characters: list[dict], enemies: list[dict]) -> dict:
         by_id[c.id]["initiative"] = c.initiative
     ordered_entries = [by_id[c.id] for c in ordered]
 
+    summary = format_initiative_summary({"combatants": ordered_entries})
     return {
         "round_number": 1,
         "current_turn_index": 0,
         "initiative_order": [e["name"] for e in ordered_entries],
         "combatants": ordered_entries,
-        "log": [],
+        "log": [summary],
     }
 
 
@@ -255,10 +314,23 @@ def resolve_player_action(
     actor_id: str,
     action_type: str,
     target_id: str | None = None,
+    target_x: int | None = None,
+    target_y: int | None = None,
+    *,
+    spell_name: str | None = None,
+    slot_level: int | None = None,
+    shove_type: str | None = None,
 ) -> dict:
     """Apply one player combat action, then auto-run monster turns until the
     next living player's turn (or combat ends). Returns a result dict with
-    per-event descriptions; mutates `state` in place."""
+    per-event descriptions; mutates `state` in place.
+
+    ``target_x``, ``target_y``, ``spell_name``, ``slot_level``, and
+    ``shove_type`` are accepted so the combat-action route can pass the full
+    request body. Movement and named-spell resolution are not handled here;
+    attack / dodge / heal / pass are.
+    """
+    del target_x, target_y, spell_name, slot_level, shove_type
     engine = RulesEngine(DiceRoller())
     entries = state.get("combatants", [])
     by_id = {e["id"]: e for e in entries}

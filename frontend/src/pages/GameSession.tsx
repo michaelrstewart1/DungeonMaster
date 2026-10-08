@@ -38,7 +38,8 @@ import { PlayerConnect } from '../components/PlayerConnect'
 import { TradeArbitrationPanel } from '../components/TradeArbitrationPanel'
 import { WorldMapPanel } from '../components/WorldMapPanel'
 import type { Trade } from '../api/client'
-import type { GameState, GameMap, DiceResult, Character, WorldLocation } from '../types'
+import type { GameState, GameMap, DiceResult, Character, WorldLocation, CombatState } from '../types'
+import { initiativeAnnouncement, toCombatantDisplays } from '../game/combatTurn'
 import './GameSession.css'
 
 function formatTime(seconds: number): string {
@@ -566,16 +567,7 @@ export function GameSession() {
       }
 
       if (state.combat_state) {
-        setCombatants(
-          state.combat_state.initiative_order.map((id, idx) => ({
-            id,
-            name: id,
-            initiative: state.combat_state!.initiative_order.length - idx,
-            hp: 10,
-            max_hp: 10,
-            is_current: idx === state.combat_state!.current_turn_index,
-          }))
-        )
+        setCombatants(toCombatantDisplays(state.combat_state))
       }
 
       // Load session NPCs for Talk to NPC feature
@@ -733,6 +725,31 @@ export function GameSession() {
           }
           if (updatePayload.connection_count !== undefined) {
             setWsConnectionCount(updatePayload.connection_count)
+          }
+          break
+        }
+        case 'combat_started': {
+          const p = msg.payload as { combat_state?: CombatState }
+          if (p.combat_state) {
+            setCombatants(toCombatantDisplays(p.combat_state))
+            setGameState((prev) => prev ? { ...prev, phase: 'combat', combat_state: p.combat_state ?? prev.combat_state } : prev)
+            setMessages((prev) => [...prev, { role: 'dm', text: initiativeAnnouncement(p.combat_state), timestamp: Date.now() }])
+          }
+          break
+        }
+        case 'combat_update': {
+          const p = msg.payload as { combat_state?: CombatState | null; phase?: string; combat_over?: boolean; narration?: string; events?: string[] }
+          const nextCombat = p.combat_state
+          if (p.combat_over) {
+            setCombatants([])
+            setGameState((prev) => prev ? { ...prev, phase: 'exploration', combat_state: null } : prev)
+          } else if (nextCombat) {
+            setCombatants(toCombatantDisplays(nextCombat))
+            setGameState((prev) => prev ? { ...prev, phase: (p.phase as GameState['phase']) || 'combat', combat_state: nextCombat } : prev)
+          }
+          const text = p.narration || (p.events || []).join(' ')
+          if (text) {
+            setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
           }
           break
         }
