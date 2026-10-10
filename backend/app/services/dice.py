@@ -26,6 +26,21 @@ class DiceResult:
     dropped: list[int] = field(default_factory=list)
 
 
+def notation_modifier(notation: str) -> int:
+    """Return the +N / -N on a dice expression, or 0 when it has none.
+
+    Invalid notation yields 0 so a broadcast can keep the client's result
+    instead of failing the socket.
+    """
+    if not notation or not isinstance(notation, str):
+        return 0
+    try:
+        _num, _sides, modifier = DiceRoller()._parse_notation(notation.strip(), notation.strip())
+    except ValueError:
+        return 0
+    return modifier
+
+
 class DiceRoller:
     """Roll dice using standard D&D notation."""
 

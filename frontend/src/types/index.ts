@@ -170,6 +170,7 @@ export interface TurnResult {
   environment?: Record<string, string>;
   detected_scene?: string;
   detected_npcs?: Array<{ name: string; npc_type: string }>;
+  hp_updates?: Array<{ character_id?: string; name?: string; hp: number; max_hp?: number }>;
   action_result?: {
     action_type: string;
     success: boolean;

@@ -12,6 +12,7 @@ survives restarts like everything else.
 from __future__ import annotations
 
 import random
+import re
 
 from app.services.dice import DiceRoller
 from app.services.rules.combat import Combatant
@@ -119,6 +120,75 @@ def _sync_back(entry: dict, c: Combatant) -> None:
     entry["is_stable"] = c.is_stable
 
 
+def format_initiative_summary(state: dict) -> str:
+    """One line naming every combatant with the initiative total that placed them.
+
+    The order of `combatants` is the turn order. Totals are the rules-engine
+    d20 + Dexterity modifier, not a display placeholder.
+    """
+    parts: list[str] = []
+    for entry in state.get("combatants") or []:
+        name = entry.get("name") or "Unknown"
+        if entry.get("initiative") is None:
+            parts.append(name)
+            continue
+        total = int(entry.get("initiative") or 0)
+        mod = int(entry.get("initiative_modifier") or 0)
+        parts.append(f"{name} {total} (d20{mod:+d})")
+    if not parts:
+        return "Initiative: (none)"
+    return "Initiative: " + ", ".join(parts)
+
+
+_ATTACK_RE = re.compile(
+    r"\b(attack|attacks|attacking|shoot|shoots|shooting|fire|fires|firing|"
+    r"strike|strikes|striking|swing|swings|swinging|stab|stabs|stabbing|"
+    r"slash|slashes|slashing|bow|hit|hits|hitting|cast|casts|casting|spell|spells)\b",
+    re.I,
+)
+_HEAL_RE = re.compile(
+    r"\b(potion|potions|heal|heals|healing|drink|drinks|drinking)\b",
+    re.I,
+)
+_DODGE_RE = re.compile(
+    r"\b(dodge|dodges|dodging|defend|defends|defending|defense|defensive|"
+    r"retreat|retreats|retreating|flee|flees|fleeing|disengage)\b",
+    re.I,
+)
+_DICE_ROLL_RE = re.compile(r"\brolls?\s+d\d+\b", re.I)
+
+
+# "Thorne takes 14 damage … now at 20 of 34 HP" is a sheet update, not a swing.
+# Damage-type words inside that report (slashing, hit) must not start an attack.
+_HP_REPORT_RE = re.compile(
+    r"\b(?:takes|take|took|suffers|suffered)\s+\d+\s+(?:points of\s+)?damage\b"
+    r"|(?:now at|down to)\s+\d+\s+(?:of|/)\s+\d+",
+    re.I,
+)
+
+
+def classify_combat_text(text: str) -> str | None:
+    """Map a free-text combat message onto the rules engine, or a dice report.
+
+    Returns ``attack``, ``dodge``, ``heal``, ``roll``, or None.
+    Attack wording wins over a dice report so "I roll to attack" still attacks.
+    An HP report is neither: the sheet update has to reach the character.
+    """
+    if not text:
+        return None
+    if _HP_REPORT_RE.search(text):
+        return None
+    if _ATTACK_RE.search(text):
+        return "attack"
+    if _HEAL_RE.search(text):
+        return "heal"
+    if _DODGE_RE.search(text):
+        return "dodge"
+    if _DICE_ROLL_RE.search(text):
+        return "roll"
+    return None
+
+
 def start_encounter(characters: list[dict], enemies: list[dict]) -> dict:
     """Roll initiative and build the full combat state.
 
@@ -151,12 +221,13 @@ def start_encounter(characters: list[dict], enemies: list[dict]) -> dict:
         by_id[c.id]["initiative"] = c.initiative
     ordered_entries = [by_id[c.id] for c in ordered]
 
+    summary = format_initiative_summary({"combatants": ordered_entries})
     return {
         "round_number": 1,
         "current_turn_index": 0,
         "initiative_order": [e["name"] for e in ordered_entries],
         "combatants": ordered_entries,
-        "log": [],
+        "log": [summary],
     }
 
 
@@ -250,15 +321,429 @@ def run_pending_monster_turns(state: dict) -> dict:
     return {"events": events, "combat_over": over, "victory": victory}
 
 
+def current_combatant(state: dict) -> dict | None:
+    """The combatant the initiative index currently points at."""
+    entries = state.get("combatants") or []
+    if not entries:
+        return None
+    idx = int(state.get("current_turn_index") or 0)
+    if idx < 0 or idx >= len(entries):
+        return None
+    return entries[idx]
+
+
+def announce_current_player(state: dict) -> str:
+    """Name the player who is up, so a reply never ends on an enemy turn."""
+    current = current_combatant(state)
+    if current and current.get("is_player"):
+        return f"It is now {current['name']}'s turn."
+    return ""
+
+
+def hp_updates_from_state(state: dict) -> list[dict]:
+    """Player HP snapshot for phones and the TV party list."""
+    updates = []
+    for entry in state.get("combatants") or []:
+        if not entry.get("is_player"):
+            continue
+        updates.append({
+            "character_id": entry.get("id"),
+            "name": entry.get("name"),
+            "hp": max(0, int(entry.get("hp") or 0)),
+            "max_hp": max(0, int(entry.get("max_hp") or 0)),
+        })
+    return updates
+
+
+def _clean_actor_name(raw: str) -> str:
+    name = re.sub(r"^(?:the|a|an)\s+", "", (raw or "").strip(), flags=re.I)
+    return name.strip(" .\"'")
+
+
+def _names_match(query: str, full: str) -> bool:
+    q = _clean_actor_name(query).lower()
+    f = (full or "").strip().lower()
+    if not q or not f:
+        return False
+    if q == f:
+        return True
+    first = f.split()[0]
+    if q == first:
+        return True
+    if f.startswith(q + " ") or q.startswith(f + " "):
+        return True
+    return False
+
+
+def _combatant_named(state: dict, raw: str) -> dict | None:
+    """Find a combatant named by narration. Prefer the longest matching name."""
+    name = _clean_actor_name(raw)
+    if not name:
+        return None
+    best: dict | None = None
+    best_len = 0
+    lowered = name.lower()
+    for entry in state.get("combatants") or []:
+        entry_name = entry.get("name") or ""
+        if _names_match(name, entry_name) or (
+            entry_name and (entry_name.lower() in lowered or lowered in entry_name.lower())
+        ):
+            if len(entry_name) > best_len:
+                best = entry
+                best_len = len(entry_name)
+    return best
+
+
+# "It is now Crimson Fang Legionnaire 1's turn"
+_TURN_HANDOFF_RE = re.compile(
+    r"(?:it is|it['’]s)\s+(?:now\s+)?(?P<name>.+?)['’]s\s+turn\b",
+    re.I,
+)
+_WHAT_DO_YOU_DO_RE = re.compile(r"\s*what do you do\??", re.I)
+_HP_ASK_RE = re.compile(
+    r"(?i)[^.?!]*\b(?:what is your|what['’]s your|how much damage|report your|"
+    r"tell me your|calculate your|let me know your)\b[^.?!]*"
+    r"(?:hp|hit points|damage)[^.?!]*[.?!]?"
+)
+
+
+def narration_assigns_nonplayer(narration: str, state: dict) -> bool:
+    """True when the reply puts an enemy or NPC on the spot and waits.
+
+    Only combatants already in the initiative count. An unknown name (a
+    villager, a shopkeeper) must not skip the player who is actually up.
+    """
+    if not narration or not state.get("combatants"):
+        return False
+    match = _TURN_HANDOFF_RE.search(narration)
+    if match:
+        found = _combatant_named(state, match.group("name"))
+        if found is not None and not found.get("is_player"):
+            return True
+    ask = _WHAT_DO_YOU_DO_RE.search(narration)
+    if not ask:
+        return False
+    window = narration[max(0, ask.start() - 160):ask.start()].lower()
+    for entry in state.get("combatants") or []:
+        if entry.get("is_player"):
+            continue
+        enemy = (entry.get("name") or "").lower()
+        if enemy and enemy in window:
+            return True
+    return False
+
+
+def resolve_waiting_monster_turn(state: dict, narration: str | None = None) -> dict:
+    """Run enemy/NPC turns immediately so combat never waits on the players.
+
+    If narration declares a monster's turn while a player is still marked
+    current, that player's turn has ended. Advance, then resolve every
+    following non-player until a player is up or the fight is over.
+    """
+    if narration and narration_assigns_nonplayer(narration, state):
+        current = current_combatant(state)
+        if current and current.get("is_player"):
+            _advance_turn(state)
+    current = current_combatant(state)
+    if current is None or current.get("is_player"):
+        return {"events": [], "combat_over": False, "victory": False}
+    return run_pending_monster_turns(state)
+
+
+def prepare_player_facing_narration(narration: str, state: dict | None) -> str:
+    """Drop monster-turn handoffs and requests for the players to report HP.
+
+    The rules engine owns enemy turns and hit points. A reply that asks the
+    table to play a legionnaire, or to do the HP math, is rewritten so the
+    next player character is named instead.
+    """
+    if not narration:
+        return narration
+    state = state or {}
+    player_line = announce_current_player(state)
+    replaced = False
+
+    def _replace_handoff(match: re.Match) -> str:
+        nonlocal replaced
+        found = _combatant_named(state, match.group("name"))
+        if found is not None and not found.get("is_player"):
+            replaced = True
+            return player_line
+        return match.group(0)
+
+    updated = _TURN_HANDOFF_RE.sub(_replace_handoff, narration)
+    if not replaced and player_line and narration_assigns_nonplayer(narration, state):
+        updated = _WHAT_DO_YOU_DO_RE.sub(f" {player_line}", updated, count=1)
+        replaced = True
+    elif replaced:
+        updated = _WHAT_DO_YOU_DO_RE.sub("", updated)
+    updated = _HP_ASK_RE.sub("", updated)
+    updated = re.sub(r"[ \t]{2,}", " ", updated)
+    updated = re.sub(r"\s+([.?!])", r"\1", updated)
+    return updated.strip()
+
+
+def combat_prompt_brief(state: dict | None) -> str:
+    """Authoritative combat block injected into the DM's context."""
+    if not state or not state.get("combatants"):
+        return ""
+    lines = [
+        "## Active combat (rules engine — authoritative)",
+        format_initiative_summary(state),
+    ]
+    current = current_combatant(state)
+    if current:
+        kind = "player character" if current.get("is_player") else "enemy/NPC"
+        lines.append(f"It is {current.get('name', 'someone')}'s turn ({kind}).")
+    for entry in state.get("combatants") or []:
+        if entry.get("is_player"):
+            lines.append(
+                f"{entry.get('name', 'Adventurer')} HP {int(entry.get('hp') or 0)}/{int(entry.get('max_hp') or 0)}."
+            )
+    lines.append(
+        "Resolve every enemy and NPC turn yourself in this same reply, then name the next player character. "
+        "Do not hand an enemy or NPC turn to the players. "
+        "Do not ask players to report their HP; the numbers above are already on the sheet."
+    )
+    return "\n".join(lines)
+
+
+_TAKES_DAMAGE_RE = re.compile(
+    r"(?P<name>[A-Z][\w'’\-]*(?:\s+[A-Z][\w'’\-]*)*)\s+"
+    r"(?:takes|take|took|suffers|suffered)\s+(?P<amt>\d+)\s+(?:points of\s+)?damage\b",
+)
+_YOU_TAKE_RE = re.compile(
+    r"\byou\s+(?:take|took|suffer|suffered)\s+(?P<amt>\d+)\s+(?:points of\s+)?damage\b",
+    re.I,
+)
+_ABS_HP_RE = re.compile(
+    r"(?:(?P<name>(?-i:[A-Z])[\w'’\-]*(?:\s+(?-i:[A-Z])[\w'’\-]*)*)\s+)?"
+    r"(?:is |are )?(?:now at|down to)\s+(?P<hp>\d+)\s+(?:of|/)\s+(?P<max>\d+)\s*(?:hp|hit points)\b",
+    re.I,
+)
+_YOU_ABS_RE = re.compile(
+    r"\byou (?:are|['’]re) (?:now at|down to)\s+(?P<hp>\d+)\s+(?:of|/)\s+(?P<max>\d+)\s*(?:hp|hit points)\b",
+    re.I,
+)
+_DAMAGE_TYPE = (
+    r"slashing|piercing|bludgeoning|lightning|fire|cold|poison|acid|"
+    r"necrotic|radiant|thunder|force|psychic"
+)
+# "3 (1d6) lightning" keeps the number and the type with a parenthetical between them.
+_TYPED_DAMAGE_RE = re.compile(
+    rf"(\d+)\s+(?:\([^)]*\)\s+)?(?:points of\s+)?(?:{_DAMAGE_TYPE})\b",
+    re.I,
+)
+_HIT_TARGET_RE = re.compile(
+    r"\b(?:hit|hits|hitting|strikes|strike|wounds|damages|against)\s+"
+    r"(?P<name>[A-Z][\w'’\-]*(?:\s+[A-Z][\w'’\-]*)*)",
+)
+# A narrated fight, as opposed to "it's the innkeeper's turn" at the bar.
+_COMBAT_CUE_RE = re.compile(
+    r"\b(attack|attacks|hit|hits|damage|wounded|wound|initiative|combat|battle|"
+    r"slash|slashing|weapon|hammer|sword|bow|armor|legionnaire|goblin|orc|"
+    r"captain|soldier|bandit|creature|monster|enemy|foe|healing|spell)\b",
+    re.I,
+)
+
+
+def settle_narrated_monster_turn(
+    narration: str,
+    characters: list[dict],
+    actor_id: str | None = None,
+) -> str:
+    """Resolve a narrated enemy turn the table was told to play.
+
+    When the DM says it is a non-player's turn and waits — and the reply is
+    clearly a fight — roll that creature's attack, state the HP result, and
+    name a player character. Party members and quiet social turns are left
+    alone. Does not mutate ``characters``; the HP sentence is applied by
+    ``apply_hp_text``.
+    """
+    if not narration or not characters:
+        return narration
+    match = _TURN_HANDOFF_RE.search(narration)
+    if match is None or not _COMBAT_CUE_RE.search(narration):
+        return narration
+    raw_name = _clean_actor_name(match.group("name"))
+    players = [c for c in characters if c.get("name")]
+    if any(_names_match(raw_name, c.get("name") or "") for c in players):
+        return narration
+    target = None
+    hit = _HIT_TARGET_RE.search(narration)
+    if hit:
+        target = _find_entry(players, hit.group("name"))
+    if target is None:
+        target = _find_entry(players, actor_id=actor_id) or (players[0] if players else None)
+    if target is None:
+        return narration
+    roller = DiceRoller()
+    attack = roller.roll("1d20")
+    bonus = 4
+    total = attack.total + bonus
+    ac = int(target.get("ac") or 10)
+    max_hp = int(target.get("max_hp") or target.get("hp") or 1)
+    if attack.is_fumble or total < ac:
+        action = (
+            f"{raw_name} attacks {target.get('name')} and misses "
+            f"(d20 {attack.rolls[0]}+{bonus} = {total} vs AC {ac})."
+        )
+    else:
+        amount = roller.roll("1d6+2").total
+        new_hp = max(0, int(target.get("hp") or 0) - amount)
+        action = (
+            f"{raw_name} hits {target.get('name')} for {amount} damage "
+            f"(d20 {attack.rolls[0]}+{bonus} = {total} vs AC {ac}). "
+            f"{target.get('name')} is now at {new_hp} of {max_hp} HP."
+        )
+    handoff = f"It is now {target.get('name')}'s turn."
+    updated = _TURN_HANDOFF_RE.sub(f"{action} {handoff}", narration, count=1)
+    updated = _WHAT_DO_YOU_DO_RE.sub("", updated)
+    updated = _HP_ASK_RE.sub("", updated)
+    updated = re.sub(r"[ \t]{2,}", " ", updated)
+    return updated.strip()
+
+
+def _player_entries(entries: list[dict]) -> list[dict]:
+    return [e for e in entries if e.get("is_player", True)]
+
+
+def _find_entry(entries: list[dict], name: str | None = None, actor_id: str | None = None) -> dict | None:
+    players = _player_entries(entries)
+    if name:
+        matches = [e for e in players if _names_match(name, e.get("name") or "")]
+        if len(matches) == 1:
+            return matches[0]
+    if actor_id:
+        for entry in players:
+            if entry.get("id") == actor_id:
+                return entry
+    return None
+
+
+def _rightmost_player(entries: list[dict], window: str) -> dict | None:
+    """The player named latest in ``window``, for '… Thorne … is now at 20'."""
+    best: dict | None = None
+    best_at = -1
+    for entry in _player_entries(entries):
+        name = entry.get("name") or ""
+        if not name:
+            continue
+        found_at = -1
+        for match in re.finditer(rf"\b{re.escape(name)}\b", window):
+            found_at = match.start()
+        first = name.split()[0]
+        if first and first != name:
+            for match in re.finditer(rf"\b{re.escape(first)}\b", window):
+                found_at = max(found_at, match.start())
+        if found_at >= best_at and found_at >= 0:
+            best = entry
+            best_at = found_at
+    return best
+
+
+def apply_hp_text(entries: list[dict], text: str, actor_id: str | None = None) -> list[str]:
+    """Apply a damage report or an absolute HP statement to player entries.
+
+    Mutates ``entries`` in place. An absolute "now at 20 of 34 HP" wins over
+    a damage amount in the same text, so a report cannot be subtracted twice.
+    Returns short log lines for each character whose HP changed.
+    """
+    if not text or not entries:
+        return []
+    notes: list[str] = []
+    consumed: set[str] = set()
+
+    def _set_hp(entry: dict, hp: int, reason: str, reported_max: int | None = None) -> None:
+        key = str(entry.get("id") or entry.get("name"))
+        if key in consumed:
+            return
+        if reported_max and int(reported_max) > 0:
+            entry["max_hp"] = int(reported_max)
+        before = int(entry.get("hp") or 0)
+        max_hp = int(entry.get("max_hp") or before or hp)
+        hp = max(0, min(max_hp, int(hp))) if max_hp else max(0, int(hp))
+        if hp == before:
+            consumed.add(key)
+            return
+        entry["hp"] = hp
+        if hp <= 0 and entry.get("is_player"):
+            # Unconscious, not dead — death saves still happen on their turn.
+            entry["is_alive"] = entry.get("is_alive", True)
+        consumed.add(key)
+        notes.append(f"{entry.get('name', 'Someone')} {reason} ({hp}/{entry.get('max_hp', hp)} HP).")
+
+    for match in _ABS_HP_RE.finditer(text):
+        name = match.group("name")
+        # A capitalized name that isn't a player ("The Captain is now at")
+        # belongs to that creature. Only an unnamed "is now at" looks backward
+        # for the player the sentence is about.
+        if name:
+            entry = _find_entry(entries, name)
+        else:
+            window = text[max(0, match.start() - 180):match.start()]
+            entry = _rightmost_player(entries, window)
+        if entry is not None:
+            _set_hp(
+                entry,
+                int(match.group("hp")),
+                f"is now at {match.group('hp')} HP",
+                int(match.group("max")),
+            )
+
+    for match in _YOU_ABS_RE.finditer(text):
+        entry = _find_entry(entries, actor_id=actor_id)
+        if entry is not None:
+            _set_hp(entry, int(match.group("hp")), f"is now at {match.group('hp')} HP")
+
+    for match in _TAKES_DAMAGE_RE.finditer(text):
+        entry = _find_entry(entries, match.group("name"))
+        if entry is None:
+            continue
+        _set_hp(entry, int(entry.get("hp") or 0) - int(match.group("amt")), f"takes {match.group('amt')} damage")
+
+    for match in _YOU_TAKE_RE.finditer(text):
+        entry = _find_entry(entries, actor_id=actor_id)
+        if entry is not None:
+            _set_hp(entry, int(entry.get("hp") or 0) - int(match.group("amt")), f"takes {match.group('amt')} damage")
+
+    typed = [int(n) for n in _TYPED_DAMAGE_RE.findall(text)]
+    if typed:
+        target = None
+        hit = _HIT_TARGET_RE.search(text)
+        if hit:
+            target = _find_entry(entries, hit.group("name"))
+        if target is None and re.search(r"\byou take\b", text, re.I):
+            target = _find_entry(entries, actor_id=actor_id)
+        if target is not None:
+            amount = sum(typed)
+            _set_hp(target, int(target.get("hp") or 0) - amount, f"takes {amount} damage")
+
+    return notes
+
+
 def resolve_player_action(
     state: dict,
     actor_id: str,
     action_type: str,
     target_id: str | None = None,
+    target_x: int | None = None,
+    target_y: int | None = None,
+    *,
+    spell_name: str | None = None,
+    slot_level: int | None = None,
+    shove_type: str | None = None,
 ) -> dict:
     """Apply one player combat action, then auto-run monster turns until the
     next living player's turn (or combat ends). Returns a result dict with
-    per-event descriptions; mutates `state` in place."""
+    per-event descriptions; mutates `state` in place.
+
+    ``target_x``, ``target_y``, ``spell_name``, ``slot_level``, and
+    ``shove_type`` are accepted so the combat-action route can pass the full
+    request body. Movement and named-spell resolution are not handled here;
+    attack / dodge / heal / pass are.
+    """
+    del target_x, target_y, spell_name, slot_level, shove_type
     engine = RulesEngine(DiceRoller())
     entries = state.get("combatants", [])
     by_id = {e["id"]: e for e in entries}
@@ -334,6 +819,10 @@ def resolve_player_action(
         return _finish(state, entries, events, victory)
 
     next_up = entries[state["current_turn_index"]]["name"]
+    announcement = announce_current_player(state)
+    if announcement:
+        events.append(announcement)
+        _log(state, announcement)
     return {"events": events, "combat_over": False, "victory": False, "next_turn": next_up}
 
 

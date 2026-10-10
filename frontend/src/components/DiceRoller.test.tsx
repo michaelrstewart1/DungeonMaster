@@ -26,6 +26,23 @@ describe('DiceRoller', () => {
     expect(mockOnRoll).toHaveBeenCalledWith('1d20')
   })
 
+  it('sends the modifier the player set', () => {
+    render(<DiceRoller onRoll={mockOnRoll} defaultExpanded />)
+    for (let i = 0; i < 5; i += 1) {
+      fireEvent.click(screen.getByRole('button', { name: 'Increase modifier' }))
+    }
+    expect(screen.getByText('+5')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'd20' }))
+    expect(mockOnRoll).toHaveBeenCalledWith('1d20+5')
+  })
+
+  it('prefills the modifier the sheet suggests', () => {
+    render(<DiceRoller onRoll={mockOnRoll} defaultExpanded suggestedModifier={6} />)
+    expect(screen.getByText('+6')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: 'd20' }))
+    expect(mockOnRoll).toHaveBeenCalledWith('1d20+6')
+  })
+
   it('displays last roll result when provided', () => {
     render(
       <DiceRoller

@@ -2,10 +2,21 @@
  * Shows their character sheet, action input, turn indicator, and narrative feed.
  * Supports push-to-talk voice input via audio WebSocket.
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
-import { loadIdentity } from '../utils/playerIdentity';
+import { loadIdentity, updateIdentity } from '../utils/playerIdentity';
+import {
+  applyHpUpdates,
+  diceRollLine,
+  inferEngineAction,
+  initiativeAnnouncement,
+  initiativeChips,
+  isDiceRollReport,
+  seatMayActAs,
+} from '../game/combatTurn';
+import { rollDiceNotation } from '../game/diceRoll';
+import { suggestedRollModifier } from '../game/rollModifier';
 import { stripUuidLabel } from '../utils/narrative';
 import { useGameSocket } from '../hooks/useGameSocket';
 import type { WSMessage } from '../api/websocket';
@@ -73,9 +84,11 @@ export function PlayerView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const identity = sessionId ? loadIdentity(sessionId) : null;
   const playerName = identity?.playerName || sessionStorage.getItem('playerName') || 'Adventurer';
-  const characterId = identity?.characterId || sessionStorage.getItem('characterId') || undefined;
+  const [characterId, setCharacterId] = useState<string | undefined>(
+    () => identity?.characterId || sessionStorage.getItem('characterId') || undefined,
+  );
   const playerId = identity?.playerId || sessionStorage.getItem('playerId') || '';
-  const { connected, messages, players, sendChat, sendAction, joinAsPlayer } = useGameSocket(sessionId);
+  const { connected, messages, players, send, sendChat, sendAction, joinAsPlayer } = useGameSocket(sessionId);
   const { addToast } = useToast();
   // Keep the phone screen awake — players may not touch it for minutes
   // between turns, and a locked phone drops off the game.
@@ -116,6 +129,18 @@ export function PlayerView() {
       joinAsPlayer(playerName, characterId);
     }
   }, [connected, playerName, characterId, joinAsPlayer]);
+
+  // A reload or QR rejoin can open a new socket. The server rebinds that
+  // socket to the existing seat and keeps the claimed character; adopt that
+  // character here so the sheet, the banner, and the action all name the same one.
+  useEffect(() => {
+    if (!sessionId || !playerId || players.length === 0) return;
+    const me = players.find((p) => p.id === playerId);
+    if (me?.characterId && me.characterId !== characterId) {
+      setCharacterId(me.characterId);
+      updateIdentity(sessionId, { characterId: me.characterId });
+    }
+  }, [players, playerId, sessionId, characterId]);
 
   // Connect to audio WebSocket for STT (with automatic reconnect — PTT
   // must keep working through wifi blips and backend restarts).
@@ -174,18 +199,37 @@ export function PlayerView() {
       .catch(() => {});
   }, []);
 
-  // Determine turn status from game state / combat initiative
+  // Determine turn status from game state / combat initiative.
+  // The banner is on only when this seat owns the current actor — the same
+  // fact the server checks before it accepts Attack.
   useEffect(() => {
     if (!character) return;
     if (phase === 'combat' && combatState?.initiative_order?.length) {
-      const upNow = combatState.initiative_order[combatState.current_turn_index];
-      setIsMyTurn(upNow === character.name || upNow === character.id);
+      const current = initiativeChips(combatState).find((c) => c.isCurrent);
+      const iAmCurrent = !!current && (current.id === characterId || current.name === character.name || current.id === character.id);
+      const mayAct = seatMayActAs({
+        playerId,
+        characterId: characterId || character.id,
+        players,
+        rosterReady: players.length > 0,
+      });
+      setIsMyTurn(iAmCurrent && mayAct);
       return;
     }
     if (!gameState) return;
     const currentTurn = (gameState as GameState & { current_turn?: string }).current_turn;
     setIsMyTurn(currentTurn === character.id);
-  }, [gameState, character, phase, combatState]);
+  }, [gameState, character, phase, combatState, playerId, characterId, players]);
+
+  // A combat reply that never arrives must not leave Attack dimmed for the rest of the round.
+  useEffect(() => {
+    if (!waitingForDM || phase !== 'combat') return;
+    const timer = window.setTimeout(() => {
+      setWaitingForDM(false);
+      addToast({ type: 'error', message: "The DM didn't answer in time. You can try again." });
+    }, 25000);
+    return () => window.clearTimeout(timer);
+  }, [waitingForDM, phase, addToast]);
 
   // Load game state and character
   useEffect(() => {
@@ -258,7 +302,13 @@ export function PlayerView() {
     }
 
     if (last.type === 'turn_result') {
-      const p = last.payload as { narration?: string; character_id?: string; current_turn?: string };
+      const p = last.payload as {
+        narration?: string;
+        character_id?: string;
+        current_turn?: string;
+        hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[];
+        combat_state?: CombatState | null;
+      };
       setNarrative((prev) => [
         ...prev,
         {
@@ -269,6 +319,10 @@ export function PlayerView() {
         },
       ]);
       setWaitingForDM(false);
+      if (p.combat_state) setCombatState(p.combat_state);
+      if (p.hp_updates?.length) {
+        setCharacter((prev) => (prev ? applyHpUpdates([prev], p.hp_updates)[0] : prev));
+      }
       if (p.current_turn && character) {
         setIsMyTurn(p.current_turn === character.id);
       }
@@ -307,7 +361,7 @@ export function PlayerView() {
       if (p.combat_state) setCombatState(p.combat_state);
       setNarrative((prev) => [
         ...prev,
-        { id: uuid(), text: '⚔️ Combat begins — roll for initiative!', type: 'system', timestamp: new Date().toISOString() },
+        { id: uuid(), text: `⚔️ ${initiativeAnnouncement(p.combat_state)}`, type: 'system', timestamp: new Date().toISOString() },
       ]);
     }
 
@@ -338,9 +392,12 @@ export function PlayerView() {
         if (p.phase === 'combat' || p.combat_state.combatants?.length) setPhase('combat');
       }
       // Sync my HP from the authoritative combat state
+      const hpUpdates = (p as { hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[] }).hp_updates;
       const me = p.combat_state?.combatants?.find((c) => c.id === characterId);
       if (me) {
-        setCharacter((prev) => prev ? { ...prev, hp: me.hp } : prev);
+        setCharacter((prev) => prev ? { ...prev, hp: me.hp, max_hp: me.max_hp || prev.max_hp } : prev);
+      } else if (hpUpdates?.length) {
+        setCharacter((prev) => (prev ? applyHpUpdates([prev], hpUpdates)[0] : prev));
       } else if (p.combat_over && characterId) {
         fetch(`${API_BASE}/characters/${characterId}`)
           .then((r) => (r.ok ? r.json() : null))
@@ -360,6 +417,25 @@ export function PlayerView() {
         const ct = (gs as GameState & { current_turn?: string }).current_turn;
         setIsMyTurn(ct === character.id);
       }
+    }
+
+    if ((last.type as string) === 'error') {
+      const p = last.payload as { message?: string };
+      setWaitingForDM(false);
+      if (p.message) addToast({ type: 'error', message: p.message });
+    }
+
+    if ((last.type as string) === 'dice_roll') {
+      const p = last.payload as { character_name?: string; notation?: string; result?: number; note?: string };
+      if (p.notation && typeof p.result === 'number') {
+        const text = diceRollLine(p.character_name || 'Someone', p.notation, p.result, p.note || '');
+        setNarrative((prev) => (
+          prev.some((e) => e.text === text)
+            ? prev
+            : [...prev, { id: uuid(), text, type: 'system' as const, timestamp: new Date().toISOString() }]
+        ));
+      }
+      setWaitingForDM(false);
     }
 
     if ((last.type as string) === 'turn_update') {
@@ -518,9 +594,50 @@ export function PlayerView() {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
+  const inEngineCombat = phase === 'combat' && !!combatState?.combatants?.length;
+  const currentCombatant = inEngineCombat
+    ? combatState?.combatants?.[combatState.current_turn_index ?? -1]
+    : undefined;
+  // The engine index is whose turn it is. A narrated "what do you do?" for a
+  // monster must not be the only signal, or the real player's phone stays dark.
+  const showMyTurn = inEngineCombat
+    ? !!currentCombatant?.is_player && currentCombatant.id === characterId
+    : isMyTurn;
+  const rollRequestText = useMemo(() => {
+    for (let i = narrative.length - 1; i >= 0; i -= 1) {
+      const entry = narrative[i];
+      if (entry.type === 'narration' && entry.text) return entry.text;
+    }
+    return '';
+  }, [narrative]);
+  const suggestedModifier = useMemo(
+    () => suggestedRollModifier(character, rollRequestText),
+    [character, rollRequestText],
+  );
+
   function handleSendAction(text?: string) {
     const msg = (text || actionText).trim();
     if (!msg) return;
+    // Typed attacks use the same rules-engine call and ownership check as Attack.
+    const engineAction = inEngineCombat ? inferEngineAction(msg) : null;
+    if (engineAction) {
+      setNarrative((prev) => [
+        ...prev,
+        { id: uuid(), text: msg, type: 'action', sender: playerName, timestamp: new Date().toISOString() },
+      ]);
+      setActionText('');
+      void handleCombatAction(engineAction);
+      return;
+    }
+    // A dice report during combat is not a turn. Recording it must not lock the buttons.
+    if (inEngineCombat && isDiceRollReport(msg)) {
+      setNarrative((prev) => [
+        ...prev,
+        { id: uuid(), text: msg, type: 'system', timestamp: new Date().toISOString() },
+      ]);
+      setActionText('');
+      return;
+    }
     sendAction(character?.id || 'unknown', msg);
     setNarrative((prev) => [
       ...prev,
@@ -542,10 +659,11 @@ export function PlayerView() {
   const ENGINE_COMBAT_MAP: Record<string, 'attack' | 'dodge' | 'heal'> = {
     'Attack': 'attack',
     'Defend': 'dodge',
+    'Cast Spell': 'attack',
     'Dodge': 'dodge',
     'Use Potion': 'heal',
+    'Retreat': 'dodge',
   };
-  const inEngineCombat = phase === 'combat' && !!combatState?.combatants?.length;
 
   async function handleCombatAction(actionType: 'attack' | 'dodge' | 'heal') {
     if (!sessionId || !characterId) return;
@@ -558,6 +676,7 @@ export function PlayerView() {
           actor_id: characterId,
           action_type: actionType,
           target_id: actionType === 'heal' ? characterId : undefined,
+          ...(playerId ? { player_id: playerId } : {}),
         }),
       });
       if (!res.ok) {
@@ -573,26 +692,34 @@ export function PlayerView() {
   }
 
   function handleDiceRoll(notation: string) {
-    const match = notation.match(/(\d+)d(\d+)/);
-    if (match) {
-      const count = parseInt(match[1]);
-      const sides = parseInt(match[2]);
-      const rolls = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
-      const total = rolls.reduce((a, b) => a + b, 0);
-      const result: DiceResult = {
-        notation,
-        rolls,
-        modifier: 0,
-        total,
-        is_critical: sides === 20 && rolls[0] === 20,
-        is_fumble: sides === 20 && rolls[0] === 1,
-      };
+    const result = rollDiceNotation(notation);
+    if (result) {
       setLastDiceResult(result);
 
-      // Auto-submit to DM
       const charName = character?.name || playerName;
       const critNote = result.is_critical ? ' (Natural 20!)' : result.is_fumble ? ' (Natural 1!)' : '';
-      const rollMsg = `🎲 ${charName} rolls d${sides}: ${total}${critNote}`;
+      const rollMsg = diceRollLine(charName, notation, result.total, critNote);
+      send({
+        type: 'dice_roll',
+        character_id: characterId,
+        character_name: charName,
+        notation,
+        rolls: result.rolls,
+        modifier: result.modifier,
+        result: result.total,
+        note: critNote,
+        purpose: inEngineCombat ? 'noted' : undefined,
+      });
+      if (inEngineCombat) {
+        // Initiative is already rolled by the rules engine. Show the roll
+        // without sending it through the DM and locking every combat button.
+        setNarrative((prev) => (
+          prev.some((e) => e.text === rollMsg)
+            ? prev
+            : [...prev, { id: uuid(), text: rollMsg, type: 'system', timestamp: new Date().toISOString() }]
+        ));
+        return;
+      }
       handleSendAction(rollMsg);
     }
   }
@@ -601,9 +728,9 @@ export function PlayerView() {
   const hpPct = character ? Math.round((character.hp / (character.max_hp || character.hp)) * 100) : 100;
 
   return (
-    <div className={`player-view ${isMyTurn ? 'pv-my-turn' : ''}`}>
+    <div className={`player-view ${showMyTurn ? 'pv-my-turn' : ''}`}>
       {/* Turn overlay banner */}
-      {isMyTurn && (
+      {showMyTurn && (
         <div className="pv-turn-overlay">
           <div className="pv-turn-overlay-text">⚔️ YOUR TURN ⚔️</div>
         </div>
@@ -615,7 +742,7 @@ export function PlayerView() {
         <span className={`pv-connection ${connected ? 'pv-online' : 'pv-offline'}`}>
           {connected ? '🟢' : '🔴'}
         </span>
-        {isMyTurn && <span className="pv-turn-badge">⚔️ YOUR TURN</span>}
+        {showMyTurn && <span className="pv-turn-badge">⚔️ YOUR TURN</span>}
       </div>
 
       {/* Character quick stats */}
@@ -679,12 +806,13 @@ export function PlayerView() {
           {inEngineCombat && combatState && (
             <div className="pv-initiative-strip">
               <span className="pv-round-chip">R{combatState.round_number}</span>
-              {combatState.initiative_order.map((n, i) => (
+              {initiativeChips(combatState).map((c) => (
                 <span
-                  key={`${n}-${i}`}
-                  className={`pv-init-chip ${i === combatState.current_turn_index ? 'pv-init-chip-active' : ''}`}
+                  key={c.id}
+                  className={`pv-init-chip ${c.isCurrent ? 'pv-init-chip-active' : ''}`}
+                  data-initiative={c.initiative ?? ''}
                 >
-                  {n}
+                  {c.initiative != null ? `${c.initiative} ${c.name}` : c.name}
                 </span>
               ))}
             </div>
@@ -699,8 +827,8 @@ export function PlayerView() {
                   key={action.label}
                   className="pv-quick-action-btn"
                   onClick={() => engineAction ? handleCombatAction(engineAction) : handleSendAction(`${action.emoji} ${action.label}`)}
-                  disabled={waitingForDM || (!!engineAction && !isMyTurn)}
-                  title={engineAction && !isMyTurn ? 'Wait for your turn' : undefined}
+                  disabled={waitingForDM || (!!engineAction && !showMyTurn)}
+                  title={engineAction && !showMyTurn ? 'Wait for your turn' : undefined}
                 >
                   <span>{action.emoji}</span>
                   <span>{action.label}</span>
@@ -716,7 +844,7 @@ export function PlayerView() {
               value={actionText}
               onChange={(e) => setActionText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendAction()}
-              placeholder={isTranscribing ? 'Transcribing...' : isMyTurn ? "It's your turn! What do you do?" : 'What do you do?'}
+              placeholder={isTranscribing ? 'Transcribing...' : showMyTurn ? "It's your turn! What do you do?" : 'What do you do?'}
               disabled={waitingForDM}
               autoComplete="off"
               autoCorrect="off"
@@ -774,7 +902,12 @@ export function PlayerView() {
       {/* Dice tab */}
       {tab === 'dice' && (
         <div className="pv-dice-tab">
-          <DiceRoller onRoll={handleDiceRoll} lastResult={lastDiceResult ?? undefined} defaultExpanded />
+          <DiceRoller
+            onRoll={handleDiceRoll}
+            lastResult={lastDiceResult ?? undefined}
+            suggestedModifier={suggestedModifier}
+            defaultExpanded
+          />
         </div>
       )}
 

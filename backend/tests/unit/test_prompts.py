@@ -93,6 +93,43 @@ class TestDMSystemPrompt:
             or "describe" in text_lower
         )
 
+    def test_dm_system_prompt_does_not_ask_for_initiative_rolls(self):
+        """Initiative is already rolled; the DM must not request a useless roll."""
+        template = PromptTemplates.dm_system_prompt(
+            world_context="World",
+            characters=[],
+            game_state={},
+        )
+        lowered = template.lower()
+        assert "do not ask players to roll for initiative" in lowered
+        assert "tell all players to roll" not in lowered
+
+        compact = PromptTemplates.dm_system_prompt(
+            world_context="World",
+            characters=[],
+            game_state={},
+            compact=True,
+        )
+        assert "do not ask players to roll for initiative" in compact.lower()
+
+    def test_dm_system_prompt_resolves_monster_turns_and_hp(self):
+        """Enemy turns and hit points stay with the DM, on every prompt size."""
+        full = PromptTemplates.dm_system_prompt(
+            world_context="World",
+            characters=[],
+            game_state={},
+        )
+        compact = PromptTemplates.dm_system_prompt(
+            world_context="World",
+            characters=[],
+            game_state={},
+            compact=True,
+        )
+        combat = PromptTemplates.combat_narration(["Fighter", "Goblin"], "Goblin", [])
+        for text in (full, compact, combat):
+            assert "Do not hand an enemy or NPC turn to the players" in text
+            assert "Do not ask players to report their HP" in text
+
     def test_dm_system_prompt_is_string(self):
         """DM system prompt returns a string."""
         result = PromptTemplates.dm_system_prompt(
