@@ -212,3 +212,50 @@ class TestCombatAction:
             json={"actor_id": "x", "action_type": "attack"},
         )
         assert resp.status_code == 404
+
+
+class TestReportedDamageReachesTheSheet:
+    async def test_typed_hp_report_updates_the_character(self, client: AsyncClient):
+        char_resp = await client.post(
+            "/api/characters",
+            json={
+                "name": "Thorne Ironfist",
+                "race": "dwarf",
+                "class_name": "fighter",
+                "level": 3,
+                "strength": 16,
+                "dexterity": 12,
+                "constitution": 16,
+                "hp": 34,
+                "max_hp": 34,
+                "ac": 18,
+            },
+        )
+        assert char_resp.status_code == 201, char_resp.text
+        char_id = char_resp.json()["id"]
+        camp_resp = await client.post(
+            "/api/campaigns",
+            json={
+                "name": "HP Campaign",
+                "description": "Damage reaches the sheet",
+                "character_ids": [char_id],
+                "world_state": {},
+                "dm_settings": {},
+            },
+        )
+        campaign_id = camp_resp.json()["id"]
+        session_id = (await client.post("/api/game/sessions", json={"campaign_id": campaign_id})).json()["id"]
+        resp = await client.post(
+            f"/api/game/sessions/{session_id}/action",
+            json={
+                "character_id": char_id,
+                "action": "Thorne takes 14 damage (11 slashing + 3 lightning) and is now at 20 of 34 HP.",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "what is your new hp" not in body["narration"].lower()
+        assert body["hp_updates"][0]["hp"] == 20
+        stored = (await client.get(f"/api/characters/{char_id}")).json()
+        assert stored["hp"] == 20
+        assert stored["max_hp"] == 34

@@ -1,4 +1,5 @@
 import type { CombatState } from '../types';
+import { parseDiceNotation } from './diceRoll';
 
 /** One row in the turn order, shared by the phone strip and the TV. */
 export interface InitiativeChip {
@@ -14,6 +15,7 @@ export interface InitiativeChip {
 export type EngineAction = 'attack' | 'dodge' | 'heal';
 
 const ATTACK_RE = /\b(attack|attacks|attacking|shoot|shoots|shooting|fire|fires|firing|strike|strikes|striking|swing|swings|swinging|stab|stabs|stabbing|slash|slashes|slashing|bow|hit|hits|hitting|cast|casts|casting|spell|spells)\b/i;
+const HP_REPORT_RE = /\b(?:takes|take|took|suffers|suffered)\s+\d+\s+(?:points of\s+)?damage\b|(?:now at|down to)\s+\d+\s+(?:of|\/)\s+\d+/i;
 const HEAL_RE = /\b(potion|potions|heal|heals|healing|drink|drinks|drinking)\b/i;
 const DODGE_RE = /\b(dodge|dodges|dodging|defend|defends|defending|defense|defensive|retreat|retreats|retreating|flee|flees|fleeing|disengage)\b/i;
 const DICE_RE = /\brolls?\s+d\d+\b/i;
@@ -23,6 +25,7 @@ const DICE_RE = /\brolls?\s+d\d+\b/i;
  * Attack wording wins over a dice report.
  */
 export function inferEngineAction(text: string): EngineAction | null {
+  if (HP_REPORT_RE.test(text)) return null;
   if (ATTACK_RE.test(text)) return 'attack';
   if (HEAL_RE.test(text)) return 'heal';
   if (DODGE_RE.test(text)) return 'dodge';
@@ -71,9 +74,47 @@ export function initiativeAnnouncement(state: CombatState | null | undefined): s
 }
 
 export function diceRollLine(name: string, notation: string, total: number, note = ''): string {
-  const die = /d(\d+)/i.exec(notation);
-  const label = die ? `d${die[1]}` : (notation || 'dice');
-  return `🎲 ${name} rolls ${label}: ${total}${note}`;
+  const parsed = parseDiceNotation(notation);
+  if (!parsed) {
+    const die = /d(\d+)/i.exec(notation || '');
+    const label = die ? `d${die[1]}` : (notation || 'dice');
+    return `🎲 ${name} rolls ${label}: ${total}${note}`;
+  }
+  const label = parsed.count === 1 ? `d${parsed.sides}` : `${parsed.count}d${parsed.sides}`;
+  if (!parsed.explicitModifier && parsed.modifier === 0) {
+    return `🎲 ${name} rolls ${label}: ${total}${note}`;
+  }
+  const diceSum = total - parsed.modifier;
+  const sign = parsed.modifier >= 0 ? '+' : '-';
+  const magnitude = Math.abs(parsed.modifier);
+  return `🎲 ${name} rolls ${label} (${diceSum}) ${sign} ${magnitude} = ${total}${note}`;
+}
+
+export interface HpUpdate {
+  character_id?: string;
+  name?: string;
+  hp: number;
+  max_hp?: number;
+}
+
+/** Merge a server HP push into the phone header or the TV party list. */
+export function applyHpUpdates<T extends { id: string; name?: string; hp: number; max_hp?: number }>(
+  characters: T[],
+  updates: HpUpdate[] | null | undefined,
+): T[] {
+  if (!updates?.length) return characters;
+  return characters.map((character) => {
+    const update = updates.find((entry) => (
+      (entry.character_id && entry.character_id === character.id)
+      || (entry.name && character.name && entry.name.toLowerCase() === character.name.toLowerCase())
+    ));
+    if (!update) return character;
+    return {
+      ...character,
+      hp: update.hp,
+      max_hp: update.max_hp ?? character.max_hp,
+    };
+  });
 }
 
 export interface SeatPlayer {

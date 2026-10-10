@@ -39,7 +39,8 @@ import { TradeArbitrationPanel } from '../components/TradeArbitrationPanel'
 import { WorldMapPanel } from '../components/WorldMapPanel'
 import type { Trade } from '../api/client'
 import type { GameState, GameMap, DiceResult, Character, WorldLocation, CombatState } from '../types'
-import { initiativeAnnouncement, toCombatantDisplays } from '../game/combatTurn'
+import { applyHpUpdates, initiativeAnnouncement, toCombatantDisplays } from '../game/combatTurn'
+import { rollDiceNotation } from '../game/diceRoll'
 import './GameSession.css'
 
 function formatTime(seconds: number): string {
@@ -658,7 +659,7 @@ export function GameSession() {
         }
         case 'turn_result': {
           setStreamingNarration('')
-          const result = msg.payload as { narration?: string; narrative?: string; mood?: string; dice_results?: DiceResult[]; detected_scene?: string; detected_npcs?: Array<{name: string; npc_type: string}>; environment?: Record<string, string> }
+          const result = msg.payload as { narration?: string; narrative?: string; mood?: string; dice_results?: DiceResult[]; detected_scene?: string; detected_npcs?: Array<{name: string; npc_type: string}>; environment?: Record<string, string>; hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[]; combat_state?: CombatState | null }
           const text = result.narration || result.narrative || 'The DM ponders...'
           setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
           processDMMessage(text)
@@ -701,6 +702,13 @@ export function GameSession() {
           }
           if (result.dice_results?.length) {
             setLastDiceResult(result.dice_results[0])
+          }
+          if (result.hp_updates?.length) {
+            setPartyCharacters((prev) => applyHpUpdates(prev, result.hp_updates))
+          }
+          if (result.combat_state) {
+            setCombatants(toCombatantDisplays(result.combat_state))
+            setGameState((prev) => prev ? { ...prev, phase: 'combat', combat_state: result.combat_state ?? prev.combat_state } : prev)
           }
           break
         }
@@ -750,6 +758,14 @@ export function GameSession() {
           const text = p.narration || (p.events || []).join(' ')
           if (text) {
             setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
+          }
+          const hpUpdates = (p as { hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[] }).hp_updates
+          const fromCombat = (nextCombat?.combatants || [])
+            .filter((c) => c.is_player)
+            .map((c) => ({ character_id: c.id, name: c.name, hp: c.hp, max_hp: c.max_hp }))
+          const merged = hpUpdates?.length ? hpUpdates : fromCombat
+          if (merged.length) {
+            setPartyCharacters((prev) => applyHpUpdates(prev, merged))
           }
           break
         }
@@ -816,6 +832,9 @@ export function GameSession() {
       const result = await submitAction(sessionId, { type: 'interact', message: action })
       const text = result.narration || 'The DM ponders...'
       setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
+      if (result.hp_updates?.length) {
+        setPartyCharacters((prev) => applyHpUpdates(prev, result.hp_updates))
+      }
       processDMMessage(text)
       extractCombatLogEntries(text)
       setAvatarState((prev) => ({ ...prev, expression: 'speaking', isSpeaking: true }))
@@ -1137,8 +1156,14 @@ export function GameSession() {
             <DiceRoller
               lastResult={lastDiceResult ?? undefined}
               onRoll={(notation) => {
+                const rolled = rollDiceNotation(notation)
+                if (rolled) setLastDiceResult(rolled)
                 if (wsRef.current) {
-                  wsRef.current.send({ type: 'dice_roll', notation })
+                  wsRef.current.send({
+                    type: 'dice_roll',
+                    notation,
+                    ...(rolled ? { result: rolled.total, rolls: rolled.rolls, modifier: rolled.modifier } : {}),
+                  })
                 }
               }}
             />

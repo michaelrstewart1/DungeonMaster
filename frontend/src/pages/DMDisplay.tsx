@@ -9,7 +9,7 @@ import type { WSMessage } from '../api/websocket';
 import { useWakeLock } from '../hooks/useWakeLock';
 import BattleMap from '../components/BattleMap';
 import type { GameState, GameMap, Character, CombatState } from '../types';
-import { diceRollLine, initiativeAnnouncement, initiativeChips } from '../game/combatTurn';
+import { applyHpUpdates, diceRollLine, initiativeAnnouncement, initiativeChips } from '../game/combatTurn';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -143,7 +143,17 @@ export function DMDisplay() {
     }
 
     if (last.type === 'turn_result') {
-      const p = last.payload as { narration?: string };
+      const p = last.payload as {
+        narration?: string;
+        hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[];
+        combat_state?: CombatState | null;
+      };
+      if (p.hp_updates?.length) {
+        setCharacters((prev) => applyHpUpdates(prev, p.hp_updates));
+      }
+      if (p.combat_state) {
+        setGameState((prev) => prev ? { ...prev, phase: 'combat', combat_state: p.combat_state ?? prev.combat_state } : prev);
+      }
       const text = p.narration || '';
       setStreamingNarration('');
       setCurrentNarration(text);
@@ -230,6 +240,14 @@ export function DMDisplay() {
         phase: (p.phase as GameState['phase']) ?? prev.phase,
         combat_state: p.combat_state ?? (p.combat_over ? null : prev.combat_state),
       } : prev);
+      const hpUpdates = (p as { hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[] }).hp_updates;
+      const fromCombat = (p.combat_state?.combatants || [])
+        .filter((c) => c.is_player)
+        .map((c) => ({ character_id: c.id, name: c.name, hp: c.hp, max_hp: c.max_hp }));
+      const merged = hpUpdates?.length ? hpUpdates : fromCombat;
+      if (merged.length) {
+        setCharacters((prev) => applyHpUpdates(prev, merged));
+      }
       const text = p.narration || (p.events || []).join(' ');
       if (text) {
         setCurrentNarration(text);

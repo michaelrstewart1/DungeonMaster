@@ -15,13 +15,22 @@ from app.api.routes.game import (
     _extract_npcs_from_narration,
     _generate_dm_response,
     _merge_detected_npcs,
+    _sync_combatant_hp,
     _sync_combatants_to_characters,
+    apply_reported_hp,
 )
 from app.api.routes.items import _player_owns_character
+from app.services.dice import notation_modifier
 from app.services.game.combat_loop import (
+    announce_current_player,
     classify_combat_text,
+    current_combatant,
     format_initiative_summary,
+    hp_updates_from_state,
+    prepare_player_facing_narration,
     resolve_player_action,
+    resolve_waiting_monster_turn,
+    run_pending_monster_turns,
 )
 
 logger = logging.getLogger(__name__)
@@ -166,6 +175,38 @@ async def _handle_combat_ws_action(
             if session.get("current_phase") != "combat" or not combat_state.get("combatants"):
                 return False
 
+            # A monster left on the initiative index is resolved before any
+            # player message is considered. Combat never waits on the table
+            # for an enemy or NPC turn — not even for one exchange.
+            stuck_events: list[str] = []
+            if current_combatant(combat_state) and not current_combatant(combat_state).get("is_player"):
+                stuck = run_pending_monster_turns(combat_state)
+                stuck_events = list(stuck.get("events") or [])
+                note = announce_current_player(combat_state)
+                if note:
+                    stuck_events.append(note)
+                if stuck.get("combat_over"):
+                    session["current_phase"] = "exploration"
+                    await _sync_combatants_to_characters(db, combat_state)
+                    session["combat_state"] = None
+                else:
+                    await _sync_combatant_hp(db, combat_state)
+                    session["combat_state"] = combat_state
+                await repo.save_game_session(db, session)
+                await db.commit()
+                if stuck_events:
+                    await manager.broadcast(session_id, {
+                        "type": "combat_update",
+                        "events": stuck_events,
+                        "narration": " ".join(stuck_events),
+                        "combat_state": session.get("combat_state"),
+                        "phase": session["current_phase"],
+                        "combat_over": bool(stuck.get("combat_over")),
+                        "hp_updates": hp_updates_from_state(combat_state),
+                    })
+                if stuck.get("combat_over"):
+                    return True
+
             kind = classify_combat_text(action)
             if kind == "roll":
                 summary = format_initiative_summary(combat_state)
@@ -212,6 +253,7 @@ async def _handle_combat_ws_action(
                     session["combat_state"] = None
                 else:
                     session["combat_state"] = combat_state
+                    await _sync_combatant_hp(db, combat_state)
                 await repo.save_game_session(db, session)
                 await db.commit()
                 await manager.broadcast(session_id, {
@@ -220,12 +262,42 @@ async def _handle_combat_ws_action(
                     "narration": " ".join(result.get("events") or []),
                     "combat_state": session.get("combat_state"),
                     "phase": session["current_phase"],
+                    "hp_updates": hp_updates_from_state(combat_state),
                 })
                 return True
 
             # Anything else said during a fight still gets an immediate reply.
             # Waiting on the model here is what deadlocked round 1.
+            # The narrator used to be passed as None, so this branch always
+            # took the keyword mock. Keep that: a live model call here is what
+            # stalled the table. Monster turns are still resolved below from
+            # the reply text and the initiative index.
             narration = await _generate_dm_response(action, session, narrator=None, db=None)
+            monster_events: list[str] = []
+            ran_engine_monster = False
+            if session.get("combat_state"):
+                resolved = resolve_waiting_monster_turn(session["combat_state"], narration)
+                monster_events = list(resolved.get("events") or [])
+                ran_engine_monster = bool(monster_events) or bool(resolved.get("combat_over"))
+                if resolved.get("combat_over"):
+                    session["current_phase"] = "exploration"
+                    await _sync_combatants_to_characters(db, session["combat_state"])
+                    session["combat_state"] = None
+                elif monster_events:
+                    await _sync_combatant_hp(db, session["combat_state"])
+            # Spoken damage updates the sheet. Skip the DM's own damage
+            # sentence when the engine just applied a monster attack, so the
+            # same hit cannot land twice.
+            hp_source = action if ran_engine_monster else f"{action}\n{narration}"
+            hp_updates = await apply_reported_hp(db, session, hp_source, actor_id=character_id)
+            if ran_engine_monster and session.get("combat_state"):
+                hp_updates = hp_updates_from_state(session["combat_state"]) or hp_updates
+            narration = prepare_player_facing_narration(narration, session.get("combat_state"))
+            if monster_events:
+                narration = f"{' '.join(monster_events)} {narration}".strip()
+            note = announce_current_player(session.get("combat_state") or {})
+            if note and note not in narration:
+                narration = f"{narration} {note}".strip()
             actor = character_id or "Player"
             session.setdefault("narrative_history", []).append(f"Player: {actor}: {action}")
             session["narrative_history"].append(f"DM: {narration}")
@@ -237,6 +309,9 @@ async def _handle_combat_ws_action(
                 "action": action,
                 "narration": narration,
                 "timestamp": datetime.now().isoformat(),
+                "hp_updates": hp_updates,
+                "combat_state": session.get("combat_state"),
+                "phase": session.get("current_phase"),
             })
             return True
     except Exception:
@@ -376,6 +451,58 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 else:
                     narration = await _generate_dm_response(player_text, {}, narrator=None, db=None)
 
+                # Narrated fights (no initiative snapshot yet) still cannot
+                # stall on a monster, and a stated HP change has to hit the sheet.
+                hp_updates: list[dict] = []
+                if db_factory is not None:
+                    try:
+                        async with db_factory() as db:
+                            session_data = await repo.get_game_session(db, session_id) or session_data or {}
+                            combat_state = session_data.get("combat_state") or {}
+                            ran_engine_monster = False
+                            if combat_state.get("combatants"):
+                                resolved = resolve_waiting_monster_turn(combat_state, narration)
+                                ran_engine_monster = bool(resolved.get("events")) or bool(resolved.get("combat_over"))
+                                if resolved.get("events"):
+                                    narration = f"{' '.join(resolved['events'])} {narration}".strip()
+                                if resolved.get("combat_over"):
+                                    session_data["current_phase"] = "exploration"
+                                    await _sync_combatants_to_characters(db, combat_state)
+                                    session_data["combat_state"] = None
+                                elif resolved.get("events"):
+                                    session_data["combat_state"] = combat_state
+                            else:
+                                campaign = await repo.get_campaign(db, session_data.get("campaign_id", "")) or {}
+                                party = []
+                                for cid in campaign.get("character_ids", []):
+                                    character = await repo.get_character(db, cid)
+                                    if character:
+                                        party.append(character)
+                                from app.services.game.combat_loop import settle_narrated_monster_turn
+                                narration = settle_narrated_monster_turn(
+                                    narration, party, actor_id=character_id,
+                                )
+                            narration = prepare_player_facing_narration(
+                                narration, session_data.get("combat_state"),
+                            )
+                            # Engine attack text is already reflected on the
+                            # combatants. Parsing it again would subtract twice.
+                            # A player's own "now at 20 of 34 HP" still applies.
+                            hp_source = action if ran_engine_monster else f"{action}\n{narration}"
+                            hp_updates = await apply_reported_hp(
+                                db, session_data, hp_source, actor_id=character_id,
+                            )
+                            if ran_engine_monster and session_data.get("combat_state"):
+                                await _sync_combatant_hp(db, session_data["combat_state"])
+                                hp_updates = hp_updates_from_state(session_data["combat_state"]) or hp_updates
+                            note = announce_current_player(session_data.get("combat_state") or {})
+                            if note and note not in narration:
+                                narration = f"{narration} {note}".strip()
+                            await repo.save_game_session(db, session_data)
+                            await db.commit()
+                    except Exception:
+                        logger.exception("Failed to settle narration for session %s", session_id)
+
                 turn_result = {
                     "type": "turn_result",
                     "character_id": character_id,
@@ -386,6 +513,9 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     "environment": session_data.get("environment") if session_data else None,
                     "detected_scene": _detect_scene_type(narration),
                     "detected_npcs": _extract_npcs_from_narration(narration),
+                    "hp_updates": hp_updates,
+                    "combat_state": (session_data or {}).get("combat_state"),
+                    "phase": (session_data or {}).get("current_phase"),
                 }
 
                 # Update session state in DB BEFORE broadcasting.
@@ -502,16 +632,27 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 })
 
             elif message_type == "dice_roll":
-                # Phase 3 additive: broadcast a dice roll to all connections.
-                # The roll itself is computed client-side today; a future change
-                # may make this server-authoritative.
+                # The phone used to total the dice and drop the modifier.
+                # When the individual faces are present, the broadcast total
+                # is sum(faces) + the modifier written on the notation.
+                notation = message.get("notation") or ""
+                result = message.get("result")
+                rolls = message.get("rolls")
+                modifier = notation_modifier(notation) if isinstance(notation, str) else 0
+                if isinstance(rolls, list) and rolls:
+                    try:
+                        result = sum(int(face) for face in rolls) + modifier
+                    except (TypeError, ValueError):
+                        result = message.get("result")
                 await manager.broadcast(session_id, {
                     "type": "dice_roll",
                     "player_id": player_id,
                     "character_id": message.get("character_id"),
                     "character_name": message.get("character_name"),
-                    "notation": message.get("notation", ""),
-                    "result": message.get("result"),
+                    "notation": notation,
+                    "result": result,
+                    "rolls": rolls if isinstance(rolls, list) else None,
+                    "modifier": modifier,
                     "breakdown": message.get("breakdown"),
                     "note": message.get("note"),
                     "purpose": message.get("purpose"),

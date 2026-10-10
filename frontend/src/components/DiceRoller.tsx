@@ -43,9 +43,11 @@ interface DiceRollerProps {
   onRoll?: (notation: string) => void
   lastResult?: DiceResult
   defaultExpanded?: boolean
+  /** Character's modifier for the check the DM just requested. */
+  suggestedModifier?: number | null
 }
 
-export function DiceRoller({ onRoll, lastResult, defaultExpanded = false }: DiceRollerProps) {
+export function DiceRoller({ onRoll, lastResult, defaultExpanded = false, suggestedModifier = null }: DiceRollerProps) {
   const [collapsed, setCollapsed] = useState(!defaultExpanded)
   const [rolling, setRolling] = useState(false)
   const [activeDie, setActiveDie] = useState<DieType>('d20')
@@ -68,6 +70,14 @@ export function DiceRoller({ onRoll, lastResult, defaultExpanded = false }: Dice
       }
     }
   }, [lastResult]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // A new check from the DM replaces the shown modifier. A later tap on +/-
+  // sticks until the next request, because this effect only follows the suggestion.
+  useEffect(() => {
+    if (typeof suggestedModifier === 'number' && Number.isFinite(suggestedModifier)) {
+      setModifier(Math.max(-10, Math.min(10, suggestedModifier)))
+    }
+  }, [suggestedModifier])
 
   // Cleanup timers
   useEffect(() => {

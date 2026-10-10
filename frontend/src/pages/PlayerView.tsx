@@ -2,11 +2,12 @@
  * Shows their character sheet, action input, turn indicator, and narrative feed.
  * Supports push-to-talk voice input via audio WebSocket.
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
 import { loadIdentity, updateIdentity } from '../utils/playerIdentity';
 import {
+  applyHpUpdates,
   diceRollLine,
   inferEngineAction,
   initiativeAnnouncement,
@@ -14,6 +15,8 @@ import {
   isDiceRollReport,
   seatMayActAs,
 } from '../game/combatTurn';
+import { rollDiceNotation } from '../game/diceRoll';
+import { suggestedRollModifier } from '../game/rollModifier';
 import { stripUuidLabel } from '../utils/narrative';
 import { useGameSocket } from '../hooks/useGameSocket';
 import type { WSMessage } from '../api/websocket';
@@ -299,7 +302,13 @@ export function PlayerView() {
     }
 
     if (last.type === 'turn_result') {
-      const p = last.payload as { narration?: string; character_id?: string; current_turn?: string };
+      const p = last.payload as {
+        narration?: string;
+        character_id?: string;
+        current_turn?: string;
+        hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[];
+        combat_state?: CombatState | null;
+      };
       setNarrative((prev) => [
         ...prev,
         {
@@ -310,6 +319,10 @@ export function PlayerView() {
         },
       ]);
       setWaitingForDM(false);
+      if (p.combat_state) setCombatState(p.combat_state);
+      if (p.hp_updates?.length) {
+        setCharacter((prev) => (prev ? applyHpUpdates([prev], p.hp_updates)[0] : prev));
+      }
       if (p.current_turn && character) {
         setIsMyTurn(p.current_turn === character.id);
       }
@@ -379,9 +392,12 @@ export function PlayerView() {
         if (p.phase === 'combat' || p.combat_state.combatants?.length) setPhase('combat');
       }
       // Sync my HP from the authoritative combat state
+      const hpUpdates = (p as { hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[] }).hp_updates;
       const me = p.combat_state?.combatants?.find((c) => c.id === characterId);
       if (me) {
-        setCharacter((prev) => prev ? { ...prev, hp: me.hp } : prev);
+        setCharacter((prev) => prev ? { ...prev, hp: me.hp, max_hp: me.max_hp || prev.max_hp } : prev);
+      } else if (hpUpdates?.length) {
+        setCharacter((prev) => (prev ? applyHpUpdates([prev], hpUpdates)[0] : prev));
       } else if (p.combat_over && characterId) {
         fetch(`${API_BASE}/characters/${characterId}`)
           .then((r) => (r.ok ? r.json() : null))
@@ -579,6 +595,25 @@ export function PlayerView() {
   }, []);
 
   const inEngineCombat = phase === 'combat' && !!combatState?.combatants?.length;
+  const currentCombatant = inEngineCombat
+    ? combatState?.combatants?.[combatState.current_turn_index ?? -1]
+    : undefined;
+  // The engine index is whose turn it is. A narrated "what do you do?" for a
+  // monster must not be the only signal, or the real player's phone stays dark.
+  const showMyTurn = inEngineCombat
+    ? !!currentCombatant?.is_player && currentCombatant.id === characterId
+    : isMyTurn;
+  const rollRequestText = useMemo(() => {
+    for (let i = narrative.length - 1; i >= 0; i -= 1) {
+      const entry = narrative[i];
+      if (entry.type === 'narration' && entry.text) return entry.text;
+    }
+    return '';
+  }, [narrative]);
+  const suggestedModifier = useMemo(
+    () => suggestedRollModifier(character, rollRequestText),
+    [character, rollRequestText],
+  );
 
   function handleSendAction(text?: string) {
     const msg = (text || actionText).trim();
@@ -657,31 +692,21 @@ export function PlayerView() {
   }
 
   function handleDiceRoll(notation: string) {
-    const match = notation.match(/(\d+)d(\d+)/);
-    if (match) {
-      const count = parseInt(match[1]);
-      const sides = parseInt(match[2]);
-      const rolls = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
-      const total = rolls.reduce((a, b) => a + b, 0);
-      const result: DiceResult = {
-        notation,
-        rolls,
-        modifier: 0,
-        total,
-        is_critical: sides === 20 && rolls[0] === 20,
-        is_fumble: sides === 20 && rolls[0] === 1,
-      };
+    const result = rollDiceNotation(notation);
+    if (result) {
       setLastDiceResult(result);
 
       const charName = character?.name || playerName;
       const critNote = result.is_critical ? ' (Natural 20!)' : result.is_fumble ? ' (Natural 1!)' : '';
-      const rollMsg = diceRollLine(charName, notation, total, critNote);
+      const rollMsg = diceRollLine(charName, notation, result.total, critNote);
       send({
         type: 'dice_roll',
         character_id: characterId,
         character_name: charName,
         notation,
-        result: total,
+        rolls: result.rolls,
+        modifier: result.modifier,
+        result: result.total,
         note: critNote,
         purpose: inEngineCombat ? 'noted' : undefined,
       });
@@ -703,9 +728,9 @@ export function PlayerView() {
   const hpPct = character ? Math.round((character.hp / (character.max_hp || character.hp)) * 100) : 100;
 
   return (
-    <div className={`player-view ${isMyTurn ? 'pv-my-turn' : ''}`}>
+    <div className={`player-view ${showMyTurn ? 'pv-my-turn' : ''}`}>
       {/* Turn overlay banner */}
-      {isMyTurn && (
+      {showMyTurn && (
         <div className="pv-turn-overlay">
           <div className="pv-turn-overlay-text">⚔️ YOUR TURN ⚔️</div>
         </div>
@@ -717,7 +742,7 @@ export function PlayerView() {
         <span className={`pv-connection ${connected ? 'pv-online' : 'pv-offline'}`}>
           {connected ? '🟢' : '🔴'}
         </span>
-        {isMyTurn && <span className="pv-turn-badge">⚔️ YOUR TURN</span>}
+        {showMyTurn && <span className="pv-turn-badge">⚔️ YOUR TURN</span>}
       </div>
 
       {/* Character quick stats */}
@@ -802,8 +827,8 @@ export function PlayerView() {
                   key={action.label}
                   className="pv-quick-action-btn"
                   onClick={() => engineAction ? handleCombatAction(engineAction) : handleSendAction(`${action.emoji} ${action.label}`)}
-                  disabled={waitingForDM || (!!engineAction && !isMyTurn)}
-                  title={engineAction && !isMyTurn ? 'Wait for your turn' : undefined}
+                  disabled={waitingForDM || (!!engineAction && !showMyTurn)}
+                  title={engineAction && !showMyTurn ? 'Wait for your turn' : undefined}
                 >
                   <span>{action.emoji}</span>
                   <span>{action.label}</span>
@@ -819,7 +844,7 @@ export function PlayerView() {
               value={actionText}
               onChange={(e) => setActionText(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleSendAction()}
-              placeholder={isTranscribing ? 'Transcribing...' : isMyTurn ? "It's your turn! What do you do?" : 'What do you do?'}
+              placeholder={isTranscribing ? 'Transcribing...' : showMyTurn ? "It's your turn! What do you do?" : 'What do you do?'}
               disabled={waitingForDM}
               autoComplete="off"
               autoCorrect="off"
@@ -877,7 +902,12 @@ export function PlayerView() {
       {/* Dice tab */}
       {tab === 'dice' && (
         <div className="pv-dice-tab">
-          <DiceRoller onRoll={handleDiceRoll} lastResult={lastDiceResult ?? undefined} defaultExpanded />
+          <DiceRoller
+            onRoll={handleDiceRoll}
+            lastResult={lastDiceResult ?? undefined}
+            suggestedModifier={suggestedModifier}
+            defaultExpanded
+          />
         </div>
       )}
 

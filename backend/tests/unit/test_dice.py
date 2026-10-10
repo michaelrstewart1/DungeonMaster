@@ -434,3 +434,14 @@ class TestRollerIntegration:
         # Ability scores typically have a reasonable distribution
         assert min(scores) >= 3
         assert max(scores) <= 18
+
+
+class TestNotationModifier:
+    def test_reads_the_modifier_written_on_the_notation(self):
+        from app.services.dice import notation_modifier
+
+        assert notation_modifier("1d20+5") == 5
+        assert notation_modifier("1d20+6") == 6
+        assert notation_modifier("1d20") == 0
+        assert notation_modifier("2d6-1") == -1
+        assert notation_modifier("not dice") == 0

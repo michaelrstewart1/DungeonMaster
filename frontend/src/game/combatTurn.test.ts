@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CombatState } from '../types';
 import {
+  applyHpUpdates,
   diceRollLine,
   inferEngineAction,
   initiativeAnnouncement,
@@ -66,6 +67,17 @@ describe('combat text', () => {
     expect(isDiceRollReport('🎲 Kael Shadowstep rolls d20: 15')).toBe(true);
     expect(diceRollLine('Kael Shadowstep', '1d20', 15)).toBe('🎲 Kael Shadowstep rolls d20: 15');
   });
+
+  it('includes a set modifier in the log total', () => {
+    expect(diceRollLine('Thorne Ironfist', '1d20+5', 19)).toBe('🎲 Thorne Ironfist rolls d20 (14) + 5 = 19');
+    expect(diceRollLine('Kael Shadowstep', '1d20+6', 26, ' (Natural 20!)'))
+      .toBe('🎲 Kael Shadowstep rolls d20 (20) + 6 = 26 (Natural 20!)');
+    expect(isDiceRollReport('🎲 Thorne Ironfist rolls d20 (14) + 5 = 19')).toBe(true);
+  });
+
+  it('does not treat an HP report as an attack', () => {
+    expect(inferEngineAction('Thorne takes 14 damage (11 slashing + 3 lightning) and is now at 20 of 34 HP.')).toBeNull();
+  });
 });
 
 describe('seatMayActAs', () => {
@@ -108,5 +120,14 @@ describe('seatMayActAs', () => {
       players: [],
       rosterReady: false,
     })).toBe(true);
+  });
+});
+
+describe('applyHpUpdates', () => {
+  it('writes the server total onto the matching character', () => {
+    const party = [{ id: 'thorne', name: 'Thorne Ironfist', hp: 34, max_hp: 34 }];
+    const next = applyHpUpdates(party, [{ character_id: 'thorne', hp: 20, max_hp: 34 }]);
+    expect(next[0].hp).toBe(20);
+    expect(party[0].hp).toBe(34);
   });
 });
