@@ -67,8 +67,10 @@ describe('GameWebSocket', () => {
     sock.simulateClose();
 
     expect(FakeWebSocket.instances).toHaveLength(1);
+    expect(FakeWebSocket.instances[0].url).toBe('ws://test/ws/game/sess-1');
     vi.advanceTimersByTime(1100); // first retry after ~1s
     expect(FakeWebSocket.instances).toHaveLength(2);
+    expect(FakeWebSocket.instances[1].url).toContain('resync=1');
   });
 
   it('emits a reconnected event only on re-open, not first open', () => {

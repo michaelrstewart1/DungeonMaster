@@ -80,6 +80,84 @@ class TestStartCombatWithEnemies:
         assert len(cs["combatants"]) == 2
 
 
+class TestInitiativeIsAuthoritative:
+    async def test_opening_publishes_rolled_totals(self, client: AsyncClient):
+        _, session_id, _ = await _make_session(client)
+        resp = await client.post(
+            f"/api/game/sessions/{session_id}/start-combat",
+            json={"enemies": [{"name": "Goblin", "hp": 7, "ac": 15, "cr": 0.25, "count": 1}]},
+        )
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        cs = data["combat_state"]
+        inits = [c["initiative"] for c in cs["combatants"]]
+        assert inits == sorted(inits, reverse=True)
+        assert [c["name"] for c in cs["combatants"]] == cs["initiative_order"]
+        opening = " ".join(data["narrative_history"])
+        assert "Combat begins!" in opening
+        assert "roll for initiative" not in opening.lower()
+        for c in cs["combatants"]:
+            assert f"{c['name']} {c['initiative']}" in opening
+
+
+class TestCombatSeatOwnership:
+    async def _fight(self, client: AsyncClient):
+        _campaign_id, session_id, char_id = await _make_session(client)
+        assert char_id
+        started = await client.post(
+            f"/api/game/sessions/{session_id}/start-combat",
+            json={"enemies": [{"name": "Goblin", "hp": 30, "ac": 10, "cr": 0.25, "count": 1}]},
+        )
+        assert started.status_code == 200, started.text
+        code = (await client.get(f"/api/game/sessions/{session_id}/room-code")).json()["room_code"]
+        dain = (await client.post("/api/game/join", json={"room_code": code, "player_name": "Dain"})).json()
+        lyra = (await client.post("/api/game/join", json={"room_code": code, "player_name": "Lyra"})).json()
+        claim = await client.post(
+            f"/api/game/sessions/{session_id}/select-character",
+            json={"player_id": dain["player_id"], "character_id": char_id},
+        )
+        assert claim.status_code == 200, claim.text
+        return session_id, char_id, code, dain, lyra
+
+    async def test_button_and_stranger_share_the_ownership_check(self, client: AsyncClient):
+        session_id, char_id, _, dain, lyra = await self._fight(client)
+        missing = await client.post(
+            f"/api/game/sessions/{session_id}/combat-action",
+            json={"actor_id": char_id, "action_type": "dodge"},
+        )
+        assert missing.status_code == 403
+        assert missing.json()["detail"] == "That isn't your character"
+
+        stranger = await client.post(
+            f"/api/game/sessions/{session_id}/combat-action",
+            json={"actor_id": char_id, "action_type": "dodge", "player_id": lyra["player_id"]},
+        )
+        assert stranger.status_code == 403
+        assert stranger.json()["detail"] == "That isn't your character"
+
+        owner = await client.post(
+            f"/api/game/sessions/{session_id}/combat-action",
+            json={"actor_id": char_id, "action_type": "dodge", "player_id": dain["player_id"]},
+        )
+        assert owner.status_code == 200, owner.text
+        assert owner.json()["events"]
+
+    async def test_rejoin_by_name_keeps_the_character_and_can_act(self, client: AsyncClient):
+        session_id, char_id, code, dain, _ = await self._fight(client)
+        again = (
+            await client.post("/api/game/join", json={"room_code": code, "player_name": "dain"})
+        ).json()
+        assert again["rejoined"] is True
+        assert again["player_id"] == dain["player_id"]
+        assert again["character_id"] == char_id
+
+        owner = await client.post(
+            f"/api/game/sessions/{session_id}/combat-action",
+            json={"actor_id": char_id, "action_type": "dodge", "player_id": again["player_id"]},
+        )
+        assert owner.status_code == 200, owner.text
+
+
 class TestCombatAction:
     async def _start(self, client: AsyncClient, enemy_hp: int = 1, enemy_ac: int = 1):
         _, session_id, char_id = await _make_session(client)
@@ -134,3 +212,50 @@ class TestCombatAction:
             json={"actor_id": "x", "action_type": "attack"},
         )
         assert resp.status_code == 404
+
+
+class TestReportedDamageReachesTheSheet:
+    async def test_typed_hp_report_updates_the_character(self, client: AsyncClient):
+        char_resp = await client.post(
+            "/api/characters",
+            json={
+                "name": "Thorne Ironfist",
+                "race": "dwarf",
+                "class_name": "fighter",
+                "level": 3,
+                "strength": 16,
+                "dexterity": 12,
+                "constitution": 16,
+                "hp": 34,
+                "max_hp": 34,
+                "ac": 18,
+            },
+        )
+        assert char_resp.status_code == 201, char_resp.text
+        char_id = char_resp.json()["id"]
+        camp_resp = await client.post(
+            "/api/campaigns",
+            json={
+                "name": "HP Campaign",
+                "description": "Damage reaches the sheet",
+                "character_ids": [char_id],
+                "world_state": {},
+                "dm_settings": {},
+            },
+        )
+        campaign_id = camp_resp.json()["id"]
+        session_id = (await client.post("/api/game/sessions", json={"campaign_id": campaign_id})).json()["id"]
+        resp = await client.post(
+            f"/api/game/sessions/{session_id}/action",
+            json={
+                "character_id": char_id,
+                "action": "Thorne takes 14 damage (11 slashing + 3 lightning) and is now at 20 of 34 HP.",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert "what is your new hp" not in body["narration"].lower()
+        assert body["hp_updates"][0]["hp"] == 20
+        stored = (await client.get(f"/api/characters/{char_id}")).json()
+        assert stored["hp"] == 20
+        assert stored["max_hp"] == 34

@@ -26,6 +26,60 @@ class DiceResult:
     dropped: list[int] = field(default_factory=list)
 
 
+def _notation_mode_and_body(notation: str) -> tuple[str, str]:
+    """Split an ``adv:`` / ``dis:`` prefix from the dice expression.
+
+    ``disadvantage`` is checked before ``advantage`` because the shorter
+    word is a substring of the longer one.
+    """
+    text = notation.strip()
+    lowered = text.lower()
+    for prefix, mode in (("adv:", "adv"), ("dis:", "dis")):
+        if lowered.startswith(prefix):
+            return mode, text[len(prefix):].strip()
+    if re.search(r"\bdisadvantage\b", lowered):
+        return "dis", text
+    if re.search(r"\badvantage\b", lowered):
+        return "adv", text
+    return "", text
+
+
+def notation_modifier(notation: str) -> int:
+    """Return the +N / -N on a dice expression, or 0 when it has none.
+
+    Invalid notation yields 0 so a broadcast can keep the client's result
+    instead of failing the socket. An ``adv:`` or ``dis:`` prefix is ignored
+    for the modifier and handled by :func:`roll_broadcast_total`.
+    """
+    if not notation or not isinstance(notation, str):
+        return 0
+    _mode, body = _notation_mode_and_body(notation)
+    try:
+        _num, _sides, modifier = DiceRoller()._parse_notation(body, body)
+    except ValueError:
+        return 0
+    return modifier
+
+
+def roll_broadcast_total(notation: str, rolls: list) -> int:
+    """Total a client roll from its faces.
+
+    A normal roll is sum(faces) + modifier. Advantage keeps the higher d20
+    and disadvantage the lower. Neither mode reads a previous roll.
+    """
+    text = notation if isinstance(notation, str) else ""
+    mode, _body = _notation_mode_and_body(text)
+    modifier = notation_modifier(text)
+    faces = [int(face) for face in rolls]
+    if not faces:
+        return modifier
+    if mode == "adv":
+        return max(faces) + modifier
+    if mode == "dis":
+        return min(faces) + modifier
+    return sum(faces) + modifier
+
+
 class DiceRoller:
     """Roll dice using standard D&D notation."""
 

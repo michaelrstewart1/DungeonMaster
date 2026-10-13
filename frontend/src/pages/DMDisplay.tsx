@@ -8,7 +8,9 @@ import { useGameSocket } from '../hooks/useGameSocket';
 import type { WSMessage } from '../api/websocket';
 import { useWakeLock } from '../hooks/useWakeLock';
 import BattleMap from '../components/BattleMap';
-import type { GameState, GameMap, Character } from '../types';
+import type { GameState, GameMap, Character, CombatState } from '../types';
+import { applyHpUpdates, diceRollLine, initiativeAnnouncement, initiativeChips } from '../game/combatTurn';
+import { acceptSessionSnapshot, fetchSessionState } from '../game/sessionSync';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -52,6 +54,7 @@ export function DMDisplay() {
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const autoScanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const narrativeRef = useRef<HTMLDivElement>(null);
+  const seenVersionRef = useRef(0);
 
   // Client-side lip sync: while the avatar is speaking, oscillate the mouth
   // amplitude locally (the server only reports the speaking window).
@@ -69,11 +72,17 @@ export function DMDisplay() {
   useEffect(() => {
     if (!sessionId) return;
 
-    fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
+    fetchSessionState(API_BASE, sessionId)
       .then((r) => r.json())
       .then((data) => {
-        setGameState(data);
-        if (data.current_scene) {
+        const decision = acceptSessionSnapshot(data, sessionId, seenVersionRef.current);
+        if (!decision.accepted) return;
+        seenVersionRef.current = decision.version;
+        const normalized: GameState = { ...data, phase: decision.phase, combat_state: decision.combat };
+        setGameState(normalized);
+        if (decision.phase === 'combat' && decision.combat) {
+          setCurrentNarration(initiativeAnnouncement(decision.combat));
+        } else if (data.current_scene) {
           setCurrentNarration(data.current_scene);
         }
         if (data.campaign_id) {
@@ -118,20 +127,45 @@ export function DMDisplay() {
       // Resync after a drop — the TV must never sit stale on the wall while
       // the game moved on (turns taken, combat started/ended, new narration).
       if (sessionId) {
-        fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
+        fetchSessionState(API_BASE, sessionId)
           .then((r) => r.json())
           .then((data) => {
-            setGameState(data);
-            const history = Array.isArray(data.narrative_history) ? data.narrative_history : [];
-            const lastDM = [...history].reverse().find((l: unknown) => String(l).startsWith('DM: '));
-            if (lastDM) setCurrentNarration(String(lastDM).slice(4));
+            const decision = acceptSessionSnapshot(data, sessionId, seenVersionRef.current);
+            if (!decision.accepted) return;
+            seenVersionRef.current = decision.version;
+            setGameState({ ...data, phase: decision.phase, combat_state: decision.combat });
+            if (decision.phase === 'combat' && decision.combat) {
+              setCurrentNarration(initiativeAnnouncement(decision.combat));
+            } else {
+              const history = Array.isArray(data.narrative_history) ? data.narrative_history : [];
+              const lastDM = [...history].reverse().find((l: unknown) => String(l).startsWith('DM: '));
+              if (lastDM) setCurrentNarration(String(lastDM).slice(4));
+            }
           })
           .catch(() => {});
       }
     }
 
     if (last.type === 'turn_result') {
-      const p = last.payload as { narration?: string };
+      const p = last.payload as {
+        narration?: string;
+        state_version?: number;
+        phase?: string;
+        hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[];
+        combat_state?: CombatState | null;
+      };
+      const version = typeof p.state_version === 'number' ? p.state_version : 0;
+      const staleVersion = version > 0 && seenVersionRef.current > 0 && version < seenVersionRef.current;
+      if (staleVersion) return;
+      if (version > seenVersionRef.current) seenVersionRef.current = version;
+      if (p.hp_updates?.length) {
+        setCharacters((prev) => applyHpUpdates(prev, p.hp_updates));
+      }
+      if (p.phase && p.phase !== 'combat') {
+        setGameState((prev) => prev ? { ...prev, phase: 'exploration', combat_state: null } : prev);
+      } else if (p.combat_state && (p.phase === 'combat' || !p.phase)) {
+        setGameState((prev) => prev ? { ...prev, phase: 'combat', combat_state: p.combat_state ?? prev.combat_state } : prev);
+      }
       const text = p.narration || '';
       setStreamingNarration('');
       setCurrentNarration(text);
@@ -174,13 +208,35 @@ export function DMDisplay() {
     }
 
     if (last.type === 'combat_started' as string) {
-      const p = last.payload as { combat_state?: GameState['combat_state'] };
-      setGameState((prev) => prev ? { ...prev, phase: 'combat', combat_state: p.combat_state ?? prev.combat_state } : prev);
-      const text = '⚔️ Roll for initiative!';
+      const p = last.payload as { combat_state?: CombatState };
+      const text = `⚔️ ${initiativeAnnouncement(p.combat_state)}`;
+      setGameState((prev) => ({
+        ...(prev || {
+          phase: 'combat',
+          current_scene: '',
+          narrative_history: [],
+          combat_state: null,
+          active_effects: [],
+        }),
+        phase: 'combat',
+        combat_state: p.combat_state ?? prev?.combat_state ?? null,
+      }));
+      setCurrentNarration(text);
       setNarrative((prevN) => [
         ...prevN.slice(-50),
         { id: uuid(), text, type: 'narration', timestamp: new Date().toISOString() },
       ]);
+    }
+
+    if ((last.type as string) === 'dice_roll') {
+      const p = last.payload as { character_name?: string; notation?: string; result?: number; note?: string };
+      if (p.notation && typeof p.result === 'number') {
+        const text = diceRollLine(p.character_name || 'Someone', p.notation, p.result, p.note || '');
+        setNarrative((prevN) => [
+          ...prevN.slice(-50),
+          { id: uuid(), text, type: 'system', timestamp: new Date().toISOString() },
+        ]);
+      }
     }
 
     if (last.type === 'combat_update' as string) {
@@ -196,6 +252,14 @@ export function DMDisplay() {
         phase: (p.phase as GameState['phase']) ?? prev.phase,
         combat_state: p.combat_state ?? (p.combat_over ? null : prev.combat_state),
       } : prev);
+      const hpUpdates = (p as { hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[] }).hp_updates;
+      const fromCombat = (p.combat_state?.combatants || [])
+        .filter((c) => c.is_player)
+        .map((c) => ({ character_id: c.id, name: c.name, hp: c.hp, max_hp: c.max_hp }));
+      const merged = hpUpdates?.length ? hpUpdates : fromCombat;
+      if (merged.length) {
+        setCharacters((prev) => applyHpUpdates(prev, merged));
+      }
       const text = p.narration || (p.events || []).join(' ');
       if (text) {
         setCurrentNarration(text);
@@ -449,18 +513,18 @@ export function DMDisplay() {
             <div className="dm-initiative">
               <h3>⚔️ Initiative</h3>
               <div className="dm-init-list">
-                {combatState.initiative_order.map((name, i) => {
-                  const cb = combatState.combatants?.find((c) => c.name === name);
+                {initiativeChips(combatState).map((chip) => {
+                  const cb = combatState.combatants?.find((c) => c.id === chip.id || c.name === chip.name);
                   const cbPct = cb ? Math.max(0, Math.round((cb.hp / (cb.max_hp || 1)) * 100)) : null;
                   const down = cb ? cb.hp <= 0 : false;
                   return (
                     <div
-                      key={`${name}-${i}`}
-                      className={`dm-init-entry ${i === combatState.current_turn_index ? 'dm-init-active' : ''} ${down ? 'dm-init-down' : ''}`}
+                      key={chip.id}
+                      className={`dm-init-entry ${chip.isCurrent ? 'dm-init-active' : ''} ${down ? 'dm-init-down' : ''}`}
                     >
-                      <span className="dm-init-order">{i + 1}</span>
+                      <span className="dm-init-order">{chip.initiative ?? '—'}</span>
                       <span className="dm-init-name">
-                        {name}
+                        {chip.name}
                         {cb && cbPct !== null && (
                           <span className="dm-init-hp-bar">
                             <span
@@ -474,7 +538,7 @@ export function DMDisplay() {
                         )}
                       </span>
                       {cb && <span className="dm-init-hp-num">{down ? '💀' : `${cb.hp}/${cb.max_hp}`}</span>}
-                      {i === combatState.current_turn_index && <span className="dm-init-arrow">◄</span>}
+                      {chip.isCurrent && <span className="dm-init-arrow">◄</span>}
                     </div>
                   );
                 })}
