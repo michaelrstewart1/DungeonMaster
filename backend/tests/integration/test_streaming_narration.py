@@ -25,15 +25,27 @@ async def _override_get_db():
             raise
 
 
-@pytest.fixture
-def ws_client():
+def _run_on_loop(coro):
+    """Same loop fallback as test_ws_game: pytest-asyncio 1.x leaves none set."""
     import asyncio
 
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("closed")
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
+
+
+@pytest.fixture
+def ws_client():
     async def setup():
         async with _engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    asyncio.get_event_loop().run_until_complete(setup())
+    _run_on_loop(setup())
 
     app = create_app()
     app.dependency_overrides[get_db] = _override_get_db
@@ -53,7 +65,7 @@ def ws_client():
         async with _engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
 
-    asyncio.get_event_loop().run_until_complete(teardown())
+    _run_on_loop(teardown())
     storage.reset()
 
 

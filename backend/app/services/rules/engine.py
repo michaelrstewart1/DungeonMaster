@@ -13,6 +13,25 @@ from app.services.rules.conditions import ConditionTracker
 from app.services.rules.spells import SpellCaster, SpellSlots, Spell
 
 
+def _with_damage_roll(text: str, attack_result) -> str:
+    """Append the damage dice that produced a hit, so the total is not bare."""
+    rolls = list(getattr(attack_result, "damage_rolls", None) or [])
+    notation = getattr(attack_result, "damage_notation", "") or ""
+    if not getattr(attack_result, "hit", False) or not notation or not rolls:
+        return text
+    roll_total = int(getattr(attack_result, "damage_roll_total", 0) or 0)
+    if not roll_total:
+        roll_total = sum(rolls)
+    mod = roll_total - sum(rolls)
+    mod_txt = ""
+    if mod:
+        mod_txt = f" {'+' if mod > 0 else '-'} {abs(mod)}"
+    clause = f"Damage roll {notation}: {rolls}{mod_txt} = {roll_total}"
+    if getattr(attack_result, "is_critical", False) and attack_result.damage != roll_total:
+        clause += f", doubled to {attack_result.damage}"
+    return f"{text} {clause}."
+
+
 @dataclass
 class ActionResult:
     """Result of a rules-resolved action (attack, spell, ability check, etc)."""
@@ -291,13 +310,14 @@ class RulesEngine:
     def _describe_attack(self, attack_result) -> str:
         """Generate descriptive text for an attack."""
         if attack_result.is_critical:
-            return f"Critical hit! {attack_result.attacker} hits {attack_result.target} for {attack_result.damage} {attack_result.damage_type} damage!"
+            text = f"Critical hit! {attack_result.attacker} hits {attack_result.target} for {attack_result.damage} {attack_result.damage_type} damage!"
         elif attack_result.is_fumble:
-            return f"Critical miss! {attack_result.attacker} fumbles their attack against {attack_result.target}!"
+            text = f"Critical miss! {attack_result.attacker} fumbles their attack against {attack_result.target}!"
         elif attack_result.hit:
-            return f"Hit! {attack_result.attacker} hits {attack_result.target} with {attack_result.attack_roll + attack_result.attack_bonus} vs AC {attack_result.target_ac} for {attack_result.damage} {attack_result.damage_type} damage."
+            text = f"Hit! {attack_result.attacker} hits {attack_result.target} with {attack_result.attack_roll + attack_result.attack_bonus} vs AC {attack_result.target_ac} for {attack_result.damage} {attack_result.damage_type} damage."
         else:
-            return f"Miss! {attack_result.attacker} misses {attack_result.target}. Attack roll: {attack_result.attack_roll + attack_result.attack_bonus} vs AC {attack_result.target_ac}."
+            text = f"Miss! {attack_result.attacker} misses {attack_result.target}. Attack roll: {attack_result.attack_roll + attack_result.attack_bonus} vs AC {attack_result.target_ac}."
+        return _with_damage_roll(text, attack_result)
 
     def _describe_ability_check(self, check_result) -> str:
         """Generate descriptive text for an ability check."""

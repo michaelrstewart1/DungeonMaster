@@ -94,12 +94,21 @@ class PromptTemplates:
             "- **Saving Throws**: when a spell, trap, or effect targets a player, name the save (STR/DEX/CON/INT/WIS/CHA) "
             "and DC immediately.\n"
             "- **Advantage / Disadvantage**: grant advantage when circumstances strongly favor success "
-            "(high ground, surprised foe, enemy prone). Impose disadvantage when conditions are against the player.\n"
+            "(high ground, surprised foe, enemy prone). Impose disadvantage when conditions are against the player. "
+            "Advantage rolls two fresh d20s for that check and uses the higher — never a d20 from an earlier turn. "
+            "On a hit, damage comes from rolling the weapon dice (and extra dice such as Sneak Attack); state that roll. "
+            "Do not invent the damage total.\n"
             "- **Combat turns**: each creature gets one Action, one Bonus Action (if applicable), "
             "one Reaction, and Movement up to their speed per turn. Enforce this.\n"
-            "- **Initiative**: at the start of every combat, tell all players to roll d20 + DEX mod for initiative. "
-            "Track the order and narrate each turn in sequence.\n"
-            "- **Hit Points and Death**: when a player reaches 0 HP they fall unconscious and begin Death Saving Throws "
+            "- **Initiative**: when combat starts, the rules engine has already rolled initiative "
+            "(d20 + Dexterity modifier) for every combatant and published the order with each total. "
+            "Do NOT ask players to roll for initiative. Narrate the fight in that order.\n"
+            "- **Enemy and NPC turns**: resolve every enemy and NPC turn yourself, in the same reply, "
+            "then name the next player character. Do not hand an enemy or NPC turn to the players. "
+            "Never end a reply waiting for someone to play a monster.\n"
+            "- **Hit Points and Death**: the game applies damage and healing to the character sheet. "
+            "Do not ask players to report their HP or to calculate the new total — state the number the sheet already shows. "
+            "When a player reaches 0 HP they fall unconscious and begin Death Saving Throws "
             "(d20 each turn — 10+ is a success, 3 successes = stable, 3 failures = dead). "
             "Monsters also track HP — tell players when foes look bloodied (below half HP).\n"
             "- **Spells**: spell slots are consumed when cast. Cantrips are unlimited. "
@@ -351,6 +360,12 @@ class PromptTemplates:
             f"{bible_section}\n"
             "## Rules\n"
             "- Call for ability checks (d20+mod vs DC) when outcome is uncertain\n"
+            "- Advantage is two fresh d20s for that check; never reuse an earlier roll. "
+            "Damage on a hit is rolled and the roll is stated.\n"
+            "- Initiative is already rolled by the rules engine (d20 + Dex). Do NOT ask players to roll for initiative.\n"
+            "- Resolve every enemy and NPC turn yourself, then name the next player character. "
+            "Do not hand an enemy or NPC turn to the players.\n"
+            "- Do not ask players to report their HP. The sheet already has the new total; state it.\n"
             "- Track HP, spell slots, conditions per 5e rules\n"
             "- NPCs have names, motives, and memory\n"
             "- Failure creates story, not dead ends\n"
@@ -369,6 +384,7 @@ class PromptTemplates:
         current_turn: str,
         recent_actions: list[str],
         round_number: int = 1,
+        positions: str | None = None,
     ) -> str:
         """Create a prompt for combat narration.
 
@@ -382,6 +398,7 @@ class PromptTemplates:
             current_turn: Name of the combatant whose turn it is
             recent_actions: List of recent actions in the combat
             round_number: Current combat round number
+            positions: Optional "Name at (x,y); ..." line for living combatants
 
         Returns:
             Prompt string for combat narration
@@ -394,6 +411,10 @@ class PromptTemplates:
             marker = " ← CURRENT TURN" if actor == current_turn else ""
             prompt += f"{i}. {actor}{marker}\n"
         prompt += "\n"
+
+        if positions:
+            prompt += "## Positions\n"
+            prompt += positions + "\n\n"
 
         # Recent actions
         if recent_actions:
@@ -427,6 +448,11 @@ class PromptTemplates:
             "If the action fails, make the failure entertaining rather than frustrating. "
             "After narrating, hint at what the enemy will do next turn and remind players "
             "of any active secondary objectives.\n"
+            "If it is an enemy or NPC's turn, narrate that creature's action to completion "
+            "yourself and end by naming the next player character. "
+            "Do not hand an enemy or NPC turn to the players, and do not ask what the monster does. "
+            "Do not ask players to report their HP — the rules engine already changed the sheet; "
+            "you may state the number you were given.\n"
         )
 
         return prompt

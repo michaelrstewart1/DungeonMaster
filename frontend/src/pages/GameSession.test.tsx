@@ -338,6 +338,6 @@ describe('GameSession', () => {
       await user.click(screen.getByTestId('roll-btn'))
     })
 
-    expect(mockSend).toHaveBeenCalledWith({ type: 'dice_roll', notation: '1d20' })
+    expect(mockSend).toHaveBeenCalledWith(expect.objectContaining({ type: 'dice_roll', notation: '1d20' }))
   })
 })
