@@ -13,6 +13,7 @@ import { useGameSocket } from '../hooks/useGameSocket';
 import type { WSMessage } from '../api/websocket';
 import type { CombatState, GameState } from '../types';
 import { initiativeAnnouncement, initiativeChips } from '../game/combatTurn';
+import { acceptSessionSnapshot, fetchSessionState } from '../game/sessionSync';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -46,16 +47,19 @@ export function ObserverView() {
   const [combatState, setCombatState] = useState<CombatState | null>(null);
   const [sceneName, setSceneName] = useState('');
   const feedRef = useRef<HTMLDivElement>(null);
+  const seenVersionRef = useRef(0);
 
   // Load authoritative state on mount (read-only GET — no side effects).
   useEffect(() => {
     if (!sessionId) return;
-    fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
+    fetchSessionState(API_BASE, sessionId)
       .then((r) => r.json())
-      .then((data: GameState & { narrative_history?: unknown; combat_state?: CombatState; current_phase?: string; current_scene?: string }) => {
-        const ph = data.current_phase || (data as { phase?: string }).phase;
-        if (ph === 'combat') setPhase('combat');
-        if (data.combat_state?.initiative_order?.length) setCombatState(data.combat_state);
+      .then((data: GameState & { narrative_history?: unknown; current_scene?: string }) => {
+        const decision = acceptSessionSnapshot(data, sessionId, seenVersionRef.current);
+        if (!decision.accepted) return;
+        seenVersionRef.current = decision.version;
+        setPhase(decision.phase);
+        setCombatState(decision.combat);
         if (data.current_scene) setSceneName(data.current_scene);
         const hist = feedFromHistory(data.narrative_history);
         if (hist.length) setFeed((prev) => (prev.length ? prev : hist));
@@ -77,13 +81,14 @@ export function ObserverView() {
         // Resync authoritative state after a drop — observers never re-join,
         // they just re-fetch what they missed.
         if (sessionId) {
-          fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
+          fetchSessionState(API_BASE, sessionId)
             .then((r) => r.json())
             .then((data) => {
-              const ph = data.current_phase || data.phase;
-              if (ph === 'combat') setPhase('combat');
-              else if (ph) { setPhase('exploration'); setCombatState(null); }
-              if (data.combat_state?.initiative_order?.length) setCombatState(data.combat_state);
+              const decision = acceptSessionSnapshot(data, sessionId, seenVersionRef.current);
+              if (!decision.accepted) return;
+              seenVersionRef.current = decision.version;
+              setPhase(decision.phase);
+              setCombatState(decision.combat);
               const hist = feedFromHistory(data.narrative_history);
               if (hist.length) {
                 setFeed([

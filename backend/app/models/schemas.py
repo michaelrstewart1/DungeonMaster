@@ -231,6 +231,10 @@ class GameStateResponse(BaseModel):
     detected_scene: Optional[str] = Field(None, description="Detected scene type: tavern, dungeon, etc.")
     scene_image_url: Optional[str] = Field(None, description="URL of AI-generated scene background image")
     room_code: Optional[str] = Field(None, description="Multiplayer join code for this session")
+    state_version: int = Field(
+        default=0,
+        description="Monotonic revision. A resync with an older revision is stale and must be ignored.",
+    )
     # World navigation (macro travel between scenes/encounters)
     current_location: Optional[str] = Field(None, description="ID of the party's current world location")
     world_locations: List[Dict[str, Any]] = Field(default_factory=list, description="World map location graph")

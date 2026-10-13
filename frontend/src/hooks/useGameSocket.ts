@@ -143,10 +143,7 @@ export function useGameSocket(
   }, [send]);
 
   const sendAction = useCallback((characterId: string, action: string) => {
-    const playerId =
-      (sessionId ? loadIdentity(sessionId)?.playerId : undefined) ||
-      sessionStorage.getItem('playerId') ||
-      undefined;
+    const playerId = sessionId ? loadIdentity(sessionId)?.playerId : undefined;
     send({ type: 'action', character_id: characterId, action, player_id: playerId });
   }, [send, sessionId]);
 
@@ -155,13 +152,10 @@ export function useGameSocket(
   }, [send]);
 
   const joinAsPlayer = useCallback((name: string, characterId?: string) => {
-    // Pass the durable player_id (localStorage identity, with legacy
-    // sessionStorage fallback) so the server reconciles this WS connection
-    // with the existing player row instead of creating a duplicate.
-    const playerId =
-      (sessionId ? loadIdentity(sessionId)?.playerId : undefined) ||
-      sessionStorage.getItem('playerId') ||
-      undefined;
+    // Pass the durable player_id for THIS session so the server rebinds the
+    // existing seat. A playerId left in sessionStorage by another table is
+    // not a fallback — loadIdentity only returns it when the session matches.
+    const playerId = sessionId ? loadIdentity(sessionId)?.playerId : undefined;
     send({ type: 'player_join', name, character_id: characterId, player_id: playerId });
   }, [send, sessionId]);
 

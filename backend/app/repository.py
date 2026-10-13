@@ -206,9 +206,41 @@ async def character_exists(db: AsyncSession, character_id: str) -> bool:
 # Game Sessions
 # ---------------------------------------------------------------------------
 
+class SaveResult(dict):
+    """Dict returned by ``save_game_session``.
+
+    ``applied`` is False when the caller handed in a snapshot older than the
+    row now stored — the current row is returned unchanged.
+    """
+
+    applied: bool
+
+    def __init__(self, data: dict, applied: bool):
+        super().__init__(data)
+        self.applied = applied
+
+
+def session_version(session: Optional[dict]) -> int:
+    """Monotonic revision stored on a session dict. Missing means 0."""
+    if not session:
+        return 0
+    raw = session.get("state_version")
+    if isinstance(raw, bool) or raw is None:
+        return 0
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return 0
+
+
 async def get_game_session(db: AsyncSession, session_id: str) -> Optional[dict]:
     row = await db.get(GameSessionDB, session_id)
-    return row.to_dict() if row else None
+    if row is None:
+        return None
+    # Reload so a second read in this request cannot return an identity-map
+    # copy from before another transaction committed.
+    await db.refresh(row)
+    return row.to_dict()
 
 
 async def list_game_sessions(db: AsyncSession) -> list[dict]:
@@ -216,27 +248,53 @@ async def list_game_sessions(db: AsyncSession) -> list[dict]:
     return [r.to_dict() for r in result.scalars().all()]
 
 
-async def save_game_session(db: AsyncSession, data: dict) -> dict:
+async def save_game_session(db: AsyncSession, data: dict) -> SaveResult:
+    """Insert or update a session.
+
+    A snapshot that carries a ``state_version`` other than the row's current
+    revision is refused. That is the write that used to put one phone back
+    on an earlier combat while everyone still connected kept the live scene.
+    Callers that build a brand-new dict (no version) still overwrite — tests
+    and session creation do that. Anything loaded via ``get_game_session``
+    has a version and must match.
+    """
     existing = await db.get(GameSessionDB, data["id"])
     if existing:
+        await db.refresh(existing)
+        current = session_version(existing.to_dict())
+        raw_incoming = data.get("state_version")
+        incoming = session_version(data) if raw_incoming is not None else None
+        if incoming is not None and incoming != current:
+            return SaveResult(existing.to_dict(), applied=False)
+
         fields = {c.name for c in GameSessionDB.__table__.columns}
         extra = dict(existing.extra_data or {})
         for key, val in data.items():
             if key != "id" and key in fields:
                 setattr(existing, key, val)
-            elif key not in GameSessionDB._TYPED_FIELDS:
+            elif key not in GameSessionDB._TYPED_FIELDS and key != "state_version":
                 extra[key] = val
+        for key in GameSessionDB._AUTHORITATIVE:
+            extra.pop(key, None)
+        extra["state_version"] = current + 1
         existing.extra_data = extra
-        # Mark JSON columns dirty
+        # Mark JSON columns dirty. Reassign copies so in-place mutations of
+        # the caller's dict cannot alias the ORM object's previous value.
         existing.narrative_history = list(existing.narrative_history or [])
         existing.active_effects = list(existing.active_effects or [])
         existing.environment = dict(existing.environment or {})
         existing.npcs = list(existing.npcs or [])
+        if existing.combat_state is not None:
+            existing.combat_state = dict(existing.combat_state)
+        data["state_version"] = current + 1
     else:
-        existing = GameSessionDB.from_dict(data)
+        payload = dict(data)
+        payload["state_version"] = session_version(data) + 1
+        existing = GameSessionDB.from_dict(payload)
         db.add(existing)
+        data["state_version"] = payload["state_version"]
     await db.flush()
-    return existing.to_dict()
+    return SaveResult(existing.to_dict(), applied=True)
 
 
 async def delete_game_session(db: AsyncSession, session_id: str) -> bool:

@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
 import { loadIdentity, updateIdentity } from '../utils/playerIdentity';
+import { acceptSessionSnapshot, fetchSessionState } from '../game/sessionSync';
 import {
   diceRollLine,
   displayedCharacterHp,
@@ -84,11 +85,12 @@ const COMBAT_ACTIONS: QuickAction[] = [
 export function PlayerView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const identity = sessionId ? loadIdentity(sessionId) : null;
-  const playerName = identity?.playerName || sessionStorage.getItem('playerName') || 'Adventurer';
+  const playerName = identity?.playerName || 'Adventurer';
   const [characterId, setCharacterId] = useState<string | undefined>(
-    () => identity?.characterId || sessionStorage.getItem('characterId') || undefined,
+    () => identity?.characterId,
   );
-  const playerId = identity?.playerId || sessionStorage.getItem('playerId') || '';
+  const playerId = identity?.playerId || '';
+  const seenVersionRef = useRef(0);
   const { connected, messages, players, send, sendChat, sendAction, joinAsPlayer } = useGameSocket(sessionId);
   const { addToast } = useToast();
   // Keep the phone screen awake — players may not touch it for minutes
@@ -233,14 +235,15 @@ export function PlayerView() {
   // Load game state and character
   useEffect(() => {
     if (!sessionId) return;
-    fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
+    fetchSessionState(API_BASE, sessionId)
       .then((r) => r.json())
       .then((data) => {
+        const decision = acceptSessionSnapshot(data, sessionId, seenVersionRef.current);
+        if (!decision.accepted) return;
+        seenVersionRef.current = decision.version;
         setGameState(data);
-        const ph = data.current_phase || data.phase;
-        if (ph === 'combat') setPhase('combat');
-        else if (ph) setPhase('exploration');
-        if (data.combat_state?.initiative_order?.length) setCombatState(data.combat_state);
+        setPhase(decision.phase);
+        setCombatState(decision.combat);
         // Backfill the story so a refreshed/rejoining phone isn't blank.
         const hist = narrativeFromHistory(data.narrative_history);
         if (hist.length) setNarrative((prev) => (prev.length ? prev : hist));
@@ -273,16 +276,15 @@ export function PlayerView() {
       // world may have changed while offline (combat started/ended, turns
       // advanced, narration happened), so sync EVERYTHING, not just gameState.
       if (sessionId) {
-        fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
+        fetchSessionState(API_BASE, sessionId)
           .then((r) => r.json())
           .then((data) => {
+            const decision = acceptSessionSnapshot(data, sessionId, seenVersionRef.current);
+            if (!decision.accepted) return;
+            seenVersionRef.current = decision.version;
             setGameState(data);
-            const ph = data.current_phase || data.phase;
-            if (ph === 'combat') setPhase('combat');
-            else if (ph) { setPhase('exploration'); setCombatState(null); }
-            if (data.combat_state?.initiative_order?.length) {
-              setCombatState(data.combat_state);
-            }
+            setPhase(decision.phase);
+            setCombatState(decision.combat);
             const ct = (data as GameState & { current_turn?: string }).current_turn;
             if (ct !== undefined && character) setIsMyTurn(ct === character.id);
             setWaitingForDM(false);
@@ -305,9 +307,15 @@ export function PlayerView() {
         narration?: string;
         character_id?: string;
         current_turn?: string;
+        state_version?: number;
+        phase?: string;
         hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[];
         combat_state?: CombatState | null;
       };
+      const version = typeof p.state_version === 'number' ? p.state_version : 0;
+      const staleVersion = version > 0 && seenVersionRef.current > 0 && version < seenVersionRef.current;
+      if (staleVersion) return;
+      if (version > seenVersionRef.current) seenVersionRef.current = version;
       setNarrative((prev) => [
         ...prev,
         {
@@ -318,7 +326,15 @@ export function PlayerView() {
         },
       ]);
       setWaitingForDM(false);
-      if (p.combat_state) setCombatState(p.combat_state);
+      if (p.phase && p.phase !== 'combat') {
+        setPhase('exploration');
+        setCombatState(null);
+      } else if (p.phase === 'combat' && p.combat_state) {
+        setPhase('combat');
+        setCombatState(p.combat_state);
+      } else if (!p.phase && p.combat_state) {
+        setCombatState(p.combat_state);
+      }
       setCharacter((prev) => (
         prev
           ? displayedCharacterHp(prev, {
@@ -416,12 +432,17 @@ export function PlayerView() {
     }
 
     if (last.type === 'game_state' as string) {
-      const gs = last.payload as GameState & { current_phase?: string };
-      setGameState(gs);
-      const ph = gs.current_phase || gs.phase;
-      if (ph === 'combat') setPhase('combat');
-      else if (ph) setPhase('exploration');
-      if (gs.combat_state?.initiative_order?.length) setCombatState(gs.combat_state);
+      const gs = last.payload as GameState & { current_phase?: string; state_version?: number };
+      if (!sessionId) return;
+      const decision = acceptSessionSnapshot(gs, sessionId, seenVersionRef.current);
+      if (!decision.accepted) return;
+      seenVersionRef.current = decision.version;
+      setGameState({ ...gs, phase: decision.phase, combat_state: decision.combat });
+      setPhase(decision.phase);
+      setCombatState(decision.combat);
+      setWaitingForDM(false);
+      const hist = narrativeFromHistory(gs.narrative_history);
+      if (hist.length) setNarrative(hist);
       if (character) {
         const ct = (gs as GameState & { current_turn?: string }).current_turn;
         setIsMyTurn(ct === character.id);

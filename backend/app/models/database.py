@@ -2,6 +2,7 @@
 SQLAlchemy ORM models for the Dungeon Master application.
 Proper typed columns for all persistent game state.
 """
+import copy
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional, List
 from uuid import uuid4
@@ -240,6 +241,15 @@ class GameSessionDB(Base):
         "environment", "npcs", "extra_data",
     })
 
+    # These columns are the session. A stale copy parked in extra_data — an
+    # earlier combat, an earlier scene — must not mask them when a phone
+    # resyncs and reads the row back.
+    _AUTHORITATIVE = frozenset({
+        "id", "campaign_id", "current_phase", "current_scene", "turn_count",
+        "created_at", "narrative_history", "combat_state", "active_effects",
+        "environment", "npcs",
+    })
+
     def to_dict(self) -> dict:
         d = {
             "id": self.id,
@@ -248,15 +258,19 @@ class GameSessionDB(Base):
             "current_scene": self.current_scene,
             "turn_count": self.turn_count,
             "created_at": self.created_at,
-            "narrative_history": self.narrative_history or [],
-            "combat_state": self.combat_state,
-            "active_effects": self.active_effects or [],
-            "environment": self.environment or {},
-            "npcs": self.npcs or [],
+            "narrative_history": copy.deepcopy(self.narrative_history or []),
+            "combat_state": copy.deepcopy(self.combat_state),
+            "active_effects": copy.deepcopy(self.active_effects or []),
+            "environment": copy.deepcopy(self.environment or {}),
+            "npcs": copy.deepcopy(self.npcs or []),
         }
-        # Merge extra_data back into the dict
-        if self.extra_data:
-            d.update(self.extra_data)
+        # Extra keys (room code, locations, state_version) ride along.
+        # Authoritative columns always win — extra_data is not a second copy
+        # of the scene.
+        for key, val in (self.extra_data or {}).items():
+            if key in self._AUTHORITATIVE:
+                continue
+            d[key] = copy.deepcopy(val)
         return d
 
     @classmethod

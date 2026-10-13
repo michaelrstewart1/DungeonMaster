@@ -643,3 +643,67 @@ class TestNarratedDamageReachesThePhone:
 
         stored = ws_client.get(f"/api/characters/{char_id}").json()
         assert stored["hp"] == 27
+
+
+class TestReconnectResync:
+    """A phone that reconnects must be handed the row that is stored now."""
+
+    def test_resync_pushes_current_scene_after_player_joined(self, ws_client: TestClient):
+        session_id = create_test_session(ws_client)
+
+        async def advance_to_lighthouse() -> None:
+            import app.repository as repo
+
+            async with _ws_async_session() as db:
+                session = await repo.get_game_session(db, session_id)
+                assert session is not None
+                session["current_phase"] = "exploration"
+                session["current_scene"] = "The lighthouse antechamber"
+                session["combat_state"] = None
+                await repo.save_game_session(db, session)
+                await db.commit()
+
+        _run_on_loop(advance_to_lighthouse())
+
+        with ws_client.websocket_connect(f"/ws/game/{session_id}?resync=1") as ws:
+            joined = ws.receive_json()
+            assert joined["type"] == "player_joined"
+            state = ws.receive_json()
+            assert state["type"] == "game_state"
+            assert state["current_scene"] == "The lighthouse antechamber"
+            assert state["current_phase"] == "exploration"
+            assert state["combat_state"] is None
+
+    def test_player_join_keeps_bound_character_across_stale_id(self, ws_client: TestClient):
+        session_id = create_test_session(ws_client)
+        state = ws_client.get(f"/api/game/sessions/{session_id}/state").json()
+        joined = ws_client.post(
+            "/api/game/join",
+            json={
+                "room_code": state["room_code"],
+                "player_name": "Bram",
+                "character_id": "char-thorne",
+            },
+        ).json()
+
+        with ws_client.websocket_connect(f"/ws/game/{session_id}") as ws:
+            assert ws.receive_json()["type"] == "player_joined"
+            ws.send_json({
+                "type": "player_join",
+                "name": "Bram",
+                "player_id": joined["player_id"],
+            })
+            rebound = ws.receive_json()
+            assert rebound["type"] == "player_update"
+            me = next(p for p in rebound["players"] if p["id"] == joined["player_id"])
+            assert me["character_id"] == "char-thorne"
+
+            ws.send_json({
+                "type": "player_join",
+                "name": "Bram",
+                "player_id": joined["player_id"],
+                "character_id": "char-from-blackwood",
+            })
+            again = ws.receive_json()
+            me = next(p for p in again["players"] if p["id"] == joined["player_id"])
+            assert me["character_id"] == "char-thorne"

@@ -46,6 +46,12 @@ export class GameWebSocket {
     this.url = `${wsBase}/ws/game/${sessionId}${role ? `?role=${role}` : ''}`;
   }
 
+  /** First connect uses the plain URL. A later socket asks the server for the live row. */
+  private socketUrl(reconnect: boolean): string {
+    if (!reconnect) return this.url;
+    return this.url.includes('?') ? `${this.url}&resync=1` : `${this.url}?resync=1`;
+  }
+
   connect(): void {
     if (this.ws?.readyState === WebSocket.OPEN) return;
 
@@ -61,7 +67,7 @@ export class GameWebSocket {
       document.addEventListener('visibilitychange', this.visibilityHandler);
     }
 
-    this.ws = new WebSocket(this.url);
+    this.ws = new WebSocket(this.socketUrl(this.hadConnection));
 
     this.ws.onopen = () => {
       const isReconnect = this.hadConnection;

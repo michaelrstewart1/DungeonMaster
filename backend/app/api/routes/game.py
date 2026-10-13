@@ -10,7 +10,7 @@ import re
 import urllib.parse
 
 import httpx
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -246,11 +246,19 @@ async def list_game_sessions(campaign_id: str | None = None, db: AsyncSession = 
 
 
 @router.get("/sessions/{session_id}/state", response_model=GameStateResponse)
-async def get_game_state(session_id: str, db: AsyncSession = Depends(get_db)) -> GameStateResponse:
-    """Get the current game state for a session."""
+async def get_game_state(
+    session_id: str, response: Response, db: AsyncSession = Depends(get_db)
+) -> GameStateResponse:
+    """Get the current game state for a session.
+
+    ``Cache-Control: no-store`` is required. A phone that reconnects and
+    refetches this URL used to replay a cached earlier combat while the TV,
+    which never refetched, stayed on the live scene.
+    """
     session = await repo.get_game_session(db, session_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+    response.headers["Cache-Control"] = "no-store"
     return GameStateResponse(**session)
 
 
@@ -263,12 +271,21 @@ async def resume_game_session(session_id: str, db: AsyncSession = Depends(get_db
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
 
     # Re-register the room code so players can rejoin after a restart.
+    # Never steal a code that already points at a different live session —
+    # that sent a rejoining phone into an older combat while the TV stayed
+    # on the current one.
     room_code = session.get("room_code")
     if not room_code:
         room_code = storage.generate_room_code()
         session["room_code"] = room_code
         await repo.save_game_session(db, session)
-    if storage.room_codes.get(room_code) != session_id:
+    mapped = storage.room_codes.get(room_code)
+    if mapped and mapped != session_id:
+        room_code = storage.generate_room_code()
+        session["room_code"] = room_code
+        await repo.save_game_session(db, session)
+        mapped = None
+    if mapped != session_id:
         storage.room_codes[room_code] = session_id
         storage.flush("room_codes")
     if session_id not in storage.session_players:
@@ -282,6 +299,16 @@ async def resume_game_session(session_id: str, db: AsyncSession = Depends(get_db
         "players": storage.session_players.get(session_id, []),
         "recent_narrative": history[-10:],
     }
+
+
+def _latest_dm_line(session: dict) -> str:
+    """Last DM line already stored on the session, else the current scene."""
+    history = session.get("narrative_history") or []
+    for line in reversed(history):
+        text = str(line)
+        if text.startswith("DM: "):
+            return text[4:]
+    return str(session.get("current_scene") or "")
 
 
 @router.post("/sessions/{session_id}/action", response_model=PlayerActionResponse)
@@ -298,36 +325,58 @@ async def submit_player_action(
     
     player_text = action.resolved_action
     turn_number = len(session["narrative_history"])
+    baseline = repo.session_version(session)
 
-    # Try real LLM narrator; fall back to keyword mock when no API key is set
+    # Try real LLM narrator; fall back to keyword mock when no API key is set.
+    # The prompt may use the snapshot we just read. The write below reloads
+    # on a fresh session so a slow reply cannot persist that snapshot over a
+    # scene the table has already moved on from.
     narrator = getattr(request.app.state, "narrator", None)
     narration = await _generate_dm_response(player_text, session, narrator, db)
-    narration, hp_updates = await _settle_narrated_turn(
-        db, session, player_text, narration, action.character_id,
-    )
 
-    # Add to narrative history
-    session["narrative_history"].append(f"Player: {player_text}")
-    session["narrative_history"].append(f"DM: {narration}")
-    session["turn_count"] = session.get("turn_count", 0) + 1
+    async def _apply_turn(write_db: AsyncSession) -> tuple[str, dict, str, list, list, str | None, list]:
+        fresh = await repo.get_game_session(write_db, session_id)
+        if fresh is None:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+        if repo.session_version(fresh) != baseline:
+            return ("stale", fresh, _latest_dm_line(fresh), [], [], None, [])
+        settled, hp_updates = await _settle_narrated_turn(
+            write_db, fresh, player_text, narration, action.character_id,
+        )
+        fresh.setdefault("narrative_history", []).append(f"Player: {player_text}")
+        fresh["narrative_history"].append(f"DM: {settled}")
+        fresh["turn_count"] = fresh.get("turn_count", 0) + 1
+        effects = _detect_effects(settled, player_text)
+        _advance_time(fresh)
+        detected_npcs = _extract_npcs_from_narration(settled)
+        _merge_detected_npcs(fresh, detected_npcs)
+        detected_scene = _detect_scene_type(settled)
+        if detected_scene:
+            fresh["detected_scene"] = detected_scene
+        saved = await repo.save_game_session(write_db, fresh)
+        if not saved.applied:
+            return ("stale", saved, _latest_dm_line(saved), [], [], None, [])
+        await write_db.commit()
+        return ("ok", saved, settled, hp_updates, effects, detected_scene, detected_npcs)
 
-    # Detect effects from narration for frontend
-    effects = _detect_effects(narration, player_text)
+    db_factory = getattr(request.app.state, "db_factory", None)
+    if db_factory is not None:
+        async with db_factory() as write_db:
+            outcome = await _apply_turn(write_db)
+    else:
+        outcome = await _apply_turn(db)
+
+    kind, session, narration, hp_updates, effects, detected_scene, detected_npcs = outcome
+    if kind == "stale":
+        return PlayerActionResponse(
+            narration=narration,
+            turn_number=len(session.get("narrative_history") or []),
+            phase=session.get("current_phase") or "exploration",
+            environment=session.get("environment"),
+            hp_updates=[],
+        )
+
     mood_obj = _detect_mood(f"{session.get('current_scene', '')} {narration}")
-
-    # Auto-advance time and potentially change weather
-    _advance_time(session)
-
-    # Auto-detect NPCs from narration
-    detected_npcs = _extract_npcs_from_narration(narration)
-    _merge_detected_npcs(session, detected_npcs)
-
-    # Detect scene type from narration
-    detected_scene = _detect_scene_type(narration)
-    if detected_scene:
-        session["detected_scene"] = detected_scene
-
-    await repo.save_game_session(db, session)
 
     # Animate the DM avatar on the TV display for this narration
     from app.api.routes.avatar import trigger_speaking
@@ -1601,9 +1650,24 @@ async def combat_action(session_id: str, body: CombatActionRequest, request: Req
                     "narration": narration,
                     "hp_updates": hp_updates_from_state(combat_snapshot),
                 }
-                # A finished fight must not be pushed back onto the phones.
+                # Flavor text can finish after the fight — or after the table
+                # has moved to another scene. Attach combat only when the
+                # stored session is still this fight, and use that row, not
+                # the snapshot captured when the action started.
                 if not result.get("combat_over"):
-                    payload["combat_state"] = combat_snapshot
+                    live_factory = getattr(request.app.state, "db_factory", None)
+                    live: dict = {}
+                    if live_factory is not None:
+                        try:
+                            async with live_factory() as live_db:
+                                live = await repo.get_game_session(live_db, session_id) or {}
+                        except Exception:
+                            live = {}
+                    live_combat = live.get("combat_state") or {}
+                    if live.get("current_phase") == "combat" and live_combat.get("combatants"):
+                        payload["combat_state"] = live_combat
+                        payload["phase"] = "combat"
+                        payload["state_version"] = repo.session_version(live)
                 await manager.broadcast(session_id, payload)
 
         task = _asyncio.create_task(_narrate_in_background())
@@ -2773,7 +2837,10 @@ async def join_game(body: JoinRequest, db: AsyncSession = Depends(get_db)) -> di
     if existing is not None:
         player_id = existing["id"]
         existing["name"] = body.player_name
-        if body.character_id:
+        # A reconnect may still be holding a character id from an older
+        # session. Never replace the hero this seat already claimed;
+        # an explicit change goes through select-character.
+        if body.character_id and not existing.get("character_id"):
             existing["character_id"] = body.character_id
         existing["rejoined_at"] = datetime.now(timezone.utc).isoformat()
     else:

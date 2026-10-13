@@ -358,7 +358,20 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 "player_id": player_id,
                 "connection_count": connection_count,
             })
-        
+
+        # A reconnecting phone asks for this. Push the row that is stored
+        # now — not whatever snapshot the browser cached for GET /state.
+        if websocket.query_params.get("resync") == "1":
+            db_factory = getattr(websocket.app.state, "db_factory", None)
+            if db_factory is not None:
+                try:
+                    async with db_factory() as db:
+                        live = await repo.get_game_session(db, session_id)
+                    if live:
+                        await websocket.send_json({"type": "game_state", **live})
+                except Exception:
+                    logger.exception("Failed to push resync state for %s", session_id)
+
         # Main message loop
         while True:
             message = await websocket.receive_json()
@@ -423,6 +436,7 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 actor_label = actor_name or character_id
                 player_text = f"{actor_label}: {action}" if actor_label else action
 
+                baseline_version: int | None = None
                 if db_factory is not None:
                     # Stream LLM tokens live to all clients so the DM display
                     # renders narration as it is generated instead of blocking.
@@ -441,6 +455,7 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     try:
                         async with db_factory() as db:
                             session_data = await repo.get_game_session(db, session_id) or {}
+                            baseline_version = repo.session_version(session_data)
                             narration = await _generate_dm_response(
                                 player_text,
                                 session_data,
@@ -450,6 +465,7 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                             )
                     except Exception:
                         narration = await _generate_dm_response(player_text, {}, narrator=None, db=None)
+                        baseline_version = None
                 else:
                     narration = await _generate_dm_response(player_text, {}, narrator=None, db=None)
 
@@ -460,6 +476,16 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                     try:
                         async with db_factory() as db:
                             session_data = await repo.get_game_session(db, session_id) or session_data or {}
+                            # The model answered from the snapshot taken before
+                            # the call. If the table moved on, drop that reply
+                            # and hand this phone the current row instead of
+                            # writing the old scene back.
+                            if (
+                                baseline_version is not None
+                                and repo.session_version(session_data) != baseline_version
+                            ):
+                                await websocket.send_json({"type": "game_state", **session_data})
+                                continue
                             combat_state = session_data.get("combat_state") or {}
                             ran_engine_monster = False
                             if combat_state.get("combatants"):
@@ -501,7 +527,11 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                             note = announce_current_player(session_data.get("combat_state") or {})
                             if note and note not in narration:
                                 narration = f"{narration} {note}".strip()
-                            await repo.save_game_session(db, session_data)
+                            saved = await repo.save_game_session(db, session_data)
+                            if not saved.applied:
+                                await websocket.send_json({"type": "game_state", **saved})
+                                continue
+                            session_data = saved
                             await db.commit()
                     except Exception:
                         logger.exception("Failed to settle narration for session %s", session_id)
@@ -551,6 +581,15 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 # Animate the DM avatar on the TV display for this narration
                 from app.api.routes.avatar import trigger_speaking
                 trigger_speaking(session_id, narration)
+
+                if session_data:
+                    turn_result["state_version"] = repo.session_version(session_data)
+                    turn_result["phase"] = session_data.get("current_phase")
+                    # An exploration scene must not carry an earlier fight.
+                    if session_data.get("current_phase") != "combat":
+                        turn_result["combat_state"] = None
+                    else:
+                        turn_result["combat_state"] = session_data.get("combat_state")
 
                 await manager.broadcast(session_id, turn_result)
             
@@ -604,13 +643,16 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
 
                 if existing is not None:
                     player_id = existing["id"]
-                    if not character_id:
-                        character_id = existing.get("character_id")
-                    elif any(
+                    bound = existing.get("character_id")
+                    if bound:
+                        # Keep the claimed hero. A phone that woke up holding
+                        # an older session's character id must not overwrite it.
+                        character_id = bound
+                    elif character_id and any(
                         p.get("character_id") == character_id and p.get("id") != existing["id"]
                         for p in players
                     ):
-                        character_id = existing.get("character_id")
+                        character_id = None
                     existing["name"] = name
                     existing["character_id"] = character_id
                     existing["rejoined_at"] = datetime.now().isoformat()

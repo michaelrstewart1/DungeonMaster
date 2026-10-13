@@ -10,6 +10,7 @@ import { useWakeLock } from '../hooks/useWakeLock';
 import BattleMap from '../components/BattleMap';
 import type { GameState, GameMap, Character, CombatState } from '../types';
 import { applyHpUpdates, diceRollLine, initiativeAnnouncement, initiativeChips } from '../game/combatTurn';
+import { acceptSessionSnapshot, fetchSessionState } from '../game/sessionSync';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -53,6 +54,7 @@ export function DMDisplay() {
   const cameraStreamRef = useRef<MediaStream | null>(null);
   const autoScanTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const narrativeRef = useRef<HTMLDivElement>(null);
+  const seenVersionRef = useRef(0);
 
   // Client-side lip sync: while the avatar is speaking, oscillate the mouth
   // amplitude locally (the server only reports the speaking window).
@@ -70,15 +72,16 @@ export function DMDisplay() {
   useEffect(() => {
     if (!sessionId) return;
 
-    fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
+    fetchSessionState(API_BASE, sessionId)
       .then((r) => r.json())
       .then((data) => {
-        const phase = (data.phase || data.current_phase || 'exploration') as GameState['phase'];
-        const inCombat = phase === 'combat' || !!data.combat_state?.initiative_order?.length;
-        const normalized: GameState = { ...data, phase: inCombat ? 'combat' : phase };
+        const decision = acceptSessionSnapshot(data, sessionId, seenVersionRef.current);
+        if (!decision.accepted) return;
+        seenVersionRef.current = decision.version;
+        const normalized: GameState = { ...data, phase: decision.phase, combat_state: decision.combat };
         setGameState(normalized);
-        if (inCombat && data.combat_state) {
-          setCurrentNarration(initiativeAnnouncement(data.combat_state));
+        if (decision.phase === 'combat' && decision.combat) {
+          setCurrentNarration(initiativeAnnouncement(decision.combat));
         } else if (data.current_scene) {
           setCurrentNarration(data.current_scene);
         }
@@ -124,14 +127,15 @@ export function DMDisplay() {
       // Resync after a drop — the TV must never sit stale on the wall while
       // the game moved on (turns taken, combat started/ended, new narration).
       if (sessionId) {
-        fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
+        fetchSessionState(API_BASE, sessionId)
           .then((r) => r.json())
           .then((data) => {
-            const phase = (data.phase || data.current_phase || 'exploration') as GameState['phase'];
-            const inCombat = phase === 'combat' || !!data.combat_state?.initiative_order?.length;
-            setGameState({ ...data, phase: inCombat ? 'combat' : phase });
-            if (inCombat && data.combat_state) {
-              setCurrentNarration(initiativeAnnouncement(data.combat_state));
+            const decision = acceptSessionSnapshot(data, sessionId, seenVersionRef.current);
+            if (!decision.accepted) return;
+            seenVersionRef.current = decision.version;
+            setGameState({ ...data, phase: decision.phase, combat_state: decision.combat });
+            if (decision.phase === 'combat' && decision.combat) {
+              setCurrentNarration(initiativeAnnouncement(decision.combat));
             } else {
               const history = Array.isArray(data.narrative_history) ? data.narrative_history : [];
               const lastDM = [...history].reverse().find((l: unknown) => String(l).startsWith('DM: '));
@@ -145,13 +149,21 @@ export function DMDisplay() {
     if (last.type === 'turn_result') {
       const p = last.payload as {
         narration?: string;
+        state_version?: number;
+        phase?: string;
         hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[];
         combat_state?: CombatState | null;
       };
+      const version = typeof p.state_version === 'number' ? p.state_version : 0;
+      const staleVersion = version > 0 && seenVersionRef.current > 0 && version < seenVersionRef.current;
+      if (staleVersion) return;
+      if (version > seenVersionRef.current) seenVersionRef.current = version;
       if (p.hp_updates?.length) {
         setCharacters((prev) => applyHpUpdates(prev, p.hp_updates));
       }
-      if (p.combat_state) {
+      if (p.phase && p.phase !== 'combat') {
+        setGameState((prev) => prev ? { ...prev, phase: 'exploration', combat_state: null } : prev);
+      } else if (p.combat_state && (p.phase === 'combat' || !p.phase)) {
         setGameState((prev) => prev ? { ...prev, phase: 'combat', combat_state: p.combat_state ?? prev.combat_state } : prev);
       }
       const text = p.narration || '';
