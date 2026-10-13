@@ -107,6 +107,7 @@ export function PlayerView() {
   const [waitingForDM, setWaitingForDM] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
   const actionInputRef = useRef<PhoneActionInputHandle>(null);
+  const actionDraftRef = useRef('');
 
   // Trade state — composing an outgoing offer, incoming offer queue, and
   // the one outgoing offer we're currently waiting on (we only allow one
@@ -843,6 +844,7 @@ export function PlayerView() {
 
           <PhoneActionInput
             ref={actionInputRef}
+            draftRef={actionDraftRef}
             disabled={waitingForDM}
             placeholder={isTranscribing ? 'Transcribing...' : showMyTurn ? "It's your turn! What do you do?" : 'What do you do?'}
             onSend={handleSendAction}

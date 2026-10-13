@@ -27,6 +27,7 @@ from app.services.game.combat_loop import (
     current_combatant,
     format_initiative_summary,
     hp_updates_from_state,
+    note_current_player_acted,
     prepare_player_facing_narration,
     resolve_player_action,
     resolve_waiting_monster_turn,
@@ -276,6 +277,7 @@ async def _handle_combat_ws_action(
             monster_events: list[str] = []
             ran_engine_monster = False
             if session.get("combat_state"):
+                note_current_player_acted(session["combat_state"], character_id)
                 resolved = resolve_waiting_monster_turn(session["combat_state"], narration)
                 monster_events = list(resolved.get("events") or [])
                 ran_engine_monster = bool(monster_events) or bool(resolved.get("combat_over"))
@@ -461,6 +463,7 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                             combat_state = session_data.get("combat_state") or {}
                             ran_engine_monster = False
                             if combat_state.get("combatants"):
+                                note_current_player_acted(combat_state, character_id)
                                 resolved = resolve_waiting_monster_turn(combat_state, narration)
                                 ran_engine_monster = bool(resolved.get("events")) or bool(resolved.get("combat_over"))
                                 if resolved.get("events"):

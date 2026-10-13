@@ -1197,6 +1197,7 @@ async def _settle_narrated_turn(
     from app.services.game.combat_loop import (
         announce_current_player,
         hp_updates_from_state,
+        note_current_player_acted,
         prepare_player_facing_narration,
         resolve_waiting_monster_turn,
         settle_narrated_monster_turn,
@@ -1205,6 +1206,7 @@ async def _settle_narrated_turn(
     ran_engine_monster = False
     combat_state = session.get("combat_state") or {}
     if combat_state.get("combatants"):
+        note_current_player_acted(combat_state, actor_id)
         resolved = resolve_waiting_monster_turn(combat_state, narration)
         ran_engine_monster = bool(resolved.get("events")) or bool(resolved.get("combat_over"))
         if resolved.get("events"):

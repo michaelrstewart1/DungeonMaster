@@ -1,14 +1,17 @@
 """Combat loop — deterministic rules engine drives live combat."""
+import json
+
 import pytest
 
 from app.services.game.combat_loop import (
     apply_hp_text,
     classify_combat_text,
-    correct_borrowed_advantage,
     combat_over,
     combat_prompt_brief,
     combatant_from_character,
     combatant_from_enemy,
+    correct_borrowed_advantage,
+    current_combatant,
     prepare_player_facing_narration,
     resolve_player_action,
     resolve_waiting_monster_turn,
@@ -140,7 +143,9 @@ class TestPendingMonsterTurns:
         )
         # Force a player-first order
         state["combatants"].sort(key=lambda e: not e["is_player"])
+        state["initiative_order"] = [c["name"] for c in state["combatants"]]
         state["current_turn_index"] = 0
+        state["current_turn_id"] = state["combatants"][0]["id"]
         result = run_pending_monster_turns(state)
         assert result["events"] == []
         assert state["current_turn_index"] == 0
@@ -291,6 +296,9 @@ class TestMonsterTurnsNeverWait:
 
         monkeypatch.setattr("app.services.game.combat_loop.DiceRoller", FixedRoller)
         state = _legion_fight()
+        # The healing word already happened; Kael has taken the turn the
+        # handoff is closing. An unacted PC must not be advanced this way.
+        state["acted_this_round"] = [state["combatants"][0]["id"]]
         narration = (
             "Ashara's healing word closes the wound. "
             "It is now Crimson Fang Legionnaire 1's turn. What do you do?"
@@ -445,3 +453,100 @@ class TestReportedHp:
         brief = combat_prompt_brief(state)
         assert "Do not hand an enemy or NPC turn to the players." in brief
         assert "Do not ask players to report their HP" in brief
+        assert "Do not skip a player character" in brief
+
+
+class TestNoSkippedPlayerTurns:
+    def test_multi_round_fight_visits_every_living_pc(self, monkeypatch):
+        """Kael 20, Grotesques 17, Thorne 16, Grotesques 13, Ashara 11, Lyra 10.
+
+        Round 2 used to drop Thorne after Grotesque 1 died: the DM named
+        Grotesques 3 and 4 and then Ashara. The same skip repeated in round 3.
+        A scrambled reload, a damage write, and that narration must still
+        stop on every living PC, in initiative order, every round.
+        """
+        from app.services.dice import DiceResult
+
+        class FixedRoller:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def roll(self, notation):
+                if str(notation).startswith("1d20"):
+                    return DiceResult(notation=str(notation), rolls=[10], modifier=0, total=10)
+                return DiceResult(notation=str(notation), rolls=[1], modifier=0, total=1)
+
+        monkeypatch.setattr("app.services.game.combat_loop.DiceRoller", FixedRoller)
+
+        def pc(cid: str, name: str, init: int, hp: int = 40) -> dict:
+            row = combatant_from_character(_char(id=cid, name=name, hp=hp, max_hp=hp, ac=18))
+            row["initiative"] = init
+            return row
+
+        def mon(cid: str, name: str, init: int) -> dict:
+            row = combatant_from_enemy(name, hp=40, ac=12, cr=0.25, index=1)
+            row["id"] = cid
+            row["name"] = name
+            row["initiative"] = init
+            return row
+
+        order = [
+            pc("kael", "Kael", 20),
+            mon("g1", "Grotesque 1", 17),
+            mon("g2", "Grotesque 2", 17),
+            pc("thorne", "Thorne", 16, hp=34),
+            mon("g3", "Grotesque 3", 13),
+            mon("g4", "Grotesque 4", 13),
+            pc("ashara", "Ashara", 11),
+            pc("lyra", "Lyra", 10),
+        ]
+        state = {
+            "round_number": 1,
+            "current_turn_index": 0,
+            "current_turn_id": order[0]["id"],
+            "initiative_order": [c["name"] for c in order],
+            "combatants": order,
+            "log": [],
+            "acted_this_round": [],
+        }
+        skip_narration = (
+            "Grotesque 3 hits Thorne for 9. Grotesque 4 snaps. "
+            "Ashara, what do you do?"
+        )
+        prompted: list[tuple[int, str]] = []
+        removed_g1 = False
+        guard = 0
+        while state["round_number"] <= 3 and guard < 40:
+            guard += 1
+            state = json.loads(json.dumps(state))
+            actor_id = state.get("current_turn_id")
+            if not removed_g1 and state["round_number"] == 2 and actor_id == "thorne":
+                # The kill drops the corpse out of the snapshot. The old index
+                # then pointed past Thorne at Ashara.
+                state["combatants"] = [c for c in state["combatants"] if c["id"] != "g1"]
+                removed_g1 = True
+            state["combatants"] = list(reversed(state["combatants"]))
+            state["current_turn_index"] = 0
+            current = current_combatant(state)
+            assert current is not None
+            assert current["id"] == actor_id
+            if not current["is_player"]:
+                run_pending_monster_turns(state)
+                continue
+            prompted.append((state["round_number"], current["name"]))
+            apply_hp_text(state["combatants"], "Thorne takes 1 slashing.")
+            assert current_combatant(state)["id"] == current["id"]
+            resolve_waiting_monster_turn(state, skip_narration)
+            assert current_combatant(state)["id"] == current["id"]
+            facing = prepare_player_facing_narration(skip_narration, state)
+            assert f"It is now {current['name']}'s turn." in facing
+            assert "Ashara, what do you do" not in facing
+            result = resolve_player_action(state, current["id"], "dodge")
+            assert result.get("error") is None
+
+        assert removed_g1
+        for rnd in (1, 2, 3):
+            names = [name for rnd_no, name in prompted if rnd_no == rnd]
+            assert names == ["Kael", "Thorne", "Ashara", "Lyra"], names
+        thorne = next(c for c in state["combatants"] if c["id"] == "thorne")
+        assert 0 < thorne["hp"] < 34

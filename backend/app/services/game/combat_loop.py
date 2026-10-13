@@ -225,9 +225,11 @@ def start_encounter(characters: list[dict], enemies: list[dict]) -> dict:
     return {
         "round_number": 1,
         "current_turn_index": 0,
+        "current_turn_id": ordered_entries[0]["id"] if ordered_entries else None,
         "initiative_order": [e["name"] for e in ordered_entries],
         "combatants": ordered_entries,
         "log": [summary],
+        "acted_this_round": [],
     }
 
 
@@ -248,19 +250,139 @@ def combat_over(state: dict) -> tuple[bool, bool]:
     return False, False
 
 
-def _advance_turn(state: dict) -> None:
-    entries = state.get("combatants", [])
+def _can_act(entry: dict) -> bool:
+    """Living monsters act. Players act until they are actually dead.
+
+    Unconscious players (0 HP, still alive) take a death-save turn. Damage
+    must not strike a player who still has HP out of the order: ``is_alive``
+    is only allowed to suppress a player turn at 0 HP.
+    """
+    if entry.get("is_player"):
+        if int(entry.get("hp") or 0) > 0:
+            return True
+        return bool(entry.get("is_alive", True))
+    return bool(entry.get("is_alive", True)) and int(entry.get("hp") or 0) > 0
+
+
+def _align_order(state: dict) -> list[dict]:
+    """Return combatants in initiative order.
+
+    A reload or an HP sync can rebuild the list in a different order while
+    ``current_turn_index`` still counts along the published order. Walking
+    the scrambled list skips whoever shifted out of that slot.
+    """
+    entries = list(state.get("combatants") or [])
+    if not entries:
+        return []
+    order = list(state.get("initiative_order") or [])
+    if not order:
+        state["initiative_order"] = [e.get("name") or "" for e in entries]
+        return list(state.get("combatants") or [])
+    buckets: dict[str, list[dict]] = {}
+    for entry in entries:
+        buckets.setdefault(entry.get("name") or "", []).append(entry)
+    ordered: list[dict] = []
+    for name in order:
+        bucket = buckets.get(name)
+        if bucket:
+            ordered.append(bucket.pop(0))
+    seen = {id(entry) for entry in ordered}
+    for entry in entries:
+        if id(entry) not in seen:
+            ordered.append(entry)
+    if [e.get("id") for e in ordered] != [e.get("id") for e in (state.get("combatants") or [])]:
+        state["combatants"] = ordered
+    return list(state.get("combatants") or [])
+
+
+def _cursor_index(state: dict, entries: list[dict]) -> int:
+    """Index of the actor id, not whatever slot a refresh left the integer in."""
+    if not entries:
+        return 0
+    cursor = state.get("current_turn_id")
+    if cursor:
+        for i, entry in enumerate(entries):
+            if entry.get("id") == cursor:
+                return i
+    raw = state.get("current_turn_index", 0)
+    try:
+        idx = int(raw)
+    except (TypeError, ValueError):
+        idx = 0
+    return min(max(idx, 0), len(entries) - 1)
+
+
+def _set_cursor(state: dict, index: int, entries: list[dict]) -> None:
+    state["current_turn_index"] = index
+    if entries:
+        state["current_turn_id"] = entries[index].get("id")
+
+
+def note_turn_taken(state: dict, combatant_id: str | None) -> None:
+    """Record that this combatant has used their turn in the current round."""
+    if not combatant_id:
+        return
+    acted = state.setdefault("acted_this_round", [])
+    if combatant_id not in acted:
+        acted.append(combatant_id)
+
+
+def _has_acted(state: dict, combatant_id: str | None) -> bool:
+    if not combatant_id:
+        return False
+    return combatant_id in (state.get("acted_this_round") or [])
+
+
+def _advance_from(state: dict, idx: int, entries: list[dict]) -> None:
+    n = len(entries)
+    if n == 0:
+        return
+    for step in range(1, n + 1):
+        nxt = (idx + step) % n
+        if nxt == 0:
+            state["round_number"] = int(state.get("round_number") or 1) + 1
+            state["acted_this_round"] = []
+        if _can_act(entries[nxt]):
+            _set_cursor(state, nxt, entries)
+            return
+
+
+def refresh_turn_state(state: dict) -> None:
+    """Re-seat the cursor after damage, a monster pass, or a reloaded snapshot.
+
+    The actor id is stable. The index is derived from initiative order, then
+    stepped forward only across combatants who cannot act. A living PC is
+    never jumped.
+    """
+    entries = _align_order(state)
     if not entries:
         return
-    n = len(entries)
-    for _ in range(n):
-        state["current_turn_index"] = (state.get("current_turn_index", 0) + 1) % n
-        if state["current_turn_index"] == 0:
-            state["round_number"] = state.get("round_number", 1) + 1
-        current = entries[state["current_turn_index"]]
-        # Skip the dead; unconscious players still get a turn (death save)
-        if current.get("is_alive", True) and (current["hp"] > 0 or current["is_player"]):
-            return
+    idx = _cursor_index(state, entries)
+    _set_cursor(state, idx, entries)
+    if not _can_act(entries[idx]):
+        _advance_from(state, idx, entries)
+
+
+def _advance_turn(state: dict) -> None:
+    entries = _align_order(state)
+    if not entries:
+        return
+    _advance_from(state, _cursor_index(state, entries), entries)
+
+
+def note_current_player_acted(state: dict | None, actor_id: str | None) -> None:
+    """Mark the current player acted only when the message is actually theirs.
+
+    A reply that names a later monster must not consume a different PC's turn.
+    """
+    if not state or not actor_id:
+        return
+    current = current_combatant(state)
+    if not current or not current.get("is_player"):
+        return
+    if current.get("id") != actor_id:
+        return
+    note_turn_taken(state, str(current.get("id")))
 
 
 def _log(state: dict, text: str) -> None:
@@ -272,16 +394,20 @@ def _run_monster_turns(state: dict, engine: RulesEngine, events: list[str]) -> t
     """Auto-run monster turns until a living player is up or combat ends.
 
     Returns (over, victory)."""
-    entries = state.get("combatants", [])
+    refresh_turn_state(state)
     guard = 0
     over, victory = combat_over(state)
     while not over and guard < 20:
         guard += 1
-        current = entries[state["current_turn_index"]]
-        if current["is_player"]:
+        entries = state.get("combatants") or []
+        if not entries:
             break
-        if not current.get("is_alive", True) or current["hp"] <= 0:
+        current = entries[_cursor_index(state, entries)]
+        if current.get("is_player"):
+            break
+        if not _can_act(current):
             _advance_turn(state)
+            over, victory = combat_over(state)
             continue
         targets = [e for e in _alive(entries) if e["is_player"]]
         if not targets:
@@ -322,11 +448,19 @@ def run_pending_monster_turns(state: dict) -> dict:
 
 
 def current_combatant(state: dict) -> dict | None:
-    """The combatant the initiative index currently points at."""
+    """The combatant the initiative cursor currently points at.
+
+    Reloading the snapshot, applying damage, or running a monster turn can
+    leave the integer index on the wrong row. The actor id is re-seated
+    onto the initiative order before it is read.
+    """
+    if not (state.get("combatants") or []):
+        return None
+    refresh_turn_state(state)
     entries = state.get("combatants") or []
     if not entries:
         return None
-    idx = int(state.get("current_turn_index") or 0)
+    idx = _cursor_index(state, entries)
     if idx < 0 or idx >= len(entries):
         return None
     return entries[idx]
@@ -400,6 +534,10 @@ _TURN_HANDOFF_RE = re.compile(
     re.I,
 )
 _WHAT_DO_YOU_DO_RE = re.compile(r"\s*what do you do\??", re.I)
+_NAMED_ASK_RE = re.compile(
+    r"\b(?P<name>[A-Z][\w'’\-]*(?:\s+[A-Z][\w'’\-]*)*)\s*,\s*what do you do\??",
+    re.I,
+)
 _HP_ASK_RE = re.compile(
     r"(?i)[^.?!]*\b(?:what is your|what['’]s your|how much damage|report your|"
     r"tell me your|calculate your|let me know your)\b[^.?!]*"
@@ -440,9 +578,13 @@ def resolve_waiting_monster_turn(state: dict, narration: str | None = None) -> d
     current, that player's turn has ended. Advance, then resolve every
     following non-player until a player is up or the fight is over.
     """
+    refresh_turn_state(state)
     if narration and narration_assigns_nonplayer(narration, state):
         current = current_combatant(state)
-        if current and current.get("is_player"):
+        # Narration may name a later monster. That ends the turn only for the
+        # player who already acted. An unacted PC between monster groups
+        # (Thorne, initiative 16, between the grotesques) keeps the cursor.
+        if current and current.get("is_player") and _has_acted(state, current.get("id")):
             _advance_turn(state)
     current = current_combatant(state)
     if current is None or current.get("is_player"):
@@ -463,15 +605,29 @@ def prepare_player_facing_narration(narration: str, state: dict | None) -> str:
     player_line = announce_current_player(state)
     replaced = False
 
+    def _mentions_someone_else(name: str) -> bool:
+        found = _combatant_named(state, name)
+        current = current_combatant(state) if state.get("combatants") else None
+        if found is None or not player_line or current is None:
+            return False
+        return found.get("id") != current.get("id")
+
     def _replace_handoff(match: re.Match) -> str:
         nonlocal replaced
-        found = _combatant_named(state, match.group("name"))
-        if found is not None and not found.get("is_player"):
-            replaced = True
-            return player_line
-        return match.group(0)
+        if not _mentions_someone_else(match.group("name")):
+            return match.group(0)
+        replaced = True
+        return player_line
+
+    def _replace_named_ask(match: re.Match) -> str:
+        nonlocal replaced
+        if not _mentions_someone_else(match.group("name")):
+            return match.group(0)
+        replaced = True
+        return player_line
 
     updated = _TURN_HANDOFF_RE.sub(_replace_handoff, narration)
+    updated = _NAMED_ASK_RE.sub(_replace_named_ask, updated)
     if not replaced and player_line and narration_assigns_nonplayer(narration, state):
         updated = _WHAT_DO_YOU_DO_RE.sub(f" {player_line}", updated, count=1)
         replaced = True
@@ -501,7 +657,8 @@ def combat_prompt_brief(state: dict | None) -> str:
                 f"{entry.get('name', 'Adventurer')} HP {int(entry.get('hp') or 0)}/{int(entry.get('max_hp') or 0)}."
             )
     lines.append(
-        "Resolve every enemy and NPC turn yourself in this same reply, then name the next player character. "
+        "On an enemy or NPC turn, resolve that one turn, then name the next combatant in the initiative order. "
+        "Do not skip a player character who is between monsters. "
         "Do not hand an enemy or NPC turn to the players. "
         "Do not ask players to report their HP; the numbers above are already on the sheet."
     )
@@ -840,6 +997,7 @@ def resolve_player_action(
     """
     del target_x, target_y, spell_name, slot_level, shove_type
     engine = RulesEngine(DiceRoller())
+    refresh_turn_state(state)
     entries = state.get("combatants", [])
     by_id = {e["id"]: e for e in entries}
     actor = by_id.get(actor_id)
@@ -907,12 +1065,14 @@ def resolve_player_action(
 
     over, victory = combat_over(state)
     if not over:
+        note_turn_taken(state, actor.get("id"))
         _advance_turn(state)
         over, victory = _run_monster_turns(state, engine, events)
 
     if over:
         return _finish(state, entries, events, victory)
 
+    entries = state.get("combatants") or []
     next_up = entries[state["current_turn_index"]]["name"]
     announcement = announce_current_player(state)
     if announcement:
