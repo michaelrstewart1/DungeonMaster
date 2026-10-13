@@ -211,6 +211,8 @@ class CombatState(BaseModel):
     """Combat state tracking during combat phase."""
     initiative_order: List[str] = Field(..., description="Order of combatants in initiative")
     current_turn_index: int = Field(..., ge=0, description="Current turn index in initiative order")
+    current_turn_id: Optional[str] = Field(None, description="Id of the combatant whose turn it is")
+    acted_this_round: List[str] = Field(default_factory=list, description="Combatant ids that have acted this round")
     round_number: int = Field(..., ge=1, description="Current combat round number")
     # Full rules-engine combat: per-combatant HP/AC/death-save state + event log
     combatants: List[Dict[str, Any]] = Field(default_factory=list, description="Serialized combatants (rules engine)")

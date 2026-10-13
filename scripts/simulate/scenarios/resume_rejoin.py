@@ -10,6 +10,7 @@ Flow (all REST, single bot keeps the WS loop honest):
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from ..api_client import ApiClient
@@ -61,17 +62,24 @@ async def post_setup(api: ApiClient, ctx: dict, bots: list) -> None:
         _PROBLEMS.append(f"REST action failed: {r.status_code} {r.text[:200]}")
         return
 
-    # 2. Resume must return the persisted session with our narrative intact
-    r = await api._client.get(f"/api/game/sessions/{session_id}/resume")
-    if r.status_code != 200:
-        _PROBLEMS.append(f"/resume failed: {r.status_code}")
-        return
-    body = r.json()
+    # 2. Resume must return the persisted session with our narrative intact.
+    # The action commits after its response, so the first read can miss the line.
+    body: dict = {}
+    history: list = []
+    for _ in range(10):
+        r = await api._client.get(f"/api/game/sessions/{session_id}/resume")
+        if r.status_code != 200:
+            _PROBLEMS.append(f"/resume failed: {r.status_code}")
+            return
+        body = r.json()
+        history = body.get("session", {}).get("narrative_history") or []
+        if any("copper coin" in line for line in history):
+            break
+        await asyncio.sleep(0.05)
     if body.get("room_code") != room_code:
         _PROBLEMS.append(
             f"/resume room_code mismatch: {body.get('room_code')} != {room_code}"
         )
-    history = body.get("session", {}).get("narrative_history") or []
     if not any("copper coin" in line for line in history):
         _PROBLEMS.append("/resume lost the narrative history (copper coin action missing)")
 

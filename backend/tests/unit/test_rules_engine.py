@@ -198,6 +198,36 @@ class TestRulesEngineAttacks:
         
         assert isinstance(result, ActionResult)
 
+    def test_hit_logs_the_damage_roll(self):
+        """A hit's damage is the dice that were just rolled, and the log says so."""
+        from app.services.dice import DiceResult
+
+        class FixedRoller:
+            def roll(self, notation):
+                if "d20" in str(notation):
+                    return DiceResult(notation=str(notation), rolls=[15], modifier=0, total=15)
+                return DiceResult(notation=str(notation), rolls=[4], modifier=2, total=6)
+
+        engine = RulesEngine(FixedRoller())
+        attacker = Combatant(
+            id="hero-1", name="Hero", initiative=5, initiative_modifier=2,
+            hp=50, max_hp=50, ac=15,
+        )
+        target = Combatant(
+            id="goblin-1", name="Goblin", initiative=3, initiative_modifier=1,
+            hp=20, max_hp=20, ac=10,
+        )
+        result = engine.resolve_attack(
+            attacker=attacker,
+            target=target,
+            attack_bonus=5,
+            damage_dice="1d6+2",
+            damage_type="piercing",
+        )
+        assert result.success is True
+        assert result.damage_dealt == 6
+        assert "Damage roll 1d6+2: [4] + 2 = 6." in result.description
+
 
 class TestRulesEngineAbilityChecks:
     """Test ability check resolution."""

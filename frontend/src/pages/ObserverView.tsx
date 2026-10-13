@@ -12,6 +12,7 @@ import { stripUuidLabel } from '../utils/narrative';
 import { useGameSocket } from '../hooks/useGameSocket';
 import type { WSMessage } from '../api/websocket';
 import type { CombatState, GameState } from '../types';
+import { initiativeAnnouncement, initiativeChips } from '../game/combatTurn';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -125,7 +126,7 @@ export function ObserverView() {
         const p = msg.payload as { combat_state?: CombatState };
         setPhase('combat');
         if (p.combat_state) setCombatState(p.combat_state);
-        setFeed((prev) => [...prev, { id: uuid(), text: '⚔️ Combat begins — roll for initiative!', type: 'system' }]);
+        setFeed((prev) => [...prev, { id: uuid(), text: `⚔️ ${initiativeAnnouncement(p.combat_state)}`, type: 'system' }]);
       }
 
       if (msg.type === 'combat_update') {
@@ -192,12 +193,12 @@ export function ObserverView() {
         {phase === 'combat' && combatState && (
           <div className="pv-initiative-strip">
             <span className="pv-round-chip">R{combatState.round_number}</span>
-            {combatState.initiative_order.map((n, i) => (
+            {initiativeChips(combatState).map((c) => (
               <span
-                key={`${n}-${i}`}
-                className={`pv-init-chip ${i === combatState.current_turn_index ? 'pv-init-chip-active' : ''}`}
+                key={c.id}
+                className={`pv-init-chip ${c.isCurrent ? 'pv-init-chip-active' : ''}`}
               >
-                {n}
+                {c.initiative != null ? `${c.initiative} ${c.name}` : c.name}
               </span>
             ))}
           </div>
