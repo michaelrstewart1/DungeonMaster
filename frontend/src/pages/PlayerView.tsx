@@ -7,8 +7,8 @@ import { useParams } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
 import { loadIdentity, updateIdentity } from '../utils/playerIdentity';
 import {
-  applyHpUpdates,
   diceRollLine,
+  displayedCharacterHp,
   inferEngineAction,
   initiativeAnnouncement,
   initiativeChips,
@@ -22,6 +22,7 @@ import { useGameSocket } from '../hooks/useGameSocket';
 import type { WSMessage } from '../api/websocket';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { DiceRoller } from '../components/DiceRoller';
+import { PhoneActionInput, type PhoneActionInputHandle } from '../components/PhoneActionInput';
 import BattleMap from '../components/BattleMap';
 import { TradeOfferModal, IncomingTradeModal, OutgoingTradeBadge } from '../components/TradePanel';
 import { useToast } from '../components/Toast';
@@ -97,7 +98,6 @@ export function PlayerView() {
   const [character, setCharacter] = useState<Character | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [narrative, setNarrative] = useState<NarrativeEntry[]>([]);
-  const [actionText, setActionText] = useState('');
   const [isMyTurn, setIsMyTurn] = useState(false);
   const [tab, setTab] = useState<'play' | 'sheet' | 'map' | 'dice'>('play');
   const [gameMap, setGameMap] = useState<GameMap | null>(null);
@@ -106,6 +106,7 @@ export function PlayerView() {
   const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null);
   const [waitingForDM, setWaitingForDM] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
+  const actionInputRef = useRef<PhoneActionInputHandle>(null);
 
   // Trade state — composing an outgoing offer, incoming offer queue, and
   // the one outgoing offer we're currently waiting on (we only allow one
@@ -162,10 +163,7 @@ export function PlayerView() {
           try {
             const msg = JSON.parse(event.data);
             if (msg.type === 'transcription' && msg.text) {
-              setActionText((prev) => {
-                const combined = prev ? `${prev} ${msg.text}` : msg.text;
-                return combined;
-              });
+              actionInputRef.current?.insertTranscript(msg.text);
               setIsTranscribing(false);
             }
           } catch { /* ignore parse errors */ }
@@ -320,9 +318,14 @@ export function PlayerView() {
       ]);
       setWaitingForDM(false);
       if (p.combat_state) setCombatState(p.combat_state);
-      if (p.hp_updates?.length) {
-        setCharacter((prev) => (prev ? applyHpUpdates([prev], p.hp_updates)[0] : prev));
-      }
+      setCharacter((prev) => (
+        prev
+          ? displayedCharacterHp(prev, {
+              hp_updates: p.hp_updates,
+              combatants: p.combat_state?.combatants,
+            })
+          : prev
+      ));
       if (p.current_turn && character) {
         setIsMyTurn(p.current_turn === character.id);
       }
@@ -391,14 +394,19 @@ export function PlayerView() {
         // even if the combat_started frame was somehow missed.
         if (p.phase === 'combat' || p.combat_state.combatants?.length) setPhase('combat');
       }
-      // Sync my HP from the authoritative combat state
+      // Stated damage wins over a combat row that still has the old total.
+      // The TV already prefers hp_updates; matching that is what moves the phone.
       const hpUpdates = (p as { hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[] }).hp_updates;
+      setCharacter((prev) => (
+        prev
+          ? displayedCharacterHp(prev, {
+              hp_updates: hpUpdates,
+              combatants: p.combat_state?.combatants,
+            })
+          : prev
+      ));
       const me = p.combat_state?.combatants?.find((c) => c.id === characterId);
-      if (me) {
-        setCharacter((prev) => prev ? { ...prev, hp: me.hp, max_hp: me.max_hp || prev.max_hp } : prev);
-      } else if (hpUpdates?.length) {
-        setCharacter((prev) => (prev ? applyHpUpdates([prev], hpUpdates)[0] : prev));
-      } else if (p.combat_over && characterId) {
+      if (!hpUpdates?.length && !me && p.combat_over && characterId) {
         fetch(`${API_BASE}/characters/${characterId}`)
           .then((r) => (r.ok ? r.json() : null))
           .then((c) => { if (c) setCharacter(c); })
@@ -616,7 +624,7 @@ export function PlayerView() {
   );
 
   function handleSendAction(text?: string) {
-    const msg = (text || actionText).trim();
+    const msg = (text ?? '').trim();
     if (!msg) return;
     // Typed attacks use the same rules-engine call and ownership check as Attack.
     const engineAction = inEngineCombat ? inferEngineAction(msg) : null;
@@ -625,7 +633,6 @@ export function PlayerView() {
         ...prev,
         { id: uuid(), text: msg, type: 'action', sender: playerName, timestamp: new Date().toISOString() },
       ]);
-      setActionText('');
       void handleCombatAction(engineAction);
       return;
     }
@@ -635,7 +642,6 @@ export function PlayerView() {
         ...prev,
         { id: uuid(), text: msg, type: 'system', timestamp: new Date().toISOString() },
       ]);
-      setActionText('');
       return;
     }
     sendAction(character?.id || 'unknown', msg);
@@ -643,15 +649,13 @@ export function PlayerView() {
       ...prev,
       { id: uuid(), text: msg, type: 'action', sender: playerName, timestamp: new Date().toISOString() },
     ]);
-    setActionText('');
     setWaitingForDM(true);
   }
 
-  function handleSendChat() {
-    const text = actionText.trim();
-    if (!text) return;
-    sendChat(text, playerName);
-    setActionText('');
+  function handleSendChat(text: string) {
+    const msg = text.trim();
+    if (!msg) return;
+    sendChat(msg, playerName);
   }
 
   // Rules-engine combat: quick actions hit the authoritative endpoint —
@@ -698,7 +702,7 @@ export function PlayerView() {
 
       const charName = character?.name || playerName;
       const critNote = result.is_critical ? ' (Natural 20!)' : result.is_fumble ? ' (Natural 1!)' : '';
-      const rollMsg = diceRollLine(charName, notation, result.total, critNote);
+      const rollMsg = diceRollLine(charName, notation, result.total, critNote, result.rolls);
       send({
         type: 'dice_roll',
         character_id: characterId,
@@ -837,27 +841,13 @@ export function PlayerView() {
             })}
           </div>
 
-          <div className="pv-action-bar">
-            <input
-              type="text"
-              className="pv-action-input"
-              value={actionText}
-              onChange={(e) => setActionText(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSendAction()}
-              placeholder={isTranscribing ? 'Transcribing...' : showMyTurn ? "It's your turn! What do you do?" : 'What do you do?'}
-              disabled={waitingForDM}
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              inputMode="text"
-            />
-            <button className="pv-action-btn" onClick={() => handleSendAction()} disabled={!actionText.trim() || waitingForDM}>
-              ⚔️
-            </button>
-            <button className="pv-chat-btn" onClick={handleSendChat} disabled={!actionText.trim()}>
-              💬
-            </button>
-          </div>
+          <PhoneActionInput
+            ref={actionInputRef}
+            disabled={waitingForDM}
+            placeholder={isTranscribing ? 'Transcribing...' : showMyTurn ? "It's your turn! What do you do?" : 'What do you do?'}
+            onSend={handleSendAction}
+            onChat={handleSendChat}
+          />
 
           {/* Push-to-Talk button */}
           <div className="pv-ptt-container">

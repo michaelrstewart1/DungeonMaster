@@ -4,6 +4,7 @@ import pytest
 from app.services.game.combat_loop import (
     apply_hp_text,
     classify_combat_text,
+    correct_borrowed_advantage,
     combat_over,
     combat_prompt_brief,
     combatant_from_character,
@@ -379,10 +380,65 @@ class TestReportedHp:
         apply_hp_text([thorne], text)
         assert thorne["hp"] == 20
 
+    def test_damage_type_without_the_word_damage_still_lands(self):
+        thorne = self._thorne()
+        text = (
+            "Thorne takes 7 slashing from the Ghoul. "
+            "Make a DC 10 Constitution saving throw."
+        )
+        apply_hp_text([thorne], text)
+        assert thorne["hp"] == 27
+
     def test_you_are_now_at_uses_the_actor(self):
         thorne = self._thorne()
         apply_hp_text([thorne], "You are now at 20 of 34 HP.", actor_id="thorne")
         assert thorne["hp"] == 20
+
+    def test_advantage_rolls_two_fresh_d20s_and_a_damage_roll(self, monkeypatch):
+        from app.services.dice import DiceResult
+
+        class FixedRoller:
+            def __init__(self, *args, **kwargs):
+                self.calls: list[str] = []
+
+            def roll(self, notation):
+                text = str(notation)
+                self.calls.append(text)
+                if text.startswith("1d20"):
+                    face = 4 if self.calls.count(text) == 1 else 9
+                    return DiceResult(notation=text, rolls=[face], modifier=0, total=face)
+                if text.startswith("2d6"):
+                    return DiceResult(notation=text, rolls=[2, 5], modifier=0, total=7)
+                return DiceResult(notation=text, rolls=[3], modifier=4, total=7)
+
+        monkeypatch.setattr("app.services.game.combat_loop.DiceRoller", FixedRoller)
+        state = {
+            "current_turn_index": 0,
+            "combatants": [{
+                "id": "kael",
+                "name": "Kael Shadowstep",
+                "is_player": True,
+                "attack_bonus": 6,
+                "damage_dice": "1d6+4",
+            }],
+        }
+        # 18 is the earlier Stealth roll. It must not be an input to this check.
+        narration = (
+            "With advantage, using the higher roll of 18 from the previous turn, "
+            "the shot hits for 13 piercing, including Sneak Attack."
+        )
+        updated = correct_borrowed_advantage(narration, state)
+        assert "18" not in updated
+        assert "previous" not in updated.lower()
+        assert "13" not in updated
+        assert "two fresh d20s (4 and 9)" in updated
+        assert "using the higher, 9 + 6 = 15" in updated
+        assert "Damage roll 1d6+4: [3] + 4 = 7 piercing." in updated
+        assert "Sneak Attack roll 2d6: [2, 5] = 7." in updated
+
+    def test_a_normal_hit_line_is_not_rewritten_as_advantage(self):
+        text = "The arrow hits for 13 piercing."
+        assert correct_borrowed_advantage(text, None) == text
 
     def test_prompt_brief_forbids_handing_off_monsters_and_asking_for_hp(self):
         state = _legion_fight()

@@ -52,6 +52,7 @@ export function DiceRoller({ onRoll, lastResult, defaultExpanded = false, sugges
   const [rolling, setRolling] = useState(false)
   const [activeDie, setActiveDie] = useState<DieType>('d20')
   const [modifier, setModifier] = useState(0)
+  const [advantage, setAdvantage] = useState(false)
   const [showResult, setShowResult] = useState(false)
   const [rollHistory, setRollHistory] = useState<DiceResult[]>([])
   const [tumbleStyle, setTumbleStyle] = useState<React.CSSProperties>({})
@@ -101,13 +102,10 @@ export function DiceRoller({ onRoll, lastResult, defaultExpanded = false, sugges
       transition: 'transform 1.2s cubic-bezier(0.2, 0.8, 0.3, 1)',
     })
 
-    // Fire the roll
+    // Fire the roll. Advantage rolls two fresh d20s (adv:); other dice ignore it.
     const mod = modifier !== 0 ? `${modifier > 0 ? '+' : ''}${modifier}` : ''
-    if (die === 'd100') {
-      onRoll(`1d100${mod}`)
-    } else {
-      onRoll(`1${die}${mod}`)
-    }
+    const base = die === 'd100' ? `1d100${mod}` : `1${die}${mod}`
+    onRoll(advantage && die === 'd20' ? `adv:${base}` : base)
 
     // Settle phase
     rollTimerRef.current = setTimeout(() => {
@@ -125,7 +123,7 @@ export function DiceRoller({ onRoll, lastResult, defaultExpanded = false, sugges
       setShowResult(true)
       setRolling(false)
     }, 1700)
-  }, [onRoll, rolling, modifier])
+  }, [onRoll, rolling, modifier, advantage])
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -211,6 +209,14 @@ export function DiceRoller({ onRoll, lastResult, defaultExpanded = false, sugges
           disabled={rolling}
           aria-label="Increase modifier"
         >+</button>
+        <button
+          type="button"
+          className={`dice-mod-btn ${advantage ? 'dice-btn-selected' : ''}`}
+          onClick={() => setAdvantage((on) => !on)}
+          disabled={rolling}
+          aria-pressed={advantage}
+          aria-label="Advantage"
+        >Advantage</button>
       </div>
             </>
           )}

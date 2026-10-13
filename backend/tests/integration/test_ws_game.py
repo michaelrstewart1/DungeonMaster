@@ -594,3 +594,52 @@ class TestNarratedMonsterTurn:
 
         stored = ws_client.get(f"/api/characters/{char_id}").json()
         assert stored["hp"] == 27
+
+
+class TestNarratedDamageReachesThePhone:
+    def test_slashing_without_the_word_damage_updates_hp(self, ws_client: TestClient):
+        class FakeNarrator:
+            async def narrate_exploration(self, **kwargs):
+                return (
+                    "The ghoul's claws rake across Thorne. "
+                    "Thorne takes 7 slashing from the Ghoul. "
+                    "Make a DC 10 Constitution saving throw."
+                )
+
+        ws_client.app.state.narrator = FakeNarrator()
+        char = ws_client.post("/api/characters", json={
+            "name": "Thorne Ironfist",
+            "race": "dwarf",
+            "class_name": "fighter",
+            "level": 3,
+            "strength": 16,
+            "hp": 34,
+            "max_hp": 34,
+            "ac": 18,
+        })
+        assert char.status_code == 201, char.text
+        char_id = char.json()["id"]
+        campaign = ws_client.post("/api/campaigns", json={
+            "name": "Crypt",
+            "description": "ghoul",
+            "character_ids": [char_id],
+            "world_state": {},
+            "dm_settings": {},
+        })
+        session = ws_client.post("/api/game/sessions", json={"campaign_id": campaign.json()["id"]})
+        session_id = session.json()["id"]
+
+        with ws_client.websocket_connect(f"/ws/game/{session_id}") as ws:
+            ws.receive_json()
+            ws.send_json({
+                "type": "action",
+                "character_id": char_id,
+                "action": "Thorne holds his ground.",
+            })
+            data = ws.receive_json()
+            assert data["type"] == "turn_result"
+            assert data["hp_updates"][0]["hp"] == 27
+            assert data["hp_updates"][0]["character_id"] == char_id
+
+        stored = ws_client.get(f"/api/characters/{char_id}").json()
+        assert stored["hp"] == 27

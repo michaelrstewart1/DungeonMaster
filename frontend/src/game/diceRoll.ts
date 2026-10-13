@@ -24,13 +24,31 @@ export function parseDiceNotation(notation: string): ParsedDice | null {
 /**
  * Roll the notation, including its modifier in the total.
  * `1d20+5` with a face of 14 totals 19, not 14.
+ * `adv:1d20+6` rolls two fresh d20s and keeps the higher. It does not take
+ * a previous roll as an input.
  */
 export function rollDiceNotation(
   notation: string,
   rng: () => number = Math.random,
 ): DiceResult | null {
-  const parsed = parseDiceNotation(notation);
+  const advantage = notation.startsWith('adv:');
+  const body = advantage ? notation.slice(4) : notation;
+  const parsed = parseDiceNotation(body);
   if (!parsed || parsed.count < 1 || parsed.sides < 1) return null;
+  if (advantage) {
+    if (parsed.count !== 1 || parsed.sides !== 20) return null;
+    const first = Math.floor(rng() * 20) + 1;
+    const second = Math.floor(rng() * 20) + 1;
+    const kept = Math.max(first, second);
+    return {
+      notation,
+      rolls: [first, second],
+      modifier: parsed.modifier,
+      total: kept + parsed.modifier,
+      is_critical: kept === 20,
+      is_fumble: kept === 1,
+    };
+  }
   const rolls = Array.from({ length: parsed.count }, () => Math.floor(rng() * parsed.sides) + 1);
   const total = rolls.reduce((sum, face) => sum + face, 0) + parsed.modifier;
   const natural = rolls[0];

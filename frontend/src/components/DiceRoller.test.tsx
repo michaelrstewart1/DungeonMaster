@@ -43,6 +43,13 @@ describe('DiceRoller', () => {
     expect(mockOnRoll).toHaveBeenCalledWith('1d20+6')
   })
 
+  it('rolls two fresh d20s when advantage is on', () => {
+    render(<DiceRoller onRoll={mockOnRoll} defaultExpanded suggestedModifier={6} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Advantage' }))
+    fireEvent.click(screen.getByRole('button', { name: 'd20' }))
+    expect(mockOnRoll).toHaveBeenCalledWith('adv:1d20+6')
+  })
+
   it('displays last roll result when provided', () => {
     render(
       <DiceRoller

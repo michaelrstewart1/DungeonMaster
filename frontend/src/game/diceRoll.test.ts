@@ -26,4 +26,15 @@ describe('rollDiceNotation', () => {
       explicitModifier: false,
     });
   });
+
+  it('rolls two fresh d20s for advantage and keeps the higher', () => {
+    const draws = [0.15, 0.4];
+    let i = 0;
+    const result = rollDiceNotation('adv:1d20+6', () => draws[i++]);
+    expect(i).toBe(2);
+    expect(result?.rolls).toEqual([4, 9]);
+    expect(result?.modifier).toBe(6);
+    expect(result?.total).toBe(15);
+    expect(result?.rolls).not.toContain(18);
+  });
 });

@@ -130,6 +130,23 @@ class TestDMSystemPrompt:
             assert "Do not hand an enemy or NPC turn to the players" in text
             assert "Do not ask players to report their HP" in text
 
+    def test_dm_system_prompt_rolls_fresh_advantage_and_damage(self):
+        full = PromptTemplates.dm_system_prompt(
+            world_context="World",
+            characters=[],
+            game_state={},
+        )
+        compact = PromptTemplates.dm_system_prompt(
+            world_context="World",
+            characters=[],
+            game_state={},
+            compact=True,
+        )
+        assert "two fresh d20s" in full.lower()
+        assert "earlier turn" in full.lower()
+        assert "two fresh d20s" in compact.lower()
+        assert "never reuse an earlier roll" in compact.lower()
+
     def test_dm_system_prompt_is_string(self):
         """DM system prompt returns a string."""
         result = PromptTemplates.dm_system_prompt(

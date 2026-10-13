@@ -20,7 +20,7 @@ from app.api.routes.game import (
     apply_reported_hp,
 )
 from app.api.routes.items import _player_owns_character
-from app.services.dice import notation_modifier
+from app.services.dice import notation_modifier, roll_broadcast_total
 from app.services.game.combat_loop import (
     announce_current_player,
     classify_combat_text,
@@ -639,9 +639,9 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 result = message.get("result")
                 rolls = message.get("rolls")
                 modifier = notation_modifier(notation) if isinstance(notation, str) else 0
-                if isinstance(rolls, list) and rolls:
+                if isinstance(rolls, list) and rolls and isinstance(notation, str):
                     try:
-                        result = sum(int(face) for face in rolls) + modifier
+                        result = roll_broadcast_total(notation, rolls)
                     except (TypeError, ValueError):
                         result = message.get("result")
                 await manager.broadcast(session_id, {

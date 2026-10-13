@@ -480,7 +480,7 @@ def prepare_player_facing_narration(narration: str, state: dict | None) -> str:
     updated = _HP_ASK_RE.sub("", updated)
     updated = re.sub(r"[ \t]{2,}", " ", updated)
     updated = re.sub(r"\s+([.?!])", r"\1", updated)
-    return updated.strip()
+    return correct_borrowed_advantage(updated.strip(), state)
 
 
 def combat_prompt_brief(state: dict | None) -> str:
@@ -505,12 +505,20 @@ def combat_prompt_brief(state: dict | None) -> str:
         "Do not hand an enemy or NPC turn to the players. "
         "Do not ask players to report their HP; the numbers above are already on the sheet."
     )
+    lines.append(
+        "Advantage is two fresh d20s for this check; never reuse an earlier roll. "
+        "Damage on a hit is a damage roll, and that roll is stated."
+    )
     return "\n".join(lines)
 
 
+# "Thorne takes 7 slashing" is damage even when the word "damage" is absent.
 _TAKES_DAMAGE_RE = re.compile(
     r"(?P<name>[A-Z][\w'’\-]*(?:\s+[A-Z][\w'’\-]*)*)\s+"
-    r"(?:takes|take|took|suffers|suffered)\s+(?P<amt>\d+)\s+(?:points of\s+)?damage\b",
+    r"(?:takes|take|took|suffers|suffered)\s+(?P<amt>\d+)\s+"
+    r"(?:points of\s+)?"
+    r"(?:damage|(?:slashing|piercing|bludgeoning|lightning|fire|cold|poison|acid|"
+    r"necrotic|radiant|thunder|force|psychic)(?:\s+damage)?)\b",
 )
 _YOU_TAKE_RE = re.compile(
     r"\byou\s+(?:take|took|suffer|suffered)\s+(?P<amt>\d+)\s+(?:points of\s+)?damage\b",
@@ -532,6 +540,16 @@ _DAMAGE_TYPE = (
 # "3 (1d6) lightning" keeps the number and the type with a parenthetical between them.
 _TYPED_DAMAGE_RE = re.compile(
     rf"(\d+)\s+(?:\([^)]*\)\s+)?(?:points of\s+)?(?:{_DAMAGE_TYPE})\b",
+    re.I,
+)
+# "using the higher roll of 18 from the previous turn" is not advantage.
+_BORROWED_ADVANTAGE_RE = re.compile(
+    r"[^.?!]*\b(?:higher|lower)\s+roll\s+of\s+\d+\b[^.?!]*"
+    r"\b(?:previous|earlier|prior|last)\b[^.?!]*[.?!]?",
+    re.I,
+)
+_FLAT_DAMAGE_RE = re.compile(
+    rf"\b(?P<amt>\d+)\s+(?P<kind>{_DAMAGE_TYPE}|damage)\b",
     re.I,
 )
 _HIT_TARGET_RE = re.compile(
@@ -720,6 +738,83 @@ def apply_hp_text(entries: list[dict], text: str, actor_id: str | None = None) -
             _set_hp(target, int(target.get("hp") or 0) - amount, f"takes {amount} damage")
 
     return notes
+
+
+def _player_attack_profile(state: dict | None) -> tuple[int, str]:
+    """To-hit bonus and damage dice for the player who is up, else the first player."""
+    state = state or {}
+    ordered: list[dict] = []
+    current = current_combatant(state)
+    if current and current.get("is_player"):
+        ordered.append(current)
+    for entry in state.get("combatants") or []:
+        if entry.get("is_player") and entry not in ordered:
+            ordered.append(entry)
+    for entry in ordered:
+        bonus = int(entry.get("attack_bonus") or 0)
+        dice = str(entry.get("damage_dice") or "1d6")
+        return bonus, dice
+    return 0, "1d6"
+
+
+def _format_dice_roll(label: str, notation: str, result, suffix: str = "") -> str:
+    mod = int(getattr(result, "modifier", 0) or 0)
+    mod_txt = ""
+    if mod:
+        mod_txt = f" {'+' if mod > 0 else '-'} {abs(mod)}"
+    tail = f" {suffix}" if suffix else ""
+    return f"{label} {notation}: {list(result.rolls)}{mod_txt} = {result.total}{tail}."
+
+
+def correct_borrowed_advantage(narration: str, state: dict | None = None) -> str:
+    """Replace an advantage total copied from an earlier roll.
+
+    Advantage rolls two new d20s for this check and keeps the higher. A hit's
+    damage is rolled and written into the line. Earlier rolls are not read.
+    Narration that does not cite a previous roll is returned unchanged.
+    """
+    if not narration or _BORROWED_ADVANTAGE_RE.search(narration) is None:
+        return narration
+    modifier, damage_notation = _player_attack_profile(state)
+    kind = "piercing"
+    flat = _FLAT_DAMAGE_RE.search(narration)
+    if flat and flat.group("kind").lower() != "damage":
+        kind = flat.group("kind").lower()
+    sneak_die = None
+    if re.search(r"sneak attack", narration, re.I):
+        mentioned = re.search(
+            r"sneak attack(?:\s+\w+){0,6}?\s*(\d+d\d+)",
+            narration,
+            re.I,
+        )
+        sneak_die = mentioned.group(1) if mentioned else "2d6"
+    roller = DiceRoller()
+    first = roller.roll("1d20")
+    second = roller.roll("1d20")
+    faces = [int(first.rolls[0]), int(second.rolls[0])]
+    kept = max(faces)
+    total = kept + modifier
+    higher = f"using the higher, {kept}"
+    if modifier:
+        sign = "+" if modifier > 0 else "-"
+        higher += f" {sign} {abs(modifier)} = {total}"
+    advantage_line = (
+        f"Advantage on this check is two fresh d20s ({faces[0]} and {faces[1]}), "
+        f"{higher}."
+    )
+    updated = _BORROWED_ADVANTAGE_RE.sub(advantage_line, narration, count=1)
+    clauses = [
+        _format_dice_roll("Damage roll", damage_notation, roller.roll(damage_notation), kind),
+    ]
+    if sneak_die:
+        clauses.append(_format_dice_roll("Sneak Attack roll", sneak_die, roller.roll(sneak_die)))
+    damage_text = " ".join(clauses)
+    if _FLAT_DAMAGE_RE.search(updated):
+        updated = _FLAT_DAMAGE_RE.sub(damage_text, updated, count=1)
+    elif "damage roll" not in updated.lower():
+        updated = f"{updated.rstrip()} {damage_text}"
+    updated = re.sub(r"[ \t]{2,}", " ", updated)
+    return updated.strip()
 
 
 def resolve_player_action(

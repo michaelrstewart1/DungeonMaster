@@ -73,7 +73,22 @@ export function initiativeAnnouncement(state: CombatState | null | undefined): s
   return `Combat begins. Initiative: ${parts.join(', ')}.`;
 }
 
-export function diceRollLine(name: string, notation: string, total: number, note = ''): string {
+export function diceRollLine(
+  name: string,
+  notation: string,
+  total: number,
+  note = '',
+  rolls?: number[],
+): string {
+  if (notation.startsWith('adv:') && rolls && rolls.length >= 2) {
+    const parsed = parseDiceNotation(notation.slice(4));
+    const kept = Math.max(...rolls);
+    const mod = parsed?.modifier ?? 0;
+    const modPart = mod === 0
+      ? ''
+      : ` ${mod >= 0 ? '+' : '-'} ${Math.abs(mod)} = ${total}`;
+    return `🎲 ${name} rolls d20 with advantage (${rolls.join(', ')}), using ${kept}${modPart}${note}`;
+  }
   const parsed = parseDiceNotation(notation);
   if (!parsed) {
     const die = /d(\d+)/i.exec(notation || '');
@@ -95,6 +110,35 @@ export interface HpUpdate {
   name?: string;
   hp: number;
   max_hp?: number;
+}
+
+export interface HpDisplaySource {
+  hp_updates?: HpUpdate[] | null;
+  combatants?: Array<{ id?: string; name?: string; hp?: number; max_hp?: number; is_player?: boolean }> | null;
+}
+
+/**
+ * HP the phone should show after a server push.
+ * A stated damage total arrives as `hp_updates`. The combat snapshot can still
+ * be the pre-damage row; that row must not cover the update. The TV already
+ * prefers `hp_updates`. This is the same choice for the phone.
+ */
+export function displayedCharacterHp<T extends { id: string; name?: string; hp: number; max_hp?: number }>(
+  character: T,
+  source: HpDisplaySource,
+): T {
+  if (source.hp_updates?.length) {
+    const next = applyHpUpdates([character], source.hp_updates)[0];
+    if (next !== character) return next;
+  }
+  const me = (source.combatants || []).find((combatant) => {
+    if (combatant.is_player === false || typeof combatant.hp !== 'number') return false;
+    if (combatant.id && combatant.id === character.id) return true;
+    return !!combatant.name && !!character.name
+      && combatant.name.toLowerCase() === character.name.toLowerCase();
+  });
+  if (!me || typeof me.hp !== 'number') return character;
+  return { ...character, hp: me.hp, max_hp: me.max_hp ?? character.max_hp };
 }
 
 /** Merge a server HP push into the phone header or the TV party list. */

@@ -3,6 +3,7 @@ import type { CombatState } from '../types';
 import {
   applyHpUpdates,
   diceRollLine,
+  displayedCharacterHp,
   inferEngineAction,
   initiativeAnnouncement,
   initiativeChips,
@@ -75,6 +76,11 @@ describe('combat text', () => {
     expect(isDiceRollReport('🎲 Thorne Ironfist rolls d20 (14) + 5 = 19')).toBe(true);
   });
 
+  it('logs both advantage faces and the higher one', () => {
+    expect(diceRollLine('Kael Shadowstep', 'adv:1d20+6', 15, '', [4, 9]))
+      .toBe('🎲 Kael Shadowstep rolls d20 with advantage (4, 9), using 9 + 6 = 15');
+  });
+
   it('does not treat an HP report as an attack', () => {
     expect(inferEngineAction('Thorne takes 14 damage (11 slashing + 3 lightning) and is now at 20 of 34 HP.')).toBeNull();
   });
@@ -129,5 +135,25 @@ describe('applyHpUpdates', () => {
     const next = applyHpUpdates(party, [{ character_id: 'thorne', hp: 20, max_hp: 34 }]);
     expect(next[0].hp).toBe(20);
     expect(party[0].hp).toBe(34);
+  });
+});
+
+describe('displayedCharacterHp', () => {
+  const thorne = { id: 'thorne', name: 'Thorne Ironfist', hp: 34, max_hp: 34 };
+
+  it('uses the damage update when the combat row still has the old HP', () => {
+    const next = displayedCharacterHp(thorne, {
+      hp_updates: [{ character_id: 'thorne', hp: 27, max_hp: 34 }],
+      combatants: [{ id: 'thorne', name: 'Thorne Ironfist', hp: 34, max_hp: 34, is_player: true }],
+    });
+    expect(next.hp).toBe(27);
+    expect(next.max_hp).toBe(34);
+  });
+
+  it('uses the combatant row when no damage update arrived', () => {
+    const next = displayedCharacterHp(thorne, {
+      combatants: [{ id: 'thorne', name: 'Thorne Ironfist', hp: 27, max_hp: 34, is_player: true }],
+    });
+    expect(next.hp).toBe(27);
   });
 });
