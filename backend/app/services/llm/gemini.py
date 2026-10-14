@@ -75,11 +75,16 @@ class GeminiProvider(LLMProvider):
                 data = response.json()
                 content = self._extract_content(data)
                 usage = self._extract_usage(data)
+                finish = None
+                candidates = data.get("candidates") or []
+                if candidates:
+                    finish = candidates[0].get("finishReason")
 
                 return LLMResponse(
                     content=content,
                     model=self._model,
                     usage=usage,
+                    finish_reason=finish,
                 )
 
             except GeminiRateLimitError:
@@ -121,6 +126,7 @@ class GeminiProvider(LLMProvider):
             elif response.status_code >= 400:
                 raise GeminiError(f"API error ({response.status_code})")
 
+            finish_reason = None
             async for line in response.aiter_lines():
                 if not line or not line.startswith("data: "):
                     continue
@@ -130,6 +136,8 @@ class GeminiProvider(LLMProvider):
                     event_data = json.loads(json_str)
                     candidates = event_data.get("candidates", [])
                     if candidates:
+                        if candidates[0].get("finishReason"):
+                            finish_reason = candidates[0].get("finishReason")
                         parts = candidates[0].get("content", {}).get("parts", [])
                         for part in parts:
                             text = part.get("text", "")
@@ -139,7 +147,7 @@ class GeminiProvider(LLMProvider):
                     logger.debug("Failed to parse Gemini SSE: %s", json_str)
                     continue
 
-            yield LLMStreamChunk(content="", is_final=True)
+            yield LLMStreamChunk(content="", is_final=True, finish_reason=finish_reason)
 
     # --- internal helpers ---
 

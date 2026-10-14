@@ -41,6 +41,9 @@ class AttackResult:
     is_fumble: bool
     damage: int = 0
     damage_type: str = ""
+    damage_rolls: list[int] = field(default_factory=list)
+    damage_notation: str = ""
+    damage_roll_total: int = 0
 
 
 class CombatManager:
@@ -143,19 +146,26 @@ class CombatManager:
         
         hit = False
         damage = 0
+        damage_rolls: list[int] = []
+        damage_roll_total = 0
         
         if is_fumble:
             hit = False
         elif is_critical:
             hit = True
-            # Critical hit: roll damage twice
+            # Critical hit: roll the damage dice, then double that total.
             damage_result = self._dice.roll(damage_notation)
-            damage = damage_result.total * 2
+            damage_rolls = list(damage_result.rolls)
+            damage_roll_total = damage_result.total
+            damage = damage_roll_total * 2
         elif total_attack >= target.ac:
             hit = True
-            # Normal hit: roll damage
+            # Normal hit: roll damage. The faces are part of the result so
+            # the log can show the roll instead of a bare total.
             damage_result = self._dice.roll(damage_notation)
-            damage = damage_result.total
+            damage_rolls = list(damage_result.rolls)
+            damage_roll_total = damage_result.total
+            damage = damage_roll_total
         
         # Apply resistance/vulnerability
         if hit and not is_fumble:
@@ -175,6 +185,9 @@ class CombatManager:
             is_fumble=is_fumble,
             damage=damage,
             damage_type=damage_type,
+            damage_rolls=damage_rolls,
+            damage_notation=damage_notation if hit else "",
+            damage_roll_total=damage_roll_total if hit else 0,
         )
 
     def apply_damage(

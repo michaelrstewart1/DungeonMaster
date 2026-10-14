@@ -105,6 +105,8 @@ def reset() -> None:
     _db_factory = None
     for store in _STORES.values():
         store.clear()
+    from app.api.action_receipts import reset_client_actions
+    reset_client_actions()
 
 
 def generate_id() -> str:

@@ -167,6 +167,7 @@ test.describe('Multiplayer Simulation Screenshots', () => {
       sessionStorage.setItem('playerId', 'p1');
       sessionStorage.setItem('characterId', 'char-kit');
       sessionStorage.setItem('sessionId', 'sim-session-001');
+      sessionStorage.setItem('dm_claimed_sim-session-001', '1');
     });
 
     await mockAPIs(page);
@@ -219,6 +220,8 @@ test.describe('Multiplayer Simulation Screenshots', () => {
       sessionStorage.setItem('playerName', 'Kit');
       sessionStorage.setItem('playerId', 'p1');
       sessionStorage.setItem('characterId', 'char-kit');
+      sessionStorage.setItem('sessionId', 'sim-session-001');
+      sessionStorage.setItem('dm_claimed_sim-session-001', '1');
     });
 
     await mockAPIs(page);

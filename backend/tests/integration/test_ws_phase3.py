@@ -110,3 +110,21 @@ class TestDiceRoll:
             assert msg["type"] == "dice_roll"
             assert msg["notation"] == "1d6"
             assert msg.get("result") is None
+
+    def test_ws_dice_roll_adds_the_modifier_to_the_faces(self, ws_client: TestClient):
+        """A client that sends faces and drops the modifier still broadcasts the total."""
+        session_id = create_test_session(ws_client)
+        with ws_client.websocket_connect(f"/ws/game/{session_id}") as ws:
+            ws.receive_json()
+            ws.send_json({
+                "type": "dice_roll",
+                "notation": "1d20+5",
+                "rolls": [14],
+                "result": 14,
+            })
+            msg = ws.receive_json()
+            assert msg["type"] == "dice_roll"
+            assert msg["notation"] == "1d20+5"
+            assert msg["result"] == 19
+            assert msg["modifier"] == 5
+            assert msg["rolls"] == [14]

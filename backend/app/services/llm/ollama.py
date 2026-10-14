@@ -121,6 +121,7 @@ class OllamaProvider(LLMProvider):
                 content=content,
                 model=data.get("model", self._model),
                 usage=LLMUsage(),  # Ollama doesn't provide token counts in non-streaming
+                finish_reason=data.get("done_reason"),
             )
 
         except httpx.ConnectError as e:
@@ -189,7 +190,8 @@ class OllamaProvider(LLMProvider):
                         f"Ollama API error ({response.status_code})"
                     )
 
-                # Process streaming response
+                # Process streaming response. done_reason is "length" when
+                # num_predict cut the reply off.
                 async for line in response.aiter_lines():
                     # Skip empty lines
                     if not line or line.isspace():
@@ -201,16 +203,22 @@ class OllamaProvider(LLMProvider):
                         msg = event_data.get("message", {})
                         content = msg.get("content", "") if isinstance(msg, dict) else ""
                         is_done = event_data.get("done", False)
+                        done_reason = event_data.get("done_reason") if is_done else None
 
                         # Yield content chunk if present
                         if content:
                             yield LLMStreamChunk(
                                 content=content,
                                 is_final=is_done,
+                                finish_reason=done_reason,
                             )
                         elif is_done:
                             # Yield empty final chunk to mark completion
-                            yield LLMStreamChunk(content="", is_final=True)
+                            yield LLMStreamChunk(
+                                content="",
+                                is_final=True,
+                                finish_reason=done_reason,
+                            )
 
                     except json.JSONDecodeError:
                         logger.debug(f"Failed to parse JSON: {line}")

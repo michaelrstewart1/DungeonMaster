@@ -116,11 +116,13 @@ class FallbackLLMProvider(LLMProvider):
                 return
             except Exception as exc:
                 if yielded:
-                    # Mid-stream failure: can't restart without duplicating output.
+                    # Mid-stream failure: don't pretend the cutoff is a finished
+                    # reply. The narrator continues from the text already sent.
                     logger.error(
-                        "Primary LLM (%s) died mid-stream (%s) — truncating",
+                        "Primary LLM (%s) died mid-stream (%s)",
                         self._primary.name, exc,
                     )
+                    yield LLMStreamChunk(content="", is_final=True, finish_reason="error")
                     return
                 self._trip_breaker()
                 logger.warning(

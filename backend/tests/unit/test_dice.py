@@ -434,3 +434,23 @@ class TestRollerIntegration:
         # Ability scores typically have a reasonable distribution
         assert min(scores) >= 3
         assert max(scores) <= 18
+
+
+class TestNotationModifier:
+    def test_reads_the_modifier_written_on_the_notation(self):
+        from app.services.dice import notation_modifier
+
+        assert notation_modifier("1d20+5") == 5
+        assert notation_modifier("1d20+6") == 6
+        assert notation_modifier("1d20") == 0
+        assert notation_modifier("2d6-1") == -1
+        assert notation_modifier("not dice") == 0
+        assert notation_modifier("adv:1d20+6") == 6
+
+    def test_advantage_broadcast_keeps_the_higher_fresh_face(self):
+        """Two faces for this check. A prior 18 is not an input, and they are not summed."""
+        from app.services.dice import roll_broadcast_total
+
+        assert roll_broadcast_total("adv:1d20+6", [4, 9]) == 15
+        assert roll_broadcast_total("dis:1d20+6", [4, 9]) == 10
+        assert roll_broadcast_total("1d20+6", [4]) == 10

@@ -1,18 +1,21 @@
 /** Join Game page — enter a room code or scan QR to join a multiplayer session. */
 import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { saveIdentity, loadLastIdentity, updateIdentity } from '../utils/playerIdentity';
+import { PRE_MADE_CHARACTERS } from '../data/premadeCharacters';
+import { joinHeroOffers, premadeCreateBody, type HeroOffer, type PartyHero } from '../game/joinOffers';
+import {
+  saveIdentity,
+  loadLastIdentity,
+  loadIdentityForRoom,
+  updateIdentity,
+  getDeviceId,
+  markClaimedThisSession,
+  clearClaimedThisSession,
+} from '../utils/playerIdentity';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
-interface SimpleCharacter {
-  id: string;
-  name: string;
-  race: string;
-  class_name: string;
-  level: number;
-  portrait_url?: string;
-}
+type SimpleCharacter = PartyHero;
 
 export function JoinGame() {
   const navigate = useNavigate();
@@ -24,24 +27,40 @@ export function JoinGame() {
   const [phase, setPhase] = useState<'join' | 'pick-character'>('join');
   const [sessionId, setSessionId] = useState('');
   const [playerId, setPlayerId] = useState('');
-  const [characters, setCharacters] = useState<SimpleCharacter[]>([]);
+  const [campaignId, setCampaignId] = useState('');
+  const [party, setParty] = useState<SimpleCharacter[]>([]);
   const [takenBy, setTakenBy] = useState<Record<string, string>>({});
   const [claiming, setClaiming] = useState(false);
   const [pickError, setPickError] = useState('');
+  const [previousCharacterId, setPreviousCharacterId] = useState('');
 
   /** Map character_id -> claiming player's name (excluding ourselves). */
-  async function refreshTaken(sid: string, myPlayerId: string) {
+  async function fetchTaken(sid: string, myPlayerId: string): Promise<Record<string, string>> {
     try {
       const res = await fetch(`${API_BASE}/game/sessions/${sid}/players`);
-      if (!res.ok) return;
+      if (!res.ok) return {};
       const data = await res.json();
       const map: Record<string, string> = {};
       for (const p of data.players || []) {
+        // A seat left over from last night does not hold the hero.
+        if (p.present === false) continue;
         if (p.character_id && p.id !== myPlayerId) map[p.character_id] = p.name || 'another player';
       }
-      setTakenBy(map);
-    } catch { /* non-fatal — picker still works */ }
+      return map;
+    } catch {
+      return {};
+    }
   }
+
+  async function refreshTaken(sid: string, myPlayerId: string) {
+    setTakenBy(await fetchTaken(sid, myPlayerId));
+  }
+
+  // Opening this form means the hero has not been claimed on this visit.
+  // A stale "/play" route must not paint last night's screen over the join.
+  useEffect(() => {
+    clearClaimedThisSession();
+  }, []);
 
   // Auto-join if code + name are both in URL
   useEffect(() => {
@@ -86,9 +105,9 @@ export function JoinGame() {
     setError('');
 
     try {
-      // Reuse a prior identity when rejoining the same table (phone refresh,
-      // backend restart) so the roster doesn't grow duplicates.
-      const previous = loadLastIdentity();
+      // Reuse a prior identity only when it was saved for this room code.
+      // The last identity may belong to an earlier session at another table.
+      const previous = loadIdentityForRoom(finalCode);
       const res = await fetch(`${API_BASE}/game/join`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -96,6 +115,7 @@ export function JoinGame() {
           room_code: finalCode,
           player_name: finalName,
           player_id: previous?.roomCode === finalCode ? previous.playerId : undefined,
+          device_id: getDeviceId(),
         }),
       });
 
@@ -114,30 +134,30 @@ export function JoinGame() {
       });
       setSessionId(data.session_id);
       setPlayerId(data.player_id);
+      setCampaignId(data.campaign_id || '');
+      // Offer last night's hero, but do not skip the claim step. A rejoin
+      // used to land straight on that character and hide the picker.
+      setPreviousCharacterId(data.previous_character_id || data.character_id || '');
 
-      // Rejoining with a character already selected — skip the picker
-      if (data.rejoined && data.character_id) {
-        navigate(`/play/${data.session_id}`);
-        return;
-      }
-
-      // Fetch available characters for this campaign
+      // Party rows plus every unclaimed pre-made hero. The character list
+      // alone is only who is already in the campaign, which hid the roster
+      // from a player joining an occupied table.
       if (data.campaign_id) {
         try {
-          const charRes = await fetch(`${API_BASE}/characters?campaign_id=${data.campaign_id}`);
-          if (charRes.ok) {
-            const chars = await charRes.json();
-            if (Array.isArray(chars) && chars.length > 0) {
-              setCharacters(chars);
-              refreshTaken(data.session_id, data.player_id);
-              setPhase('pick-character');
-              return;
-            }
-          }
+          const [charRes, taken] = await Promise.all([
+            fetch(`${API_BASE}/characters?campaign_id=${data.campaign_id}`),
+            fetchTaken(data.session_id, data.player_id),
+          ]);
+          const chars = charRes.ok ? await charRes.json() : [];
+          setParty(Array.isArray(chars) ? chars : []);
+          setTakenBy(taken);
+          setPhase('pick-character');
+          return;
         } catch { /* fall through to direct navigate */ }
       }
 
       // No characters to pick — go straight to player view
+      markClaimedThisSession(data.session_id);
       navigate(`/play/${data.session_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to join');
@@ -146,11 +166,47 @@ export function JoinGame() {
     }
   }
 
-  async function selectCharacter(charId: string) {
+  async function resolveOfferId(offer: HeroOffer): Promise<string> {
+    if (offer.characterId) return offer.characterId;
+    const premade = PRE_MADE_CHARACTERS.find((hero) => hero.id === offer.premadeId);
+    if (!premade || !campaignId) throw new Error('That hero is not available');
+
+    // Someone may have added this name while the picker was open.
+    const charRes = await fetch(`${API_BASE}/characters?campaign_id=${campaignId}`);
+    if (charRes.ok) {
+      const chars = await charRes.json() as SimpleCharacter[];
+      if (Array.isArray(chars)) {
+        setParty(chars);
+        const existing = chars.find((hero) => hero.name.trim().toLowerCase() === premade.name.trim().toLowerCase());
+        if (existing) return existing.id;
+      }
+    }
+
+    const created = await fetch(`${API_BASE}/characters`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(premadeCreateBody(premade, campaignId)),
+    });
+    if (!created.ok) {
+      const data = await created.json().catch(() => ({ detail: 'Could not add that hero' }));
+      throw new Error(typeof data.detail === 'string' ? data.detail : 'Could not add that hero');
+    }
+    const row = await created.json() as { id: string };
+    return row.id;
+  }
+
+  async function selectOffer(offer: HeroOffer) {
     if (claiming) return;
     setClaiming(true);
     setPickError('');
     try {
+      const charId = await resolveOfferId(offer);
+      const taken = await fetchTaken(sessionId, playerId);
+      setTakenBy(taken);
+      if (taken[charId]) {
+        setPickError(`Taken by ${taken[charId]}`);
+        return;
+      }
       // Claim server-side so two phones can't pick the same hero.
       const res = await fetch(`${API_BASE}/game/sessions/${sessionId}/select-character`, {
         method: 'POST',
@@ -164,9 +220,10 @@ export function JoinGame() {
         return;
       }
       updateIdentity(sessionId, { characterId: charId });
+      markClaimedThisSession(sessionId);
       navigate(`/play/${sessionId}`);
-    } catch {
-      setPickError('Failed to claim character — check your connection');
+    } catch (err) {
+      setPickError(err instanceof Error ? err.message : 'Failed to claim character — check your connection');
     } finally {
       setClaiming(false);
     }
@@ -181,26 +238,29 @@ export function JoinGame() {
           <p className="join-game-subtitle">Select the character you'll be playing</p>
           {pickError && <div className="join-error">{pickError}</div>}
           <div className="character-picker-grid">
-            {characters.map((c) => {
-              const taken = takenBy[c.id];
+            {joinHeroOffers(party, PRE_MADE_CHARACTERS, takenBy).map((offer) => {
+              const previous = !!previousCharacterId && (
+                offer.characterId === previousCharacterId || offer.key === previousCharacterId
+              );
               return (
               <button
-                key={c.id}
-                className={`character-picker-card${taken ? ' character-picker-card-taken' : ''}`}
-                onClick={() => selectCharacter(c.id)}
-                disabled={!!taken || claiming}
+                key={offer.key}
+                className={`character-picker-card${previous ? ' character-picker-card-previous' : ''}`}
+                onClick={() => selectOffer(offer)}
+                disabled={claiming}
+                data-testid={`join-hero-${offer.key}`}
               >
                 <div className="character-picker-portrait">
-                  {c.portrait_url ? (
-                    <img src={c.portrait_url} alt={c.name} />
+                  {offer.portrait_url ? (
+                    <img src={offer.portrait_url} alt={offer.name} />
                   ) : (
-                    <span className="character-picker-initial">{c.name[0]}</span>
+                    <span className="character-picker-initial">{offer.name[0]}</span>
                   )}
                 </div>
                 <div className="character-picker-info">
-                  <strong>{c.name}</strong>
-                  <span>Lvl {c.level} {c.race} {c.class_name}</span>
-                  {taken && <span className="character-picker-taken-label">Taken by {taken}</span>}
+                  <strong>{offer.name}</strong>
+                  <span>Lvl {offer.level} {offer.race} {offer.class_name}</span>
+                  {previous && <span className="character-picker-last">Last night</span>}
                 </div>
               </button>
               );

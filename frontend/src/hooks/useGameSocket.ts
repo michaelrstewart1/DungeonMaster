@@ -3,13 +3,15 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { GameWebSocket, type WSMessage } from '../api/websocket';
-import { loadIdentity } from '../utils/playerIdentity';
+import { getDeviceId, loadIdentity } from '../utils/playerIdentity';
 
 export interface PlayerInfo {
   id: string;
   name: string;
   characterId?: string;
   isReady: boolean;
+  /** False when the seat is left over from a previous night. */
+  present?: boolean;
 }
 
 export interface UseGameSocketReturn {
@@ -19,7 +21,7 @@ export interface UseGameSocketReturn {
   connectionCount: number;
   send: (msg: Record<string, unknown>) => void;
   sendChat: (message: string, sender: string) => void;
-  sendAction: (characterId: string, action: string) => void;
+  sendAction: (characterId: string, action: string, clientId?: string, sender?: string) => void;
   sendTokenMove: (tokenId: string, x: number, y: number) => void;
   joinAsPlayer: (name: string, characterId?: string) => void;
   setReady: (ready: boolean) => void;
@@ -66,6 +68,7 @@ export function useGameSocket(
             name: identity.playerName,
             character_id: identity.characterId,
             player_id: identity.playerId,
+            device_id: getDeviceId(),
           });
         }
       }
@@ -96,7 +99,7 @@ export function useGameSocket(
           name?: string;
           characterId?: string;
           isReady?: boolean;
-          players?: Array<{ id: string; name?: string; character_id?: string; is_ready?: boolean }>;
+          players?: Array<{ id: string; name?: string; character_id?: string; is_ready?: boolean; present?: boolean }>;
           connection_count?: number;
         };
         if (p.connection_count !== undefined) setConnectionCount(p.connection_count);
@@ -110,6 +113,7 @@ export function useGameSocket(
               name: sp.name || 'Adventurer',
               characterId: sp.character_id ?? undefined,
               isReady: !!sp.is_ready,
+              present: sp.present,
             })),
           );
         } else if (p.player_id) {
@@ -142,23 +146,34 @@ export function useGameSocket(
     send({ type: 'chat', message, sender });
   }, [send]);
 
-  const sendAction = useCallback((characterId: string, action: string) => {
-    send({ type: 'action', character_id: characterId, action });
-  }, [send]);
+  const sendAction = useCallback((characterId: string, action: string, clientId?: string, sender?: string) => {
+    const playerId = sessionId ? loadIdentity(sessionId)?.playerId : undefined;
+    send({
+      type: 'action',
+      character_id: characterId,
+      action,
+      player_id: playerId,
+      client_id: clientId,
+      sender,
+    });
+  }, [send, sessionId]);
 
   const sendTokenMove = useCallback((tokenId: string, x: number, y: number) => {
     send({ type: 'token_move', token_id: tokenId, x, y });
   }, [send]);
 
   const joinAsPlayer = useCallback((name: string, characterId?: string) => {
-    // Pass the durable player_id (localStorage identity, with legacy
-    // sessionStorage fallback) so the server reconciles this WS connection
-    // with the existing player row instead of creating a duplicate.
-    const playerId =
-      (sessionId ? loadIdentity(sessionId)?.playerId : undefined) ||
-      sessionStorage.getItem('playerId') ||
-      undefined;
-    send({ type: 'player_join', name, character_id: characterId, player_id: playerId });
+    // Pass the durable player_id for THIS session so the server rebinds the
+    // existing seat. A playerId left in sessionStorage by another table is
+    // not a fallback — loadIdentity only returns it when the session matches.
+    const playerId = sessionId ? loadIdentity(sessionId)?.playerId : undefined;
+    send({
+      type: 'player_join',
+      name,
+      character_id: characterId,
+      player_id: playerId,
+      device_id: getDeviceId(),
+    });
   }, [send, sessionId]);
 
   const setReady = useCallback((ready: boolean) => {

@@ -2,6 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
+import { lobbyRoster } from '../game/lobbyRoster';
 import { useGameSocket } from '../hooks/useGameSocket';
 import { useWakeLock } from '../hooks/useWakeLock';
 import type { Character } from '../types';
@@ -94,7 +95,7 @@ export function Lobby() {
             {players.length === 0 && (
               <div className="lobby-waiting">Waiting for players to join...</div>
             )}
-            {players.map((p) => (
+            {lobbyRoster(players).map((p) => (
               <div key={p.id} className={`lobby-player ${p.isReady ? 'lobby-player-ready' : ''}`}>
                 <span className="lobby-player-icon">🧙</span>
                 <span className="lobby-player-name">{p.name}</span>

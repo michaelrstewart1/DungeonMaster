@@ -31,6 +31,9 @@ dev = [
     "httpx>=0.28.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+    # VAD and the audio websocket tests import numpy. The voice extra already
+    # lists it; dev installs it so `pip install -e ".[dev]"` (CI) can run them.
+    "numpy>=1.26.0",
 ]
 voice = [
     "faster-whisper>=1.1.0",

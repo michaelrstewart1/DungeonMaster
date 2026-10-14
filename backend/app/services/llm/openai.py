@@ -129,11 +129,16 @@ class OpenAIProvider(LLMProvider):
             data = response.json()
             content = self._extract_content(data)
             usage = self._extract_usage(data)
+            finish = None
+            choices = data.get("choices") or []
+            if choices:
+                finish = choices[0].get("finish_reason")
 
             return LLMResponse(
                 content=content,
                 model=data.get("model", self._model),
                 usage=usage,
+                finish_reason=finish,
             )
 
         except (OpenAIAuthError, OpenAIRateLimitError, OpenAIServerError, OpenAIError):
@@ -203,7 +208,10 @@ class OpenAIProvider(LLMProvider):
             elif response.status_code >= 400:
                 raise OpenAIError(f"API error ({response.status_code})")
 
-            # Process streaming response
+            # Process streaming response. finish_reason arrives on the last
+            # choice (often with an empty delta) and must not be dropped —
+            # "length" means the reply was cut off mid-sentence.
+            finish_reason = None
             async for line in response.aiter_lines():
                 # Skip empty lines
                 if not line or line.isspace():
@@ -216,7 +224,7 @@ class OpenAIProvider(LLMProvider):
                     # Check for end marker
                     if json_str == "[DONE]":
                         # Yield final chunk to mark completion
-                        yield LLMStreamChunk(content="", is_final=True)
+                        yield LLMStreamChunk(content="", is_final=True, finish_reason=finish_reason)
                         continue
 
                     try:
@@ -225,7 +233,10 @@ class OpenAIProvider(LLMProvider):
 
                         # Extract content from delta
                         if choices:
-                            delta = choices[0].get("delta", {})
+                            choice = choices[0]
+                            if choice.get("finish_reason"):
+                                finish_reason = choice.get("finish_reason")
+                            delta = choice.get("delta", {})
                             content = delta.get("content", "")
                             if content:
                                 yield LLMStreamChunk(content=content, is_final=False)
