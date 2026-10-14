@@ -42,10 +42,12 @@ class LLMResponse:
         content: The generated text content
         model: The model name/identifier
         usage: Token usage statistics
+        finish_reason: Provider stop reason (stop, length, MAX_TOKENS, ...)
     """
     content: str
     model: str
     usage: LLMUsage = field(default_factory=LLMUsage)
+    finish_reason: Optional[str] = None
 
 
 @dataclass
@@ -55,9 +57,28 @@ class LLMStreamChunk:
     Attributes:
         content: Partial content of this chunk
         is_final: Whether this is the final chunk
+        finish_reason: Set on the chunk that reports why generation stopped
     """
     content: str
     is_final: bool = False
+    finish_reason: Optional[str] = None
+
+
+# Provider spellings for "the token budget ran out" plus our own marker for a
+# stream that died after partial text. Callers continue the reply from there.
+_TRUNCATED_FINISH = frozenset({
+    "length",
+    "max_tokens",
+    "max_tokens_exceeded",
+    "error",
+})
+
+
+def finish_needs_continuation(reason: Optional[str]) -> bool:
+    """True when the reply stopped because it was cut off, not because it ended."""
+    if not reason:
+        return False
+    return reason.lower() in _TRUNCATED_FINISH
 
 
 class LLMProvider(ABC):

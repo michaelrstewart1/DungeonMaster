@@ -23,6 +23,7 @@ export function saveIdentity(identity: PlayerIdentity): void {
   sessionStorage.setItem('playerId', identity.playerId);
   sessionStorage.setItem('sessionId', identity.sessionId);
   if (identity.characterId) sessionStorage.setItem('characterId', identity.characterId);
+  else sessionStorage.removeItem('characterId');
 }
 
 export function loadIdentity(sessionId: string): PlayerIdentity | null {
@@ -48,6 +49,25 @@ export function loadLastIdentity(): PlayerIdentity | null {
   try {
     const last = localStorage.getItem(KEY_PREFIX + 'last');
     if (last) return loadIdentity(last);
+  } catch { /* ignore */ }
+  return null;
+}
+
+/** Identity saved for this table's room code, ignoring whichever session was last. */
+export function loadIdentityForRoom(roomCode: string): PlayerIdentity | null {
+  const code = roomCode.trim().toUpperCase();
+  if (!code) return null;
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(KEY_PREFIX) || key === KEY_PREFIX + 'last') continue;
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const identity = JSON.parse(raw) as PlayerIdentity;
+      if ((identity.roomCode || '').toUpperCase() === code && identity.sessionId) {
+        return identity;
+      }
+    }
   } catch { /* ignore */ }
   return null;
 }

@@ -34,6 +34,16 @@ def _sync_override_get_db():
     return _override
 
 
+def _recv_type(ws, expected: str, limit: int = 8) -> dict:
+    """Skip line echoes and acks that now precede a turn result."""
+    last = None
+    for _ in range(limit):
+        last = ws.receive_json()
+        if last.get("type") == expected:
+            return last
+    raise AssertionError(f"never received {expected}; last={last}")
+
+
 # Use async engine for WS tests too
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 _ws_async_engine = create_async_engine("sqlite+aiosqlite://", echo=False)
@@ -50,16 +60,32 @@ async def _ws_override_get_db():
             raise
 
 
+def _run_on_loop(coro):
+    """Run setup against a loop that stays current for the sync TestClient.
+
+    pytest-asyncio 1.x (asyncio_mode=auto) no longer leaves a current loop on
+    the main thread, and get_event_loop() then raises.
+    """
+    import asyncio
+
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            raise RuntimeError("closed")
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    return loop.run_until_complete(coro)
+
+
 @pytest.fixture
 def ws_client():
     """Create a test client with WebSocket support and DB setup."""
-    import asyncio
-
     async def setup_tables():
         async with _ws_async_engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
-    asyncio.get_event_loop().run_until_complete(setup_tables())
+    _run_on_loop(setup_tables())
 
     app = create_app()
     app.dependency_overrides[get_db] = _ws_override_get_db
@@ -72,7 +98,7 @@ def ws_client():
         async with _ws_async_engine.begin() as conn:
             await conn.run_sync(Base.metadata.drop_all)
 
-    asyncio.get_event_loop().run_until_complete(teardown_tables())
+    _run_on_loop(teardown_tables())
 
 
 @pytest.fixture(autouse=True)
@@ -399,8 +425,7 @@ class TestWebSocketActionSubmission:
                 "action": "I cast fireball!"
             })
             
-            data = ws.receive_json()
-            assert data["type"] == "turn_result"
+            data = _recv_type(ws, "turn_result")
             assert "narration" in data
             assert isinstance(data["narration"], str)
 
@@ -422,13 +447,11 @@ class TestWebSocketActionSubmission:
                     "action": "Attack the goblin!"
                 })
                 
-                # Both should receive turn_result
-                data1 = ws1.receive_json()
-                assert data1["type"] == "turn_result"
+                # Both should receive turn_result (after the typed line echo)
+                data1 = _recv_type(ws1, "turn_result")
                 assert "narration" in data1
-                
-                data2 = ws2.receive_json()
-                assert data2["type"] == "turn_result"
+
+                data2 = _recv_type(ws2, "turn_result")
                 assert "narration" in data2
 
 
@@ -450,9 +473,7 @@ class TestWebSocketStateUpdate:
                 "action": "Cast spell"
             })
             
-            # Receive turn_result
-            turn_result = ws.receive_json()
-            assert turn_result["type"] == "turn_result"
+            turn_result = _recv_type(ws, "turn_result")
 
     def test_ws_multiple_actions_in_sequence(self, ws_client: TestClient):
         """Multiple actions can be submitted and processed in sequence."""
@@ -468,17 +489,17 @@ class TestWebSocketStateUpdate:
                 "character_id": "char1",
                 "action": "First action"
             })
-            result1 = ws.receive_json()
-            assert result1["type"] == "turn_result"
-            
+            result1 = _recv_type(ws, "turn_result")
+            assert result1["narration"]
+
             # Second action
             ws.send_json({
                 "type": "action",
                 "character_id": "char1",
                 "action": "Second action"
             })
-            result2 = ws.receive_json()
-            assert result2["type"] == "turn_result"
+            result2 = _recv_type(ws, "turn_result")
+            assert result2["narration"]
 
 
 class TestWebSocketErrorHandling:
@@ -515,3 +536,177 @@ class TestWebSocketErrorHandling:
             ws.send_json({"type": "ping"})
             data = ws.receive_json()
             assert data["type"] == "pong"
+
+
+class TestNarratedMonsterTurn:
+    def test_legionnaire_turn_is_resolved_and_hp_is_stored(self, ws_client: TestClient, monkeypatch):
+        from app.services.dice import DiceResult
+
+        class FixedRoller:
+            def __init__(self, *args, **kwargs):
+                pass
+
+            def roll(self, notation):
+                if str(notation).startswith("1d20"):
+                    return DiceResult(notation=notation, rolls=[15], modifier=0, total=15)
+                return DiceResult(notation=notation, rolls=[5], modifier=2, total=7)
+
+        class FakeNarrator:
+            async def narrate_exploration(self, **kwargs):
+                return (
+                    "Ashara's healing word knits the wound. "
+                    "It is now Crimson Fang Legionnaire 1's turn. What do you do?"
+                )
+
+        monkeypatch.setattr("app.services.game.combat_loop.DiceRoller", FixedRoller)
+        ws_client.app.state.narrator = FakeNarrator()
+
+        char = ws_client.post("/api/characters", json={
+            "name": "Thorne Ironfist",
+            "race": "dwarf",
+            "class_name": "fighter",
+            "level": 3,
+            "strength": 16,
+            "hp": 34,
+            "max_hp": 34,
+            "ac": 18,
+        })
+        assert char.status_code == 201, char.text
+        char_id = char.json()["id"]
+        campaign = ws_client.post("/api/campaigns", json={
+            "name": "Legion",
+            "description": "monster turns",
+            "character_ids": [char_id],
+            "world_state": {},
+            "dm_settings": {},
+        })
+        session = ws_client.post("/api/game/sessions", json={"campaign_id": campaign.json()["id"]})
+        session_id = session.json()["id"]
+
+        with ws_client.websocket_connect(f"/ws/game/{session_id}") as ws:
+            ws.receive_json()
+            ws.send_json({
+                "type": "action",
+                "character_id": char_id,
+                "action": "Ashara casts healing word on Thorne.",
+            })
+            data = _recv_type(ws, "turn_result")
+            narration = data["narration"]
+            assert "What do you do" not in narration
+            assert "It is now Thorne Ironfist's turn." in narration
+            assert data["hp_updates"][0]["hp"] == 27
+
+        stored = ws_client.get(f"/api/characters/{char_id}").json()
+        assert stored["hp"] == 27
+
+
+class TestNarratedDamageReachesThePhone:
+    def test_slashing_without_the_word_damage_updates_hp(self, ws_client: TestClient):
+        class FakeNarrator:
+            async def narrate_exploration(self, **kwargs):
+                return (
+                    "The ghoul's claws rake across Thorne. "
+                    "Thorne takes 7 slashing from the Ghoul. "
+                    "Make a DC 10 Constitution saving throw."
+                )
+
+        ws_client.app.state.narrator = FakeNarrator()
+        char = ws_client.post("/api/characters", json={
+            "name": "Thorne Ironfist",
+            "race": "dwarf",
+            "class_name": "fighter",
+            "level": 3,
+            "strength": 16,
+            "hp": 34,
+            "max_hp": 34,
+            "ac": 18,
+        })
+        assert char.status_code == 201, char.text
+        char_id = char.json()["id"]
+        campaign = ws_client.post("/api/campaigns", json={
+            "name": "Crypt",
+            "description": "ghoul",
+            "character_ids": [char_id],
+            "world_state": {},
+            "dm_settings": {},
+        })
+        session = ws_client.post("/api/game/sessions", json={"campaign_id": campaign.json()["id"]})
+        session_id = session.json()["id"]
+
+        with ws_client.websocket_connect(f"/ws/game/{session_id}") as ws:
+            ws.receive_json()
+            ws.send_json({
+                "type": "action",
+                "character_id": char_id,
+                "action": "Thorne holds his ground.",
+            })
+            data = _recv_type(ws, "turn_result")
+            assert data["hp_updates"][0]["hp"] == 27
+            assert data["hp_updates"][0]["character_id"] == char_id
+
+        stored = ws_client.get(f"/api/characters/{char_id}").json()
+        assert stored["hp"] == 27
+
+
+class TestReconnectResync:
+    """A phone that reconnects must be handed the row that is stored now."""
+
+    def test_resync_pushes_current_scene_after_player_joined(self, ws_client: TestClient):
+        session_id = create_test_session(ws_client)
+
+        async def advance_to_lighthouse() -> None:
+            import app.repository as repo
+
+            async with _ws_async_session() as db:
+                session = await repo.get_game_session(db, session_id)
+                assert session is not None
+                session["current_phase"] = "exploration"
+                session["current_scene"] = "The lighthouse antechamber"
+                session["combat_state"] = None
+                await repo.save_game_session(db, session)
+                await db.commit()
+
+        _run_on_loop(advance_to_lighthouse())
+
+        with ws_client.websocket_connect(f"/ws/game/{session_id}?resync=1") as ws:
+            joined = ws.receive_json()
+            assert joined["type"] == "player_joined"
+            state = ws.receive_json()
+            assert state["type"] == "game_state"
+            assert state["current_scene"] == "The lighthouse antechamber"
+            assert state["current_phase"] == "exploration"
+            assert state["combat_state"] is None
+
+    def test_player_join_keeps_bound_character_across_stale_id(self, ws_client: TestClient):
+        session_id = create_test_session(ws_client)
+        state = ws_client.get(f"/api/game/sessions/{session_id}/state").json()
+        joined = ws_client.post(
+            "/api/game/join",
+            json={
+                "room_code": state["room_code"],
+                "player_name": "Bram",
+                "character_id": "char-thorne",
+            },
+        ).json()
+
+        with ws_client.websocket_connect(f"/ws/game/{session_id}") as ws:
+            assert ws.receive_json()["type"] == "player_joined"
+            ws.send_json({
+                "type": "player_join",
+                "name": "Bram",
+                "player_id": joined["player_id"],
+            })
+            rebound = ws.receive_json()
+            assert rebound["type"] == "player_update"
+            me = next(p for p in rebound["players"] if p["id"] == joined["player_id"])
+            assert me["character_id"] == "char-thorne"
+
+            ws.send_json({
+                "type": "player_join",
+                "name": "Bram",
+                "player_id": joined["player_id"],
+                "character_id": "char-from-blackwood",
+            })
+            again = ws.receive_json()
+            me = next(p for p in again["players"] if p["id"] == joined["player_id"])
+            assert me["character_id"] == "char-thorne"

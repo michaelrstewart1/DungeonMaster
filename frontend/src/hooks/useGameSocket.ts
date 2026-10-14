@@ -19,7 +19,7 @@ export interface UseGameSocketReturn {
   connectionCount: number;
   send: (msg: Record<string, unknown>) => void;
   sendChat: (message: string, sender: string) => void;
-  sendAction: (characterId: string, action: string) => void;
+  sendAction: (characterId: string, action: string, clientId?: string, sender?: string) => void;
   sendTokenMove: (tokenId: string, x: number, y: number) => void;
   joinAsPlayer: (name: string, characterId?: string) => void;
   setReady: (ready: boolean) => void;
@@ -142,22 +142,27 @@ export function useGameSocket(
     send({ type: 'chat', message, sender });
   }, [send]);
 
-  const sendAction = useCallback((characterId: string, action: string) => {
-    send({ type: 'action', character_id: characterId, action });
-  }, [send]);
+  const sendAction = useCallback((characterId: string, action: string, clientId?: string, sender?: string) => {
+    const playerId = sessionId ? loadIdentity(sessionId)?.playerId : undefined;
+    send({
+      type: 'action',
+      character_id: characterId,
+      action,
+      player_id: playerId,
+      client_id: clientId,
+      sender,
+    });
+  }, [send, sessionId]);
 
   const sendTokenMove = useCallback((tokenId: string, x: number, y: number) => {
     send({ type: 'token_move', token_id: tokenId, x, y });
   }, [send]);
 
   const joinAsPlayer = useCallback((name: string, characterId?: string) => {
-    // Pass the durable player_id (localStorage identity, with legacy
-    // sessionStorage fallback) so the server reconciles this WS connection
-    // with the existing player row instead of creating a duplicate.
-    const playerId =
-      (sessionId ? loadIdentity(sessionId)?.playerId : undefined) ||
-      sessionStorage.getItem('playerId') ||
-      undefined;
+    // Pass the durable player_id for THIS session so the server rebinds the
+    // existing seat. A playerId left in sessionStorage by another table is
+    // not a fallback — loadIdentity only returns it when the session matches.
+    const playerId = sessionId ? loadIdentity(sessionId)?.playerId : undefined;
     send({ type: 'player_join', name, character_id: characterId, player_id: playerId });
   }, [send, sessionId]);
 

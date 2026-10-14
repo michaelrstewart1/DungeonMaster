@@ -38,7 +38,9 @@ import { PlayerConnect } from '../components/PlayerConnect'
 import { TradeArbitrationPanel } from '../components/TradeArbitrationPanel'
 import { WorldMapPanel } from '../components/WorldMapPanel'
 import type { Trade } from '../api/client'
-import type { GameState, GameMap, DiceResult, Character, WorldLocation } from '../types'
+import type { GameState, GameMap, DiceResult, Character, WorldLocation, CombatState } from '../types'
+import { applyHpUpdates, initiativeAnnouncement, toCombatantDisplays } from '../game/combatTurn'
+import { rollDiceNotation } from '../game/diceRoll'
 import './GameSession.css'
 
 function formatTime(seconds: number): string {
@@ -57,6 +59,7 @@ export function GameSession() {
   const [gameState, setGameState] = useState<GameState | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [streamingNarration, setStreamingNarration] = useState('')
+  const streamingRef = useRef('')
   const [combatants, setCombatants] = useState<CombatantDisplay[]>([])
   const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null)
   const [mapData, setMapData] = useState<GameMap | null>(null)
@@ -566,16 +569,7 @@ export function GameSession() {
       }
 
       if (state.combat_state) {
-        setCombatants(
-          state.combat_state.initiative_order.map((id, idx) => ({
-            id,
-            name: id,
-            initiative: state.combat_state!.initiative_order.length - idx,
-            hp: 10,
-            max_hp: 10,
-            is_current: idx === state.combat_state!.current_turn_index,
-          }))
-        )
+        setCombatants(toCombatantDisplays(state.combat_state))
       }
 
       // Load session NPCs for Talk to NPC feature
@@ -660,13 +654,42 @@ export function GameSession() {
           // Live LLM token stream — render narration as it is generated
           const chunkPayload = msg.payload as { chunk?: string }
           if (chunkPayload.chunk) {
-            setStreamingNarration(prev => prev + chunkPayload.chunk)
+            setStreamingNarration(prev => {
+              const next = prev + chunkPayload.chunk
+              streamingRef.current = next
+              return next
+            })
           }
           break
         }
-        case 'turn_result': {
+        case 'narration_end': {
+          const endPayload = msg.payload as { narration?: string }
+          const text = endPayload.narration || streamingRef.current
+          streamingRef.current = ''
           setStreamingNarration('')
-          const result = msg.payload as { narration?: string; narrative?: string; mood?: string; dice_results?: DiceResult[]; detected_scene?: string; detected_npcs?: Array<{name: string; npc_type: string}>; environment?: Record<string, string> }
+          setWaitingForDM(false)
+          if (text) {
+            setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
+          }
+          setAvatarState((prev) => ({ ...prev, expression: text ? 'speaking' : 'neutral', isSpeaking: !!text }))
+          if (text) {
+            setTimeout(() => setAvatarState((prev) => ({ ...prev, isSpeaking: false, expression: 'neutral' })), 2000)
+          }
+          break
+        }
+        case 'player_action': {
+          const actionPayload = msg.payload as { text?: string; sender?: string }
+          const text = actionPayload.sender
+            ? `${actionPayload.sender}: ${actionPayload.text || ''}`
+            : (actionPayload.text || '')
+          if (text) setMessages((prev) => [...prev, { role: 'player', text, timestamp: Date.now() }])
+          break
+        }
+        case 'turn_result': {
+          streamingRef.current = ''
+          setStreamingNarration('')
+          setWaitingForDM(false)
+          const result = msg.payload as { narration?: string; narrative?: string; mood?: string; dice_results?: DiceResult[]; detected_scene?: string; detected_npcs?: Array<{name: string; npc_type: string}>; environment?: Record<string, string>; hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[]; combat_state?: CombatState | null }
           const text = result.narration || result.narrative || 'The DM ponders...'
           setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
           processDMMessage(text)
@@ -710,6 +733,13 @@ export function GameSession() {
           if (result.dice_results?.length) {
             setLastDiceResult(result.dice_results[0])
           }
+          if (result.hp_updates?.length) {
+            setPartyCharacters((prev) => applyHpUpdates(prev, result.hp_updates))
+          }
+          if (result.combat_state) {
+            setCombatants(toCombatantDisplays(result.combat_state))
+            setGameState((prev) => prev ? { ...prev, phase: 'combat', combat_state: result.combat_state ?? prev.combat_state } : prev)
+          }
           break
         }
         case 'player_joined': {
@@ -733,6 +763,39 @@ export function GameSession() {
           }
           if (updatePayload.connection_count !== undefined) {
             setWsConnectionCount(updatePayload.connection_count)
+          }
+          break
+        }
+        case 'combat_started': {
+          const p = msg.payload as { combat_state?: CombatState }
+          if (p.combat_state) {
+            setCombatants(toCombatantDisplays(p.combat_state))
+            setGameState((prev) => prev ? { ...prev, phase: 'combat', combat_state: p.combat_state ?? prev.combat_state } : prev)
+            setMessages((prev) => [...prev, { role: 'dm', text: initiativeAnnouncement(p.combat_state), timestamp: Date.now() }])
+          }
+          break
+        }
+        case 'combat_update': {
+          const p = msg.payload as { combat_state?: CombatState | null; phase?: string; combat_over?: boolean; narration?: string; events?: string[] }
+          const nextCombat = p.combat_state
+          if (p.combat_over) {
+            setCombatants([])
+            setGameState((prev) => prev ? { ...prev, phase: 'exploration', combat_state: null } : prev)
+          } else if (nextCombat) {
+            setCombatants(toCombatantDisplays(nextCombat))
+            setGameState((prev) => prev ? { ...prev, phase: (p.phase as GameState['phase']) || 'combat', combat_state: nextCombat } : prev)
+          }
+          const text = p.narration || (p.events || []).join(' ')
+          if (text) {
+            setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
+          }
+          const hpUpdates = (p as { hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[] }).hp_updates
+          const fromCombat = (nextCombat?.combatants || [])
+            .filter((c) => c.is_player)
+            .map((c) => ({ character_id: c.id, name: c.name, hp: c.hp, max_hp: c.max_hp }))
+          const merged = hpUpdates?.length ? hpUpdates : fromCombat
+          if (merged.length) {
+            setPartyCharacters((prev) => applyHpUpdates(prev, merged))
           }
           break
         }
@@ -799,6 +862,9 @@ export function GameSession() {
       const result = await submitAction(sessionId, { type: 'interact', message: action })
       const text = result.narration || 'The DM ponders...'
       setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
+      if (result.hp_updates?.length) {
+        setPartyCharacters((prev) => applyHpUpdates(prev, result.hp_updates))
+      }
       processDMMessage(text)
       extractCombatLogEntries(text)
       setAvatarState((prev) => ({ ...prev, expression: 'speaking', isSpeaking: true }))
@@ -1120,8 +1186,14 @@ export function GameSession() {
             <DiceRoller
               lastResult={lastDiceResult ?? undefined}
               onRoll={(notation) => {
+                const rolled = rollDiceNotation(notation)
+                if (rolled) setLastDiceResult(rolled)
                 if (wsRef.current) {
-                  wsRef.current.send({ type: 'dice_roll', notation })
+                  wsRef.current.send({
+                    type: 'dice_roll',
+                    notation,
+                    ...(rolled ? { result: rolled.total, rolls: rolled.rolls, modifier: rolled.modifier } : {}),
+                  })
                 }
               }}
             />

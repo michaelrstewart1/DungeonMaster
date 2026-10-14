@@ -54,6 +54,35 @@ async def test_rejoin_by_name_after_identity_loss(client):
 
 
 @pytest.mark.asyncio
+async def test_rejoin_keeps_the_claimed_character(client):
+    """A phone that still holds another session's hero id must not replace its seat."""
+    session = await _make_session(client)
+    code = session["room_code"]
+
+    first = await client.post(
+        "/api/game/join",
+        json={"room_code": code, "player_name": "Bram", "character_id": "char-thorne"},
+    )
+    player_id = first.json()["player_id"]
+
+    second = await client.post(
+        "/api/game/join",
+        json={
+            "room_code": code,
+            "player_name": "Bram",
+            "player_id": player_id,
+            "character_id": "char-from-blackwood",
+        },
+    )
+    assert second.status_code == 200
+    assert second.json()["rejoined"] is True
+    assert second.json()["character_id"] == "char-thorne"
+
+    players = (await client.get(f"/api/game/sessions/{session['id']}/players")).json()["players"]
+    assert players[0]["character_id"] == "char-thorne"
+
+
+@pytest.mark.asyncio
 async def test_distinct_names_get_distinct_entries(client):
     session = await _make_session(client)
     code = session["room_code"]

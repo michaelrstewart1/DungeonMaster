@@ -2,15 +2,29 @@
  * Shows their character sheet, action input, turn indicator, and narrative feed.
  * Supports push-to-talk voice input via audio WebSocket.
  */
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
-import { loadIdentity } from '../utils/playerIdentity';
+import { loadIdentity, updateIdentity } from '../utils/playerIdentity';
+import { acceptSessionSnapshot, fetchSessionState } from '../game/sessionSync';
+import {
+  diceRollLine,
+  displayedCharacterHp,
+  inferEngineAction,
+  initiativeAnnouncement,
+  initiativeChips,
+  isDiceRollReport,
+  seatMayActAs,
+} from '../game/combatTurn';
+import { deliveryAfterServer, type LineDelivery } from '../game/actionDelivery';
+import { rollDiceNotation } from '../game/diceRoll';
+import { suggestedRollModifier } from '../game/rollModifier';
 import { stripUuidLabel } from '../utils/narrative';
 import { useGameSocket } from '../hooks/useGameSocket';
 import type { WSMessage } from '../api/websocket';
 import { useWakeLock } from '../hooks/useWakeLock';
 import { DiceRoller } from '../components/DiceRoller';
+import { PhoneActionInput, type PhoneActionInputHandle } from '../components/PhoneActionInput';
 import BattleMap from '../components/BattleMap';
 import { TradeOfferModal, IncomingTradeModal, OutgoingTradeBadge } from '../components/TradePanel';
 import { useToast } from '../components/Toast';
@@ -26,6 +40,8 @@ interface NarrativeEntry {
   sender?: string;
   type: 'narration' | 'chat' | 'action' | 'system';
   timestamp: string;
+  /** Absent on history rows, which already came from the server. */
+  status?: LineDelivery;
 }
 
 type GamePhase = 'exploration' | 'combat';
@@ -72,10 +88,13 @@ const COMBAT_ACTIONS: QuickAction[] = [
 export function PlayerView() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const identity = sessionId ? loadIdentity(sessionId) : null;
-  const playerName = identity?.playerName || sessionStorage.getItem('playerName') || 'Adventurer';
-  const characterId = identity?.characterId || sessionStorage.getItem('characterId') || undefined;
-  const playerId = identity?.playerId || sessionStorage.getItem('playerId') || '';
-  const { connected, messages, players, sendChat, sendAction, joinAsPlayer } = useGameSocket(sessionId);
+  const playerName = identity?.playerName || 'Adventurer';
+  const [characterId, setCharacterId] = useState<string | undefined>(
+    () => identity?.characterId,
+  );
+  const playerId = identity?.playerId || '';
+  const seenVersionRef = useRef(0);
+  const { connected, messages, players, send, sendChat, sendAction, joinAsPlayer } = useGameSocket(sessionId);
   const { addToast } = useToast();
   // Keep the phone screen awake — players may not touch it for minutes
   // between turns, and a locked phone drops off the game.
@@ -84,7 +103,6 @@ export function PlayerView() {
   const [character, setCharacter] = useState<Character | null>(null);
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [narrative, setNarrative] = useState<NarrativeEntry[]>([]);
-  const [actionText, setActionText] = useState('');
   const [isMyTurn, setIsMyTurn] = useState(false);
   const [tab, setTab] = useState<'play' | 'sheet' | 'map' | 'dice'>('play');
   const [gameMap, setGameMap] = useState<GameMap | null>(null);
@@ -93,6 +111,16 @@ export function PlayerView() {
   const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null);
   const [waitingForDM, setWaitingForDM] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
+  const actionInputRef = useRef<PhoneActionInputHandle>(null);
+  const actionDraftRef = useRef('');
+
+  function setLineStatus(clientId: string, event: 'ack' | 'echo' | 'error' | 'timeout') {
+    setNarrative((prev) => prev.map((entry) => (
+      entry.id === clientId && entry.status
+        ? { ...entry, status: deliveryAfterServer(entry.status, event) }
+        : entry
+    )));
+  }
 
   // Trade state — composing an outgoing offer, incoming offer queue, and
   // the one outgoing offer we're currently waiting on (we only allow one
@@ -117,6 +145,18 @@ export function PlayerView() {
     }
   }, [connected, playerName, characterId, joinAsPlayer]);
 
+  // A reload or QR rejoin can open a new socket. The server rebinds that
+  // socket to the existing seat and keeps the claimed character; adopt that
+  // character here so the sheet, the banner, and the action all name the same one.
+  useEffect(() => {
+    if (!sessionId || !playerId || players.length === 0) return;
+    const me = players.find((p) => p.id === playerId);
+    if (me?.characterId && me.characterId !== characterId) {
+      setCharacterId(me.characterId);
+      updateIdentity(sessionId, { characterId: me.characterId });
+    }
+  }, [players, playerId, sessionId, characterId]);
+
   // Connect to audio WebSocket for STT (with automatic reconnect — PTT
   // must keep working through wifi blips and backend restarts).
   useEffect(() => {
@@ -137,10 +177,7 @@ export function PlayerView() {
           try {
             const msg = JSON.parse(event.data);
             if (msg.type === 'transcription' && msg.text) {
-              setActionText((prev) => {
-                const combined = prev ? `${prev} ${msg.text}` : msg.text;
-                return combined;
-              });
+              actionInputRef.current?.insertTranscript(msg.text);
               setIsTranscribing(false);
             }
           } catch { /* ignore parse errors */ }
@@ -174,30 +211,67 @@ export function PlayerView() {
       .catch(() => {});
   }, []);
 
-  // Determine turn status from game state / combat initiative
+  // Determine turn status from game state / combat initiative.
+  // The banner is on only when this seat owns the current actor — the same
+  // fact the server checks before it accepts Attack.
   useEffect(() => {
     if (!character) return;
     if (phase === 'combat' && combatState?.initiative_order?.length) {
-      const upNow = combatState.initiative_order[combatState.current_turn_index];
-      setIsMyTurn(upNow === character.name || upNow === character.id);
+      const current = initiativeChips(combatState).find((c) => c.isCurrent);
+      const iAmCurrent = !!current && (current.id === characterId || current.name === character.name || current.id === character.id);
+      const mayAct = seatMayActAs({
+        playerId,
+        characterId: characterId || character.id,
+        players,
+        rosterReady: players.length > 0,
+      });
+      setIsMyTurn(iAmCurrent && mayAct);
       return;
     }
     if (!gameState) return;
     const currentTurn = (gameState as GameState & { current_turn?: string }).current_turn;
     setIsMyTurn(currentTurn === character.id);
-  }, [gameState, character, phase, combatState]);
+  }, [gameState, character, phase, combatState, playerId, characterId, players]);
+
+  // A line left pending never got an ack. Mark it failed so it is not
+  // sitting in the feed looking sent. Retry uses the same id.
+  const pendingIds = narrative.filter((entry) => entry.status === 'pending').map((entry) => entry.id).join(',');
+  useEffect(() => {
+    if (!pendingIds) return;
+    const ids = pendingIds.split(',');
+    const timer = window.setTimeout(() => {
+      setNarrative((prev) => prev.map((entry) => (
+        ids.includes(entry.id) && entry.status === 'pending'
+          ? { ...entry, status: deliveryAfterServer(entry.status, 'timeout') }
+          : entry
+      )));
+      setWaitingForDM(false);
+    }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [pendingIds]);
+
+  // A combat reply that never arrives must not leave Attack dimmed for the rest of the round.
+  useEffect(() => {
+    if (!waitingForDM || phase !== 'combat') return;
+    const timer = window.setTimeout(() => {
+      setWaitingForDM(false);
+      addToast({ type: 'error', message: "The DM didn't answer in time. You can try again." });
+    }, 25000);
+    return () => window.clearTimeout(timer);
+  }, [waitingForDM, phase, addToast]);
 
   // Load game state and character
   useEffect(() => {
     if (!sessionId) return;
-    fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
+    fetchSessionState(API_BASE, sessionId)
       .then((r) => r.json())
       .then((data) => {
+        const decision = acceptSessionSnapshot(data, sessionId, seenVersionRef.current);
+        if (!decision.accepted) return;
+        seenVersionRef.current = decision.version;
         setGameState(data);
-        const ph = data.current_phase || data.phase;
-        if (ph === 'combat') setPhase('combat');
-        else if (ph) setPhase('exploration');
-        if (data.combat_state?.initiative_order?.length) setCombatState(data.combat_state);
+        setPhase(decision.phase);
+        setCombatState(decision.combat);
         // Backfill the story so a refreshed/rejoining phone isn't blank.
         const hist = narrativeFromHistory(data.narrative_history);
         if (hist.length) setNarrative((prev) => (prev.length ? prev : hist));
@@ -230,16 +304,15 @@ export function PlayerView() {
       // world may have changed while offline (combat started/ended, turns
       // advanced, narration happened), so sync EVERYTHING, not just gameState.
       if (sessionId) {
-        fetch(`${API_BASE}/game/sessions/${sessionId}/state`)
+        fetchSessionState(API_BASE, sessionId)
           .then((r) => r.json())
           .then((data) => {
+            const decision = acceptSessionSnapshot(data, sessionId, seenVersionRef.current);
+            if (!decision.accepted) return;
+            seenVersionRef.current = decision.version;
             setGameState(data);
-            const ph = data.current_phase || data.phase;
-            if (ph === 'combat') setPhase('combat');
-            else if (ph) { setPhase('exploration'); setCombatState(null); }
-            if (data.combat_state?.initiative_order?.length) {
-              setCombatState(data.combat_state);
-            }
+            setPhase(decision.phase);
+            setCombatState(decision.combat);
             const ct = (data as GameState & { current_turn?: string }).current_turn;
             if (ct !== undefined && character) setIsMyTurn(ct === character.id);
             setWaitingForDM(false);
@@ -258,7 +331,36 @@ export function PlayerView() {
     }
 
     if (last.type === 'turn_result') {
-      const p = last.payload as { narration?: string; character_id?: string; current_turn?: string };
+      const p = last.payload as {
+        narration?: string;
+        character_id?: string;
+        current_turn?: string;
+        state_version?: number;
+        phase?: string;
+        hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[];
+        combat_state?: CombatState | null;
+      };
+      const version = typeof p.state_version === 'number' ? p.state_version : 0;
+      const staleVersion = version > 0 && seenVersionRef.current > 0 && version < seenVersionRef.current;
+      // A stale snapshot must not rewind combat, but it still ends the wait.
+      // Otherwise a cut-off stream leaves the phone on "DM is composing".
+      setWaitingForDM(false);
+      if (staleVersion) {
+        if (p.narration) {
+          setNarrative((prev) => (
+            prev.some((entry) => entry.text === p.narration)
+              ? prev
+              : [...prev, {
+                id: uuid(),
+                text: p.narration || '',
+                type: 'narration',
+                timestamp: new Date().toISOString(),
+              }]
+          ));
+        }
+        return;
+      }
+      if (version > seenVersionRef.current) seenVersionRef.current = version;
       setNarrative((prev) => [
         ...prev,
         {
@@ -268,7 +370,23 @@ export function PlayerView() {
           timestamp: new Date().toISOString(),
         },
       ]);
-      setWaitingForDM(false);
+      if (p.phase && p.phase !== 'combat') {
+        setPhase('exploration');
+        setCombatState(null);
+      } else if (p.phase === 'combat' && p.combat_state) {
+        setPhase('combat');
+        setCombatState(p.combat_state);
+      } else if (!p.phase && p.combat_state) {
+        setCombatState(p.combat_state);
+      }
+      setCharacter((prev) => (
+        prev
+          ? displayedCharacterHp(prev, {
+              hp_updates: p.hp_updates,
+              combatants: p.combat_state?.combatants,
+            })
+          : prev
+      ));
       if (p.current_turn && character) {
         setIsMyTurn(p.current_turn === character.id);
       }
@@ -307,7 +425,7 @@ export function PlayerView() {
       if (p.combat_state) setCombatState(p.combat_state);
       setNarrative((prev) => [
         ...prev,
-        { id: uuid(), text: '⚔️ Combat begins — roll for initiative!', type: 'system', timestamp: new Date().toISOString() },
+        { id: uuid(), text: `⚔️ ${initiativeAnnouncement(p.combat_state)}`, type: 'system', timestamp: new Date().toISOString() },
       ]);
     }
 
@@ -337,11 +455,19 @@ export function PlayerView() {
         // even if the combat_started frame was somehow missed.
         if (p.phase === 'combat' || p.combat_state.combatants?.length) setPhase('combat');
       }
-      // Sync my HP from the authoritative combat state
+      // Stated damage wins over a combat row that still has the old total.
+      // The TV already prefers hp_updates; matching that is what moves the phone.
+      const hpUpdates = (p as { hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[] }).hp_updates;
+      setCharacter((prev) => (
+        prev
+          ? displayedCharacterHp(prev, {
+              hp_updates: hpUpdates,
+              combatants: p.combat_state?.combatants,
+            })
+          : prev
+      ));
       const me = p.combat_state?.combatants?.find((c) => c.id === characterId);
-      if (me) {
-        setCharacter((prev) => prev ? { ...prev, hp: me.hp } : prev);
-      } else if (p.combat_over && characterId) {
+      if (!hpUpdates?.length && !me && p.combat_over && characterId) {
         fetch(`${API_BASE}/characters/${characterId}`)
           .then((r) => (r.ok ? r.json() : null))
           .then((c) => { if (c) setCharacter(c); })
@@ -350,16 +476,97 @@ export function PlayerView() {
     }
 
     if (last.type === 'game_state' as string) {
-      const gs = last.payload as GameState & { current_phase?: string };
-      setGameState(gs);
-      const ph = gs.current_phase || gs.phase;
-      if (ph === 'combat') setPhase('combat');
-      else if (ph) setPhase('exploration');
-      if (gs.combat_state?.initiative_order?.length) setCombatState(gs.combat_state);
+      const gs = last.payload as GameState & { current_phase?: string; state_version?: number };
+      if (!sessionId) return;
+      const decision = acceptSessionSnapshot(gs, sessionId, seenVersionRef.current);
+      if (!decision.accepted) return;
+      seenVersionRef.current = decision.version;
+      setGameState({ ...gs, phase: decision.phase, combat_state: decision.combat });
+      setPhase(decision.phase);
+      setCombatState(decision.combat);
+      setWaitingForDM(false);
+      const hist = narrativeFromHistory(gs.narrative_history);
+      if (hist.length) setNarrative(hist);
       if (character) {
         const ct = (gs as GameState & { current_turn?: string }).current_turn;
         setIsMyTurn(ct === character.id);
       }
+    }
+
+    if ((last.type as string) === 'error') {
+      const p = last.payload as { message?: string; client_id?: string };
+      setWaitingForDM(false);
+      if (p.client_id) setLineStatus(p.client_id, 'error');
+      if (p.message) addToast({ type: 'error', message: p.message });
+    }
+
+    if ((last.type as string) === 'action_ack') {
+      const p = last.payload as { client_id?: string };
+      if (p.client_id) setLineStatus(p.client_id, 'ack');
+    }
+
+    if ((last.type as string) === 'player_action') {
+      const p = last.payload as { client_id?: string; text?: string; sender?: string };
+      const text = p.text || '';
+      if (!text) return;
+      setNarrative((prev) => {
+        if (p.client_id && prev.some((entry) => entry.id === p.client_id)) {
+          return prev.map((entry) => (
+            entry.id === p.client_id
+              ? { ...entry, status: deliveryAfterServer(entry.status || 'pending', 'echo') }
+              : entry
+          ));
+        }
+        return [...prev, {
+          id: p.client_id || uuid(),
+          text,
+          sender: p.sender,
+          type: 'action' as const,
+          status: 'sent' as const,
+          timestamp: new Date().toISOString(),
+        }];
+      });
+    }
+
+    if ((last.type as string) === 'narration_end') {
+      const p = last.payload as {
+        narration?: string;
+        phase?: string;
+        combat_state?: CombatState | null;
+      };
+      setWaitingForDM(false);
+      if (p.narration) {
+        setNarrative((prev) => (
+          prev.some((entry) => entry.text === p.narration)
+            ? prev
+            : [...prev, {
+              id: uuid(),
+              text: p.narration || '',
+              type: 'narration',
+              timestamp: new Date().toISOString(),
+            }]
+        ));
+      }
+      if (p.phase && p.phase !== 'combat') {
+        setPhase('exploration');
+        setCombatState(null);
+      } else if (p.combat_state) {
+        setPhase('combat');
+        setCombatState(p.combat_state);
+      }
+    }
+
+    if ((last.type as string) === 'dice_roll') {
+      const p = last.payload as { character_name?: string; notation?: string; result?: number; note?: string };
+      if (p.notation && typeof p.result === 'number') {
+        const text = diceRollLine(p.character_name || 'Someone', p.notation, p.result, p.note || '');
+        setNarrative((prev) => (
+          prev.some((e) => e.text === text)
+            ? prev
+            : [...prev, { id: uuid(), text, type: 'system' as const, timestamp: new Date().toISOString() }]
+        ));
+      }
+      setWaitingForDM(false);
     }
 
     if ((last.type as string) === 'turn_update') {
@@ -518,23 +725,105 @@ export function PlayerView() {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, []);
 
-  function handleSendAction(text?: string) {
-    const msg = (text || actionText).trim();
+  const inEngineCombat = phase === 'combat' && !!combatState?.combatants?.length;
+  const currentCombatant = inEngineCombat
+    ? combatState?.combatants?.[combatState.current_turn_index ?? -1]
+    : undefined;
+  // The engine index is whose turn it is. A narrated "what do you do?" for a
+  // monster must not be the only signal, or the real player's phone stays dark.
+  const showMyTurn = inEngineCombat
+    ? !!currentCombatant?.is_player && currentCombatant.id === characterId
+    : isMyTurn;
+  const rollRequestText = useMemo(() => {
+    for (let i = narrative.length - 1; i >= 0; i -= 1) {
+      const entry = narrative[i];
+      if (entry.type === 'narration' && entry.text) return entry.text;
+    }
+    return '';
+  }, [narrative]);
+  const suggestedModifier = useMemo(
+    () => suggestedRollModifier(character, rollRequestText),
+    [character, rollRequestText],
+  );
+
+  function rememberLine(clientId: string, msg: string) {
+    setNarrative((prev) => {
+      if (prev.some((entry) => entry.id === clientId)) {
+        return prev.map((entry) => (
+          entry.id === clientId ? { ...entry, status: 'pending' as const, text: msg } : entry
+        ));
+      }
+      return [...prev, {
+        id: clientId,
+        text: msg,
+        type: 'action' as const,
+        sender: playerName,
+        status: 'pending' as const,
+        timestamp: new Date().toISOString(),
+      }];
+    });
+  }
+
+  async function postEngineAction(actionType: 'attack' | 'dodge' | 'heal', text: string, clientId: string): Promise<boolean> {
+    if (!sessionId || !characterId) return false;
+    setWaitingForDM(true);
+    try {
+      const res = await fetch(`${API_BASE}/game/sessions/${sessionId}/combat-action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actor_id: characterId,
+          action_type: actionType,
+          target_id: actionType === 'heal' ? characterId : undefined,
+          action_text: text,
+          client_id: clientId,
+          sender: playerName,
+          ...(playerId ? { player_id: playerId } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => null))?.detail;
+        addToast({ type: 'error', message: typeof detail === 'string' ? detail : 'Action failed' });
+        return false;
+      }
+      return true;
+    } catch {
+      addToast({ type: 'error', message: 'Action failed — check your connection' });
+      return false;
+    } finally {
+      setWaitingForDM(false);
+    }
+  }
+
+  function handleSendAction(text?: string, retryId?: string) {
+    const msg = (text ?? '').trim();
     if (!msg) return;
-    sendAction(character?.id || 'unknown', msg);
-    setNarrative((prev) => [
-      ...prev,
-      { id: uuid(), text: msg, type: 'action', sender: playerName, timestamp: new Date().toISOString() },
-    ]);
-    setActionText('');
+    // A dice report during combat is not a turn. Recording it must not lock the buttons.
+    if (inEngineCombat && isDiceRollReport(msg) && !inferEngineAction(msg)) {
+      setNarrative((prev) => [
+        ...prev,
+        { id: uuid(), text: msg, type: 'system', timestamp: new Date().toISOString() },
+      ]);
+      return;
+    }
+    const clientId = retryId || uuid();
+    // Pending until the server acks. A line that looks sent has been delivered.
+    rememberLine(clientId, msg);
+    const engineAction = inEngineCombat ? inferEngineAction(msg) : null;
+    if (engineAction) {
+      void postEngineAction(engineAction, msg, clientId).then((ok) => {
+        setLineStatus(clientId, ok ? 'ack' : 'error');
+      });
+      return;
+    }
+    sendAction(character?.id || 'unknown', msg, clientId, playerName);
     setWaitingForDM(true);
   }
 
-  function handleSendChat() {
-    const text = actionText.trim();
-    if (!text) return;
-    sendChat(text, playerName);
-    setActionText('');
+  function handleSendChat(text: string) {
+    const msg = text.trim();
+    if (!msg) return;
+    sendChat(msg, playerName);
   }
 
   // Rules-engine combat: quick actions hit the authoritative endpoint —
@@ -542,10 +831,11 @@ export function PlayerView() {
   const ENGINE_COMBAT_MAP: Record<string, 'attack' | 'dodge' | 'heal'> = {
     'Attack': 'attack',
     'Defend': 'dodge',
+    'Cast Spell': 'attack',
     'Dodge': 'dodge',
     'Use Potion': 'heal',
+    'Retreat': 'dodge',
   };
-  const inEngineCombat = phase === 'combat' && !!combatState?.combatants?.length;
 
   async function handleCombatAction(actionType: 'attack' | 'dodge' | 'heal') {
     if (!sessionId || !characterId) return;
@@ -558,6 +848,7 @@ export function PlayerView() {
           actor_id: characterId,
           action_type: actionType,
           target_id: actionType === 'heal' ? characterId : undefined,
+          ...(playerId ? { player_id: playerId } : {}),
         }),
       });
       if (!res.ok) {
@@ -573,26 +864,34 @@ export function PlayerView() {
   }
 
   function handleDiceRoll(notation: string) {
-    const match = notation.match(/(\d+)d(\d+)/);
-    if (match) {
-      const count = parseInt(match[1]);
-      const sides = parseInt(match[2]);
-      const rolls = Array.from({ length: count }, () => Math.floor(Math.random() * sides) + 1);
-      const total = rolls.reduce((a, b) => a + b, 0);
-      const result: DiceResult = {
-        notation,
-        rolls,
-        modifier: 0,
-        total,
-        is_critical: sides === 20 && rolls[0] === 20,
-        is_fumble: sides === 20 && rolls[0] === 1,
-      };
+    const result = rollDiceNotation(notation);
+    if (result) {
       setLastDiceResult(result);
 
-      // Auto-submit to DM
       const charName = character?.name || playerName;
       const critNote = result.is_critical ? ' (Natural 20!)' : result.is_fumble ? ' (Natural 1!)' : '';
-      const rollMsg = `🎲 ${charName} rolls d${sides}: ${total}${critNote}`;
+      const rollMsg = diceRollLine(charName, notation, result.total, critNote, result.rolls);
+      send({
+        type: 'dice_roll',
+        character_id: characterId,
+        character_name: charName,
+        notation,
+        rolls: result.rolls,
+        modifier: result.modifier,
+        result: result.total,
+        note: critNote,
+        purpose: inEngineCombat ? 'noted' : undefined,
+      });
+      if (inEngineCombat) {
+        // Initiative is already rolled by the rules engine. Show the roll
+        // without sending it through the DM and locking every combat button.
+        setNarrative((prev) => (
+          prev.some((e) => e.text === rollMsg)
+            ? prev
+            : [...prev, { id: uuid(), text: rollMsg, type: 'system', timestamp: new Date().toISOString() }]
+        ));
+        return;
+      }
       handleSendAction(rollMsg);
     }
   }
@@ -601,9 +900,9 @@ export function PlayerView() {
   const hpPct = character ? Math.round((character.hp / (character.max_hp || character.hp)) * 100) : 100;
 
   return (
-    <div className={`player-view ${isMyTurn ? 'pv-my-turn' : ''}`}>
+    <div className={`player-view ${showMyTurn ? 'pv-my-turn' : ''}`}>
       {/* Turn overlay banner */}
-      {isMyTurn && (
+      {showMyTurn && (
         <div className="pv-turn-overlay">
           <div className="pv-turn-overlay-text">⚔️ YOUR TURN ⚔️</div>
         </div>
@@ -615,7 +914,7 @@ export function PlayerView() {
         <span className={`pv-connection ${connected ? 'pv-online' : 'pv-offline'}`}>
           {connected ? '🟢' : '🔴'}
         </span>
-        {isMyTurn && <span className="pv-turn-badge">⚔️ YOUR TURN</span>}
+        {showMyTurn && <span className="pv-turn-badge">⚔️ YOUR TURN</span>}
       </div>
 
       {/* Character quick stats */}
@@ -663,9 +962,19 @@ export function PlayerView() {
               <div className="pv-narrative-empty">The adventure awaits...</div>
             )}
             {narrative.map((entry) => (
-              <div key={entry.id} className={`pv-narrative-entry pv-entry-${entry.type}`}>
+              <div key={entry.id} className={`pv-narrative-entry pv-entry-${entry.type} ${entry.status === 'pending' ? 'pv-entry-pending' : ''} ${entry.status === 'failed' ? 'pv-entry-failed' : ''}`}>
                 {entry.sender && <span className="pv-entry-sender">{entry.sender}: </span>}
                 <span className="pv-entry-text">{entry.text}</span>
+                {entry.status === 'pending' && <span className="pv-entry-state"> Sending…</span>}
+                {entry.status === 'failed' && (
+                  <button
+                    type="button"
+                    className="pv-retry-btn"
+                    onClick={() => handleSendAction(entry.text, entry.id)}
+                  >
+                    Failed — Retry
+                  </button>
+                )}
               </div>
             ))}
             {waitingForDM && (
@@ -679,12 +988,13 @@ export function PlayerView() {
           {inEngineCombat && combatState && (
             <div className="pv-initiative-strip">
               <span className="pv-round-chip">R{combatState.round_number}</span>
-              {combatState.initiative_order.map((n, i) => (
+              {initiativeChips(combatState).map((c) => (
                 <span
-                  key={`${n}-${i}`}
-                  className={`pv-init-chip ${i === combatState.current_turn_index ? 'pv-init-chip-active' : ''}`}
+                  key={c.id}
+                  className={`pv-init-chip ${c.isCurrent ? 'pv-init-chip-active' : ''}`}
+                  data-initiative={c.initiative ?? ''}
                 >
-                  {n}
+                  {c.initiative != null ? `${c.initiative} ${c.name}` : c.name}
                 </span>
               ))}
             </div>
@@ -699,8 +1009,8 @@ export function PlayerView() {
                   key={action.label}
                   className="pv-quick-action-btn"
                   onClick={() => engineAction ? handleCombatAction(engineAction) : handleSendAction(`${action.emoji} ${action.label}`)}
-                  disabled={waitingForDM || (!!engineAction && !isMyTurn)}
-                  title={engineAction && !isMyTurn ? 'Wait for your turn' : undefined}
+                  disabled={waitingForDM || (!!engineAction && !showMyTurn)}
+                  title={engineAction && !showMyTurn ? 'Wait for your turn' : undefined}
                 >
                   <span>{action.emoji}</span>
                   <span>{action.label}</span>
@@ -709,27 +1019,14 @@ export function PlayerView() {
             })}
           </div>
 
-          <div className="pv-action-bar">
-            <input
-              type="text"
-              className="pv-action-input"
-              value={actionText}
-              onChange={(e) => setActionText(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSendAction()}
-              placeholder={isTranscribing ? 'Transcribing...' : isMyTurn ? "It's your turn! What do you do?" : 'What do you do?'}
-              disabled={waitingForDM}
-              autoComplete="off"
-              autoCorrect="off"
-              spellCheck={false}
-              inputMode="text"
-            />
-            <button className="pv-action-btn" onClick={() => handleSendAction()} disabled={!actionText.trim() || waitingForDM}>
-              ⚔️
-            </button>
-            <button className="pv-chat-btn" onClick={handleSendChat} disabled={!actionText.trim()}>
-              💬
-            </button>
-          </div>
+          <PhoneActionInput
+            ref={actionInputRef}
+            draftRef={actionDraftRef}
+            disabled={waitingForDM}
+            placeholder={isTranscribing ? 'Transcribing...' : showMyTurn ? "It's your turn! What do you do?" : 'What do you do?'}
+            onSend={handleSendAction}
+            onChat={handleSendChat}
+          />
 
           {/* Push-to-Talk button */}
           <div className="pv-ptt-container">
@@ -774,7 +1071,12 @@ export function PlayerView() {
       {/* Dice tab */}
       {tab === 'dice' && (
         <div className="pv-dice-tab">
-          <DiceRoller onRoll={handleDiceRoll} lastResult={lastDiceResult ?? undefined} defaultExpanded />
+          <DiceRoller
+            onRoll={handleDiceRoll}
+            lastResult={lastDiceResult ?? undefined}
+            suggestedModifier={suggestedModifier}
+            defaultExpanded
+          />
         </div>
       )}
 

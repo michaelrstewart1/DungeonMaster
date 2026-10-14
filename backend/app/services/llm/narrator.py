@@ -10,7 +10,7 @@ import logging
 import re
 from typing import Optional
 
-from .base import LLMProvider, LLMMessage, LLMResponse
+from .base import LLMProvider, LLMMessage, finish_needs_continuation
 from .prompts import PromptTemplates
 
 logger = logging.getLogger(__name__)
@@ -145,6 +145,126 @@ class DMNarrator:
             return bool(llm.serving_locally())
         return hasattr(llm, "_base_url")
 
+    # A combat reply that resolves an attack and the monsters' turn does not
+    # fit in a few hundred tokens. Continue when the provider stops on length
+    # rather than returning the cutoff as the whole reply.
+    _NARRATION_TOKENS = 1200
+    _NARRATION_TOKENS_COMPACT = 800
+    _CONTINUE_PROMPT = (
+        "The previous narration was cut off mid-sentence. Continue from that "
+        "exact cutoff. Do not repeat any text already written. Finish the "
+        "sentence and complete the reply, including where combatants end up "
+        "and whose turn it is."
+    )
+
+    async def _one_completion(
+        self,
+        messages: list[LLMMessage],
+        system_prompt: str,
+        temperature: float,
+        max_tokens: int,
+        on_chunk,
+        *,
+        prefer_stream: bool,
+    ) -> tuple[str, str | None]:
+        """One provider call. Streams when a listener is attached.
+
+        An empty stream falls through to generate(), matching the previous
+        narrator. A stream that already produced text and then dies keeps
+        that text and reports finish_reason ``error`` so the caller continues
+        instead of replacing it with a different reply.
+        """
+        piece = ""
+        reason: str | None = None
+        if prefer_stream:
+            try:
+                async for chunk in self._llm.stream(
+                    messages=messages,
+                    system_prompt=system_prompt,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                ):
+                    if chunk.finish_reason:
+                        reason = chunk.finish_reason
+                    if chunk.content:
+                        piece += chunk.content
+                        if on_chunk is not None:
+                            try:
+                                await on_chunk(chunk.content)
+                            except Exception:
+                                pass  # a dead listener must not kill narration
+            except Exception as exc:
+                logger.warning("LLM stream failed (%s)", exc)
+                reason = reason or "error"
+                if piece:
+                    return piece, reason
+            else:
+                if piece:
+                    return piece, reason
+        try:
+            response = await self._llm.generate(
+                messages=messages,
+                system_prompt=system_prompt,
+                temperature=temperature,
+                max_tokens=max_tokens,
+            )
+        except Exception as exc:
+            logger.warning("LLM generate failed (%s)", exc)
+            return piece, "error"
+        text = response.content or ""
+        if text and on_chunk is not None:
+            try:
+                await on_chunk(text)
+            except Exception:
+                pass
+        return text, response.finish_reason
+
+    async def _complete_reply(
+        self,
+        messages: list[LLMMessage],
+        system_prompt: str,
+        temperature: float,
+        max_tokens: int,
+        on_chunk=None,
+    ) -> str:
+        """Generate a narration, continuing when the model stops on length.
+
+        Chunks already delivered to ``on_chunk`` are part of the returned
+        string, so the live TV stream and the final turn text are the same
+        reply. At most two continuations — a stuck provider cannot loop.
+        """
+        conversation = list(messages)
+        assembled = ""
+        # Stream the first call when a screen is listening. A stream that
+        # dies is continued with generate() — streaming again would repeat
+        # the same partial. A clean length cutoff can stream the rest.
+        prefer_stream = on_chunk is not None
+        for attempt in range(3):
+            piece, reason = await self._one_completion(
+                conversation,
+                system_prompt,
+                temperature,
+                max_tokens,
+                on_chunk,
+                prefer_stream=prefer_stream,
+            )
+            assembled += piece
+            if not finish_needs_continuation(reason):
+                break
+            if not piece:
+                break
+            logger.info(
+                "Narration cut off (%s) after %d chars — continuing (%d/3)",
+                reason, len(assembled), attempt + 1,
+            )
+            prefer_stream = on_chunk is not None and (reason or "").lower() != "error"
+            conversation = [
+                *conversation,
+                LLMMessage(role="assistant", content=assembled),
+                LLMMessage(role="user", content=self._CONTINUE_PROMPT),
+            ]
+        return assembled
+
     @staticmethod
     def _build_context_from_narrative(
         narrative_history: list[str],
@@ -250,36 +370,21 @@ class DMNarrator:
                 messages = self._history.copy()
             messages.append(LLMMessage(role="user", content=user_message))
 
-            max_tokens = 200 if self._compact else 500
+            max_tokens = self._NARRATION_TOKENS_COMPACT if self._compact else self._NARRATION_TOKENS
 
-            # Generate narration — stream when a chunk callback is provided
+            # Generate narration — stream when a chunk callback is provided.
+            # A length cutoff or a stream that dies mid-reply is continued so
+            # the text the table already saw is finished, not replaced.
             logger.info("Calling LLM generate (system_prompt=%d chars, messages=%d, compact=%s, streaming=%s)", len(system_prompt), len(messages), self._compact, on_chunk is not None)
-            raw = ""
-            if on_chunk is not None:
-                try:
-                    async for chunk in self._llm.stream(
-                        messages=messages,
-                        system_prompt=system_prompt,
-                        temperature=0.8,
-                        max_tokens=max_tokens,
-                    ):
-                        if chunk.content:
-                            raw += chunk.content
-                            try:
-                                await on_chunk(chunk.content)
-                            except Exception:
-                                pass  # a dead listener must not kill narration
-                except Exception as exc:
-                    logger.warning("LLM stream failed (%s) — falling back to generate", exc)
-                    raw = ""
+            raw = await self._complete_reply(
+                messages=messages,
+                system_prompt=system_prompt,
+                temperature=0.8,
+                max_tokens=max_tokens,
+                on_chunk=on_chunk,
+            )
             if not raw:
-                response = await self._llm.generate(
-                    messages=messages,
-                    system_prompt=system_prompt,
-                    temperature=0.8,
-                    max_tokens=max_tokens,
-                )
-                raw = response.content
+                return FALLBACK_NARRATIONS["exploration"]
             logger.info("LLM response received (%d chars)", len(raw))
 
             # Only update global fallback history when session_history wasn't provided;
@@ -369,21 +474,25 @@ class DMNarrator:
                 messages = self._history.copy()
             messages.append(LLMMessage(role="user", content=user_message))
 
-            # Generate narration
-            response = await self._llm.generate(
+            # Long enough for an attack plus the monsters that follow it.
+            # Length cutoffs are continued inside _complete_reply.
+            max_tokens = self._NARRATION_TOKENS_COMPACT if self._compact else self._NARRATION_TOKENS
+            raw = await self._complete_reply(
                 messages=messages,
                 system_prompt=combat_prompt,
                 temperature=0.7,
-                max_tokens=300,
+                max_tokens=max_tokens,
             )
+            if not raw:
+                return FALLBACK_NARRATIONS["combat"]
 
             if session_history is None:
                 self._add_to_history(
                     LLMMessage(role="user", content=user_message),
-                    LLMMessage(role="assistant", content=response.content),
+                    LLMMessage(role="assistant", content=raw),
                 )
 
-            return response.content
+            return raw
 
         except Exception as e:
             logger.error(f"Error in narrate_combat_action: {e}")

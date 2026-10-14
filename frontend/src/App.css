@@ -6959,6 +6959,32 @@
   border-left: 3px solid #4caf50;
 }
 
+.pv-entry-pending {
+  opacity: 0.72;
+}
+
+.pv-entry-failed {
+  border-left-color: #f44336;
+  background: rgba(244, 67, 54, 0.08);
+}
+
+.pv-entry-state {
+  color: var(--text-dim, #8a8aa0);
+  font-size: 0.8rem;
+}
+
+.pv-retry-btn {
+  display: inline-block;
+  margin-left: 0.4rem;
+  background: transparent;
+  border: 1px solid #f44336;
+  color: #f44336;
+  border-radius: 999px;
+  padding: 0.1rem 0.55rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+}
+
 .pv-entry-system {
   background: rgba(150, 150, 170, 0.08);
   color: var(--text-dim, #8a8aa0);

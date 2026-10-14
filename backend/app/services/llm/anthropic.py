@@ -154,6 +154,7 @@ class AnthropicProvider(LLMProvider):
                     content=content,
                     model=data.get("model", self._model),
                     usage=usage,
+                    finish_reason=data.get("stop_reason"),
                 )
 
             except (AnthropicRateLimitError, asyncio.TimeoutError) as e:
@@ -227,9 +228,9 @@ class AnthropicProvider(LLMProvider):
             elif response.status_code >= 400:
                 raise AnthropicError(f"API error ({response.status_code})")
 
-            # Process streaming response
-            is_final = False
-            line_buffer = ""
+            # Process streaming response. message_delta carries stop_reason
+            # ("max_tokens" when the reply was cut off).
+            stop_reason = None
 
             async for byte_line in response.aiter_lines():
                 # Handle Server-Sent Events format
@@ -247,16 +248,17 @@ class AnthropicProvider(LLMProvider):
                                 text = delta.get("text", "")
                                 yield LLMStreamChunk(content=text, is_final=False)
 
-                        # Mark final when message stop event
-                        elif event_type == "message_stop":
-                            is_final = True
+                        elif event_type == "message_delta":
+                            delta = event_data.get("delta") or {}
+                            if delta.get("stop_reason"):
+                                stop_reason = delta.get("stop_reason")
 
                     except json.JSONDecodeError:
                         logger.debug(f"Failed to parse JSON: {json_str}")
                         continue
 
-            # Yield final chunk to mark completion
-            yield LLMStreamChunk(content="", is_final=True)
+            # Yield final chunk to mark completion, including why it stopped.
+            yield LLMStreamChunk(content="", is_final=True, finish_reason=stop_reason)
 
     def _format_messages(self, messages: list[LLMMessage]) -> list[dict]:
         """Format messages for Anthropic API format.
