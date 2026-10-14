@@ -1529,6 +1529,13 @@ class CombatActionRequest(BaseModel):
     player_id: Optional[str] = Field(
         None, description="Player id claiming this action. Required once players have joined the session via room code; ignored for solo/desktop sessions with no registered players."
     )
+    action_text: Optional[str] = Field(
+        None, description="The sentence the player typed. Echoed to every screen; the rules engine still resolves action_type."
+    )
+    client_id: Optional[str] = Field(
+        None, description="Phone line id. A retry of the same id is not applied twice."
+    )
+    sender: Optional[str] = Field(None, description="Display name for the typed line")
 
 
 @router.post("/sessions/{session_id}/combat-action")
@@ -1537,9 +1544,21 @@ async def combat_action(session_id: str, body: CombatActionRequest, request: Req
     computed by the rules engine — the LLM only narrates afterwards)."""
     from app.services.game.combat_loop import resolve_player_action
 
+    from app.api.action_receipts import claim_client_action, release_client_action
+
     session = await repo.get_game_session(db, session_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
+
+    if not claim_client_action(session_id, body.client_id):
+        return {
+            "ok": True,
+            "duplicate": True,
+            "events": [],
+            "narration": "",
+            "combat_state": session.get("combat_state"),
+            "phase": session.get("current_phase"),
+        }
 
     # Once players have joined via room code, a combat action must be claimed
     # by the player who owns that character — prevents one phone from acting
@@ -1549,10 +1568,12 @@ async def combat_action(session_id: str, body: CombatActionRequest, request: Req
     if registered_players:
         from app.api.routes.items import _player_owns_character
         if not body.player_id or not _player_owns_character(session_id, body.player_id, body.actor_id):
+            release_client_action(session_id, body.client_id)
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="That isn't your character")
 
     combat_state = session.get("combat_state")
     if not combat_state or not combat_state.get("combatants"):
+        release_client_action(session_id, body.client_id)
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="No active combat with initiative — call start-combat with enemies first")
 
     result = resolve_player_action(
@@ -1560,6 +1581,7 @@ async def combat_action(session_id: str, body: CombatActionRequest, request: Req
         spell_name=body.spell_name, slot_level=body.slot_level, shove_type=body.shove_type,
     )
     if result.get("error"):
+        release_client_action(session_id, body.client_id)
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=result["error"])
 
     # Persist deterministic outcomes into the narrative record
@@ -1619,6 +1641,19 @@ async def combat_action(session_id: str, body: CombatActionRequest, request: Req
         return payload
 
     from app.api.websockets.game_ws import manager
+    if body.action_text:
+        actor = next(
+            (c for c in (combat_state or {}).get("combatants") or [] if c.get("id") == body.actor_id),
+            None,
+        )
+        await manager.broadcast(session_id, {
+            "type": "player_action",
+            "client_id": body.client_id,
+            "character_id": body.actor_id,
+            "text": body.action_text,
+            "sender": body.sender or (actor or {}).get("name") or "",
+            "timestamp": datetime.now().isoformat(),
+        })
     await manager.broadcast(session_id, {"type": "combat_update", **payload})
 
     narrator = getattr(request.app.state, "narrator", None)
@@ -1641,8 +1676,20 @@ async def combat_action(session_id: str, body: CombatActionRequest, request: Req
                     timeout=30.0,
                 )
             except Exception:
+                logger.exception("Combat narration failed for session %s", session_id)
+                # The rules engine already moved the turn. Leaving this
+                # unannounced is what stuck the DM on Waiting mid-sentence.
+                await manager.broadcast(session_id, {
+                    "type": "narration_end",
+                    "narration": "",
+                    "phase": session.get("current_phase"),
+                    "combat_state": session.get("combat_state"),
+                    "recover": True,
+                })
                 return
             if narration:
+                from app.api.routes.avatar import trigger_speaking
+                trigger_speaking(session_id, narration)
                 from app.services.game.combat_loop import prepare_player_facing_narration
                 narration = prepare_player_facing_narration(narration, None if result.get("combat_over") else combat_snapshot)
                 payload = {
@@ -1673,6 +1720,9 @@ async def combat_action(session_id: str, body: CombatActionRequest, request: Req
         task = _asyncio.create_task(_narrate_in_background())
         _background_tasks.add(task)
         task.add_done_callback(_background_tasks.discard)
+        # Let a narration that fails immediately broadcast narration_end
+        # before this response returns, so the table is not left waiting.
+        await _asyncio.sleep(0)
 
     return payload
 

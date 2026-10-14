@@ -59,6 +59,7 @@ export function GameSession() {
   const [gameState, setGameState] = useState<GameState | null>(null)
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [streamingNarration, setStreamingNarration] = useState('')
+  const streamingRef = useRef('')
   const [combatants, setCombatants] = useState<CombatantDisplay[]>([])
   const [lastDiceResult, setLastDiceResult] = useState<DiceResult | null>(null)
   const [mapData, setMapData] = useState<GameMap | null>(null)
@@ -653,12 +654,41 @@ export function GameSession() {
           // Live LLM token stream — render narration as it is generated
           const chunkPayload = msg.payload as { chunk?: string }
           if (chunkPayload.chunk) {
-            setStreamingNarration(prev => prev + chunkPayload.chunk)
+            setStreamingNarration(prev => {
+              const next = prev + chunkPayload.chunk
+              streamingRef.current = next
+              return next
+            })
           }
           break
         }
-        case 'turn_result': {
+        case 'narration_end': {
+          const endPayload = msg.payload as { narration?: string }
+          const text = endPayload.narration || streamingRef.current
+          streamingRef.current = ''
           setStreamingNarration('')
+          setWaitingForDM(false)
+          if (text) {
+            setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])
+          }
+          setAvatarState((prev) => ({ ...prev, expression: text ? 'speaking' : 'neutral', isSpeaking: !!text }))
+          if (text) {
+            setTimeout(() => setAvatarState((prev) => ({ ...prev, isSpeaking: false, expression: 'neutral' })), 2000)
+          }
+          break
+        }
+        case 'player_action': {
+          const actionPayload = msg.payload as { text?: string; sender?: string }
+          const text = actionPayload.sender
+            ? `${actionPayload.sender}: ${actionPayload.text || ''}`
+            : (actionPayload.text || '')
+          if (text) setMessages((prev) => [...prev, { role: 'player', text, timestamp: Date.now() }])
+          break
+        }
+        case 'turn_result': {
+          streamingRef.current = ''
+          setStreamingNarration('')
+          setWaitingForDM(false)
           const result = msg.payload as { narration?: string; narrative?: string; mood?: string; dice_results?: DiceResult[]; detected_scene?: string; detected_npcs?: Array<{name: string; npc_type: string}>; environment?: Record<string, string>; hp_updates?: { character_id?: string; name?: string; hp: number; max_hp?: number }[]; combat_state?: CombatState | null }
           const text = result.narration || result.narrative || 'The DM ponders...'
           setMessages((prev) => [...prev, { role: 'dm', text, timestamp: Date.now() }])

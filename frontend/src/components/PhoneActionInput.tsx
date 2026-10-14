@@ -32,11 +32,11 @@ interface PhoneActionInputProps {
  * phone that rewrite drops, reorders, or submits whatever prefix has landed
  * in React state. The field the player sees is the value that gets sent.
  *
- * Send only on the sword button or a real Enter (code Enter / NumpadEnter)
- * outside the post-composition window. Android and iOS IMEs, and browser
- * autocomplete, fire a confirming Enter *after* compositionend, when
- * `isComposing` is already false and keyCode is 13. Treating that key as
- * submit sends the prefix and clears the rest of the sentence.
+ * The sword button and Enter share one submit. A phone keyboard's Enter
+ * often has an empty `code`, so the key itself is what matters. Android and
+ * iOS IMEs fire a confirming Enter *after* compositionend, when
+ * `isComposing` is already false. That key is ignored for one tick so it
+ * cannot send a prefix and wipe the rest of the sentence.
  */
 export const PhoneActionInput = forwardRef<PhoneActionInputHandle, PhoneActionInputProps>(
   function PhoneActionInput({ disabled = false, placeholder, draftRef, onSend, onChat }, ref) {
@@ -47,8 +47,12 @@ export const PhoneActionInput = forwardRef<PhoneActionInputHandle, PhoneActionIn
     const suppressTimerRef = useRef<number | null>(null);
     const placeholderRef = useRef(placeholder);
     const disabledRef = useRef(disabled);
+    const onSendRef = useRef(onSend);
+    const onChatRef = useRef(onChat);
     placeholderRef.current = placeholder;
     disabledRef.current = disabled;
+    onSendRef.current = onSend;
+    onChatRef.current = onChat;
 
     function read(): string {
       return inputRef.current?.value ?? '';
@@ -106,18 +110,12 @@ export const PhoneActionInput = forwardRef<PhoneActionInputHandle, PhoneActionIn
       },
     }));
 
-    function sendAction() {
-      if (disabledRef.current) return;
+    function submit(kind: 'action' | 'chat') {
+      if (kind === 'action' && disabledRef.current) return;
       const msg = read().trim();
       if (!msg) return;
-      onSend(msg);
-      clear();
-    }
-
-    function sendChat() {
-      const msg = read().trim();
-      if (!msg) return;
-      onChat(msg);
+      if (kind === 'action') onSendRef.current(msg);
+      else onChatRef.current(msg);
       clear();
     }
 
@@ -134,18 +132,15 @@ export const PhoneActionInput = forwardRef<PhoneActionInputHandle, PhoneActionIn
     function onKeyDown(e: KeyboardEvent<HTMLInputElement>) {
       if (e.key !== 'Enter') return;
       const native = e.nativeEvent;
-      const code = native.code;
-      const explicit = code === 'Enter' || code === 'NumpadEnter';
       const implicit =
         native.isComposing ||
         native.keyCode === 229 ||
         composingRef.current ||
-        suppressEnterRef.current ||
-        !explicit;
-      // Leave implicit Enter alone so the IME can commit the current word.
+        suppressEnterRef.current;
+      // Leave the IME's confirming Enter alone so it can commit the word.
       if (implicit) return;
       e.preventDefault();
-      sendAction();
+      submit('action');
     }
 
     return (
@@ -180,12 +175,19 @@ export const PhoneActionInput = forwardRef<PhoneActionInputHandle, PhoneActionIn
         <button
           type="button"
           className="pv-action-btn"
-          onClick={sendAction}
+          onClick={() => submit('action')}
           disabled={!hasText || disabled}
+          aria-label="Send action"
         >
           ⚔️
         </button>
-        <button type="button" className="pv-chat-btn" onClick={sendChat} disabled={!hasText}>
+        <button
+          type="button"
+          className="pv-chat-btn"
+          onClick={() => submit('chat')}
+          disabled={!hasText}
+          aria-label="Send chat"
+        >
           💬
         </button>
       </div>

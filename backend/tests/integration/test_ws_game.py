@@ -34,6 +34,16 @@ def _sync_override_get_db():
     return _override
 
 
+def _recv_type(ws, expected: str, limit: int = 8) -> dict:
+    """Skip line echoes and acks that now precede a turn result."""
+    last = None
+    for _ in range(limit):
+        last = ws.receive_json()
+        if last.get("type") == expected:
+            return last
+    raise AssertionError(f"never received {expected}; last={last}")
+
+
 # Use async engine for WS tests too
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 _ws_async_engine = create_async_engine("sqlite+aiosqlite://", echo=False)
@@ -415,8 +425,7 @@ class TestWebSocketActionSubmission:
                 "action": "I cast fireball!"
             })
             
-            data = ws.receive_json()
-            assert data["type"] == "turn_result"
+            data = _recv_type(ws, "turn_result")
             assert "narration" in data
             assert isinstance(data["narration"], str)
 
@@ -438,13 +447,11 @@ class TestWebSocketActionSubmission:
                     "action": "Attack the goblin!"
                 })
                 
-                # Both should receive turn_result
-                data1 = ws1.receive_json()
-                assert data1["type"] == "turn_result"
+                # Both should receive turn_result (after the typed line echo)
+                data1 = _recv_type(ws1, "turn_result")
                 assert "narration" in data1
-                
-                data2 = ws2.receive_json()
-                assert data2["type"] == "turn_result"
+
+                data2 = _recv_type(ws2, "turn_result")
                 assert "narration" in data2
 
 
@@ -466,9 +473,7 @@ class TestWebSocketStateUpdate:
                 "action": "Cast spell"
             })
             
-            # Receive turn_result
-            turn_result = ws.receive_json()
-            assert turn_result["type"] == "turn_result"
+            turn_result = _recv_type(ws, "turn_result")
 
     def test_ws_multiple_actions_in_sequence(self, ws_client: TestClient):
         """Multiple actions can be submitted and processed in sequence."""
@@ -484,17 +489,17 @@ class TestWebSocketStateUpdate:
                 "character_id": "char1",
                 "action": "First action"
             })
-            result1 = ws.receive_json()
-            assert result1["type"] == "turn_result"
-            
+            result1 = _recv_type(ws, "turn_result")
+            assert result1["narration"]
+
             # Second action
             ws.send_json({
                 "type": "action",
                 "character_id": "char1",
                 "action": "Second action"
             })
-            result2 = ws.receive_json()
-            assert result2["type"] == "turn_result"
+            result2 = _recv_type(ws, "turn_result")
+            assert result2["narration"]
 
 
 class TestWebSocketErrorHandling:
@@ -585,8 +590,7 @@ class TestNarratedMonsterTurn:
                 "character_id": char_id,
                 "action": "Ashara casts healing word on Thorne.",
             })
-            data = ws.receive_json()
-            assert data["type"] == "turn_result"
+            data = _recv_type(ws, "turn_result")
             narration = data["narration"]
             assert "What do you do" not in narration
             assert "It is now Thorne Ironfist's turn." in narration
@@ -636,8 +640,7 @@ class TestNarratedDamageReachesThePhone:
                 "character_id": char_id,
                 "action": "Thorne holds his ground.",
             })
-            data = ws.receive_json()
-            assert data["type"] == "turn_result"
+            data = _recv_type(ws, "turn_result")
             assert data["hp_updates"][0]["hp"] == 27
             assert data["hp_updates"][0]["character_id"] == char_id
 

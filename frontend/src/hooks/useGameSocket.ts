@@ -19,7 +19,7 @@ export interface UseGameSocketReturn {
   connectionCount: number;
   send: (msg: Record<string, unknown>) => void;
   sendChat: (message: string, sender: string) => void;
-  sendAction: (characterId: string, action: string) => void;
+  sendAction: (characterId: string, action: string, clientId?: string, sender?: string) => void;
   sendTokenMove: (tokenId: string, x: number, y: number) => void;
   joinAsPlayer: (name: string, characterId?: string) => void;
   setReady: (ready: boolean) => void;
@@ -142,9 +142,16 @@ export function useGameSocket(
     send({ type: 'chat', message, sender });
   }, [send]);
 
-  const sendAction = useCallback((characterId: string, action: string) => {
+  const sendAction = useCallback((characterId: string, action: string, clientId?: string, sender?: string) => {
     const playerId = sessionId ? loadIdentity(sessionId)?.playerId : undefined;
-    send({ type: 'action', character_id: characterId, action, player_id: playerId });
+    send({
+      type: 'action',
+      character_id: characterId,
+      action,
+      player_id: playerId,
+      client_id: clientId,
+      sender,
+    });
   }, [send, sessionId]);
 
   const sendTokenMove = useCallback((tokenId: string, x: number, y: number) => {

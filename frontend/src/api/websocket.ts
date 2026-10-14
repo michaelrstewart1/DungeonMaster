@@ -7,7 +7,8 @@ export type WSMessageType =
   | 'chat' | 'turn_update' | 'vision_update'
   | 'trade_offer' | 'trade_resolved'
   | 'item_used' | 'item_equipped' | 'item_unequipped'
-  | 'player_joined' | 'player_left' | 'error' | 'reconnected' | 'observer_ack' | 'scene_change';
+  | 'player_joined' | 'player_left' | 'error' | 'reconnected' | 'observer_ack' | 'scene_change'
+  | 'player_action' | 'action_ack' | 'narration_end';
 
 export interface WSMessage {
   type: WSMessageType;
@@ -76,15 +77,17 @@ export class GameWebSocket {
       this.lastMessageAt = Date.now();
       this.notifyStatus(true);
       this.startHeartbeat();
-      // Deliver queued actions typed while offline, oldest first.
-      const pending = this.outbox.splice(0, this.outbox.length);
-      pending.forEach((msg) => this.send(msg));
       if (isReconnect) {
-        // Let consumers re-join and re-fetch state after a drop.
+        // Rejoin BEFORE flushing the outbox. An action that arrives first is
+        // rejected (the new socket is not the seat yet) and the phone has
+        // already shown the line.
         this.messageHandlers.forEach((handler) =>
           handler({ type: 'reconnected', payload: { message: 'reconnected' } }),
         );
       }
+      // Deliver queued actions typed while offline, oldest first.
+      const pending = this.outbox.splice(0, this.outbox.length);
+      pending.forEach((msg) => this.send(msg));
     };
 
     this.ws.onmessage = (event) => {
@@ -133,8 +136,14 @@ export class GameWebSocket {
 
   send(message: Record<string, unknown>): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
-      this.ws.send(JSON.stringify(message));
-    } else if (this.shouldReconnect && message.type !== 'ping') {
+      try {
+        this.ws.send(JSON.stringify(message));
+        return;
+      } catch {
+        // The browser still said OPEN. Queue it so reconnect can deliver it.
+      }
+    }
+    if (this.shouldReconnect && message.type !== 'ping') {
       // Queue non-heartbeat messages to deliver after reconnect.
       this.outbox.push(message);
       if (this.outbox.length > this.maxOutbox) this.outbox.shift();

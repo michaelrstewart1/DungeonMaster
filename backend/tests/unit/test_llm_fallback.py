@@ -59,6 +59,26 @@ async def test_primary_timeout_falls_back():
     assert resp.content == "fast fallback"
 
 
+class DieMidStream(FakeLLM):
+    @property
+    def name(self) -> str:
+        return "die-mid-stream"
+
+    async def stream(self, **kwargs):
+        yield LLMStreamChunk(content="Skeleton 1 attacks Thorne: Attack Roll: (d20 + 4) vs ")
+        raise RuntimeError("connection reset")
+
+
+@pytest.mark.asyncio
+async def test_stream_reports_midstream_death_instead_of_a_silent_cutoff():
+    """A dropped stream must not look like a finished reply."""
+    provider = FallbackLLMProvider(DieMidStream(), FakeLLM(default_chunks=["unused"]))
+    chunks = [c async for c in provider.stream(messages=[LLMMessage(role="user", content="hi")])]
+    assert chunks[0].content.startswith("Skeleton 1 attacks")
+    assert chunks[-1].is_final is True
+    assert chunks[-1].finish_reason == "error"
+
+
 @pytest.mark.asyncio
 async def test_stream_falls_back_when_primary_dies_before_output():
     fallback = FakeLLM(default_chunks=["fall", "back"])

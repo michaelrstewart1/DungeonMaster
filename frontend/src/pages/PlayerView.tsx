@@ -16,6 +16,7 @@ import {
   isDiceRollReport,
   seatMayActAs,
 } from '../game/combatTurn';
+import { deliveryAfterServer, type LineDelivery } from '../game/actionDelivery';
 import { rollDiceNotation } from '../game/diceRoll';
 import { suggestedRollModifier } from '../game/rollModifier';
 import { stripUuidLabel } from '../utils/narrative';
@@ -39,6 +40,8 @@ interface NarrativeEntry {
   sender?: string;
   type: 'narration' | 'chat' | 'action' | 'system';
   timestamp: string;
+  /** Absent on history rows, which already came from the server. */
+  status?: LineDelivery;
 }
 
 type GamePhase = 'exploration' | 'combat';
@@ -110,6 +113,14 @@ export function PlayerView() {
   const feedRef = useRef<HTMLDivElement>(null);
   const actionInputRef = useRef<PhoneActionInputHandle>(null);
   const actionDraftRef = useRef('');
+
+  function setLineStatus(clientId: string, event: 'ack' | 'echo' | 'error' | 'timeout') {
+    setNarrative((prev) => prev.map((entry) => (
+      entry.id === clientId && entry.status
+        ? { ...entry, status: deliveryAfterServer(entry.status, event) }
+        : entry
+    )));
+  }
 
   // Trade state — composing an outgoing offer, incoming offer queue, and
   // the one outgoing offer we're currently waiting on (we only allow one
@@ -222,6 +233,23 @@ export function PlayerView() {
     setIsMyTurn(currentTurn === character.id);
   }, [gameState, character, phase, combatState, playerId, characterId, players]);
 
+  // A line left pending never got an ack. Mark it failed so it is not
+  // sitting in the feed looking sent. Retry uses the same id.
+  const pendingIds = narrative.filter((entry) => entry.status === 'pending').map((entry) => entry.id).join(',');
+  useEffect(() => {
+    if (!pendingIds) return;
+    const ids = pendingIds.split(',');
+    const timer = window.setTimeout(() => {
+      setNarrative((prev) => prev.map((entry) => (
+        ids.includes(entry.id) && entry.status === 'pending'
+          ? { ...entry, status: deliveryAfterServer(entry.status, 'timeout') }
+          : entry
+      )));
+      setWaitingForDM(false);
+    }, 8000);
+    return () => window.clearTimeout(timer);
+  }, [pendingIds]);
+
   // A combat reply that never arrives must not leave Attack dimmed for the rest of the round.
   useEffect(() => {
     if (!waitingForDM || phase !== 'combat') return;
@@ -314,7 +342,24 @@ export function PlayerView() {
       };
       const version = typeof p.state_version === 'number' ? p.state_version : 0;
       const staleVersion = version > 0 && seenVersionRef.current > 0 && version < seenVersionRef.current;
-      if (staleVersion) return;
+      // A stale snapshot must not rewind combat, but it still ends the wait.
+      // Otherwise a cut-off stream leaves the phone on "DM is composing".
+      setWaitingForDM(false);
+      if (staleVersion) {
+        if (p.narration) {
+          setNarrative((prev) => (
+            prev.some((entry) => entry.text === p.narration)
+              ? prev
+              : [...prev, {
+                id: uuid(),
+                text: p.narration || '',
+                type: 'narration',
+                timestamp: new Date().toISOString(),
+              }]
+          ));
+        }
+        return;
+      }
       if (version > seenVersionRef.current) seenVersionRef.current = version;
       setNarrative((prev) => [
         ...prev,
@@ -325,7 +370,6 @@ export function PlayerView() {
           timestamp: new Date().toISOString(),
         },
       ]);
-      setWaitingForDM(false);
       if (p.phase && p.phase !== 'combat') {
         setPhase('exploration');
         setCombatState(null);
@@ -450,9 +494,66 @@ export function PlayerView() {
     }
 
     if ((last.type as string) === 'error') {
-      const p = last.payload as { message?: string };
+      const p = last.payload as { message?: string; client_id?: string };
       setWaitingForDM(false);
+      if (p.client_id) setLineStatus(p.client_id, 'error');
       if (p.message) addToast({ type: 'error', message: p.message });
+    }
+
+    if ((last.type as string) === 'action_ack') {
+      const p = last.payload as { client_id?: string };
+      if (p.client_id) setLineStatus(p.client_id, 'ack');
+    }
+
+    if ((last.type as string) === 'player_action') {
+      const p = last.payload as { client_id?: string; text?: string; sender?: string };
+      const text = p.text || '';
+      if (!text) return;
+      setNarrative((prev) => {
+        if (p.client_id && prev.some((entry) => entry.id === p.client_id)) {
+          return prev.map((entry) => (
+            entry.id === p.client_id
+              ? { ...entry, status: deliveryAfterServer(entry.status || 'pending', 'echo') }
+              : entry
+          ));
+        }
+        return [...prev, {
+          id: p.client_id || uuid(),
+          text,
+          sender: p.sender,
+          type: 'action' as const,
+          status: 'sent' as const,
+          timestamp: new Date().toISOString(),
+        }];
+      });
+    }
+
+    if ((last.type as string) === 'narration_end') {
+      const p = last.payload as {
+        narration?: string;
+        phase?: string;
+        combat_state?: CombatState | null;
+      };
+      setWaitingForDM(false);
+      if (p.narration) {
+        setNarrative((prev) => (
+          prev.some((entry) => entry.text === p.narration)
+            ? prev
+            : [...prev, {
+              id: uuid(),
+              text: p.narration || '',
+              type: 'narration',
+              timestamp: new Date().toISOString(),
+            }]
+        ));
+      }
+      if (p.phase && p.phase !== 'combat') {
+        setPhase('exploration');
+        setCombatState(null);
+      } else if (p.combat_state) {
+        setPhase('combat');
+        setCombatState(p.combat_state);
+      }
     }
 
     if ((last.type as string) === 'dice_roll') {
@@ -645,32 +746,77 @@ export function PlayerView() {
     [character, rollRequestText],
   );
 
-  function handleSendAction(text?: string) {
+  function rememberLine(clientId: string, msg: string) {
+    setNarrative((prev) => {
+      if (prev.some((entry) => entry.id === clientId)) {
+        return prev.map((entry) => (
+          entry.id === clientId ? { ...entry, status: 'pending' as const, text: msg } : entry
+        ));
+      }
+      return [...prev, {
+        id: clientId,
+        text: msg,
+        type: 'action' as const,
+        sender: playerName,
+        status: 'pending' as const,
+        timestamp: new Date().toISOString(),
+      }];
+    });
+  }
+
+  async function postEngineAction(actionType: 'attack' | 'dodge' | 'heal', text: string, clientId: string): Promise<boolean> {
+    if (!sessionId || !characterId) return false;
+    setWaitingForDM(true);
+    try {
+      const res = await fetch(`${API_BASE}/game/sessions/${sessionId}/combat-action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          actor_id: characterId,
+          action_type: actionType,
+          target_id: actionType === 'heal' ? characterId : undefined,
+          action_text: text,
+          client_id: clientId,
+          sender: playerName,
+          ...(playerId ? { player_id: playerId } : {}),
+        }),
+      });
+      if (!res.ok) {
+        const detail = (await res.json().catch(() => null))?.detail;
+        addToast({ type: 'error', message: typeof detail === 'string' ? detail : 'Action failed' });
+        return false;
+      }
+      return true;
+    } catch {
+      addToast({ type: 'error', message: 'Action failed — check your connection' });
+      return false;
+    } finally {
+      setWaitingForDM(false);
+    }
+  }
+
+  function handleSendAction(text?: string, retryId?: string) {
     const msg = (text ?? '').trim();
     if (!msg) return;
-    // Typed attacks use the same rules-engine call and ownership check as Attack.
-    const engineAction = inEngineCombat ? inferEngineAction(msg) : null;
-    if (engineAction) {
-      setNarrative((prev) => [
-        ...prev,
-        { id: uuid(), text: msg, type: 'action', sender: playerName, timestamp: new Date().toISOString() },
-      ]);
-      void handleCombatAction(engineAction);
-      return;
-    }
     // A dice report during combat is not a turn. Recording it must not lock the buttons.
-    if (inEngineCombat && isDiceRollReport(msg)) {
+    if (inEngineCombat && isDiceRollReport(msg) && !inferEngineAction(msg)) {
       setNarrative((prev) => [
         ...prev,
         { id: uuid(), text: msg, type: 'system', timestamp: new Date().toISOString() },
       ]);
       return;
     }
-    sendAction(character?.id || 'unknown', msg);
-    setNarrative((prev) => [
-      ...prev,
-      { id: uuid(), text: msg, type: 'action', sender: playerName, timestamp: new Date().toISOString() },
-    ]);
+    const clientId = retryId || uuid();
+    // Pending until the server acks. A line that looks sent has been delivered.
+    rememberLine(clientId, msg);
+    const engineAction = inEngineCombat ? inferEngineAction(msg) : null;
+    if (engineAction) {
+      void postEngineAction(engineAction, msg, clientId).then((ok) => {
+        setLineStatus(clientId, ok ? 'ack' : 'error');
+      });
+      return;
+    }
+    sendAction(character?.id || 'unknown', msg, clientId, playerName);
     setWaitingForDM(true);
   }
 
@@ -816,9 +962,19 @@ export function PlayerView() {
               <div className="pv-narrative-empty">The adventure awaits...</div>
             )}
             {narrative.map((entry) => (
-              <div key={entry.id} className={`pv-narrative-entry pv-entry-${entry.type}`}>
+              <div key={entry.id} className={`pv-narrative-entry pv-entry-${entry.type} ${entry.status === 'pending' ? 'pv-entry-pending' : ''} ${entry.status === 'failed' ? 'pv-entry-failed' : ''}`}>
                 {entry.sender && <span className="pv-entry-sender">{entry.sender}: </span>}
                 <span className="pv-entry-text">{entry.text}</span>
+                {entry.status === 'pending' && <span className="pv-entry-state"> Sending…</span>}
+                {entry.status === 'failed' && (
+                  <button
+                    type="button"
+                    className="pv-retry-btn"
+                    onClick={() => handleSendAction(entry.text, entry.id)}
+                  >
+                    Failed — Retry
+                  </button>
+                )}
               </div>
             ))}
             {waitingForDM && (

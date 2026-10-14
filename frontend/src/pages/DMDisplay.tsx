@@ -46,6 +46,7 @@ export function DMDisplay() {
   });
   const [currentNarration, setCurrentNarration] = useState('');
   const [streamingNarration, setStreamingNarration] = useState('');
+  const streamingRef = useRef('');
   const [gameMap, setGameMap] = useState<GameMap | null>(null);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -156,6 +157,12 @@ export function DMDisplay() {
       };
       const version = typeof p.state_version === 'number' ? p.state_version : 0;
       const staleVersion = version > 0 && seenVersionRef.current > 0 && version < seenVersionRef.current;
+      const text = p.narration || '';
+      // Always replace a live stream. A stale version must not leave the
+      // cutoff on screen, and must not rewind the fight.
+      streamingRef.current = '';
+      setStreamingNarration('');
+      if (text) setCurrentNarration(text);
       if (staleVersion) return;
       if (version > seenVersionRef.current) seenVersionRef.current = version;
       if (p.hp_updates?.length) {
@@ -166,8 +173,6 @@ export function DMDisplay() {
       } else if (p.combat_state && (p.phase === 'combat' || !p.phase)) {
         setGameState((prev) => prev ? { ...prev, phase: 'combat', combat_state: p.combat_state ?? prev.combat_state } : prev);
       }
-      const text = p.narration || '';
-      setStreamingNarration('');
       setCurrentNarration(text);
       setNarrative((prev) => [
         ...prev.slice(-50),
@@ -184,7 +189,43 @@ export function DMDisplay() {
     if (last.type === 'narration_chunk' as string) {
       // Live LLM token stream — the TV shows narration as it is written
       const p = last.payload as { chunk?: string };
-      if (p.chunk) setStreamingNarration((prev) => prev + p.chunk);
+      if (p.chunk) {
+        setStreamingNarration((prev) => {
+          const next = prev + p.chunk;
+          streamingRef.current = next;
+          return next;
+        });
+      }
+    }
+
+    if (last.type === 'narration_end' as string) {
+      const p = last.payload as { narration?: string; phase?: string; combat_state?: CombatState | null };
+      const text = p.narration || streamingRef.current;
+      streamingRef.current = '';
+      setStreamingNarration('');
+      if (text) {
+        setCurrentNarration(text);
+        setNarrative((prev) => [
+          ...prev.slice(-50),
+          { id: uuid(), text, type: 'narration', timestamp: new Date().toISOString() },
+        ]);
+      }
+      if (p.phase && p.phase !== 'combat') {
+        setGameState((prev) => prev ? { ...prev, phase: 'exploration', combat_state: null } : prev);
+      } else if (p.combat_state) {
+        setGameState((prev) => prev ? { ...prev, phase: 'combat', combat_state: p.combat_state ?? prev.combat_state } : prev);
+      }
+    }
+
+    if (last.type === 'player_action' as string) {
+      const p = last.payload as { text?: string; sender?: string };
+      const text = p.sender ? `${p.sender}: ${p.text || ''}` : (p.text || '');
+      if (text) {
+        setNarrative((prev) => [
+          ...prev.slice(-50),
+          { id: uuid(), text, type: 'action', timestamp: new Date().toISOString() },
+        ]);
+      }
     }
 
     if (last.type === 'scene_change' as string) {

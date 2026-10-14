@@ -8,6 +8,7 @@ from starlette.websockets import WebSocketState
 
 import app.repository as repo
 from app.api import storage
+from app.api.action_receipts import claim_client_action, release_client_action
 from app.api.routes.game import (
     _advance_time,
     _apply_xp_award,
@@ -168,6 +169,7 @@ async def _handle_combat_ws_action(
     character_id = message.get("character_id")
     action = message.get("action") or ""
     claimed_player = message.get("player_id") if isinstance(message.get("player_id"), str) else None
+    client_id = message.get("client_id") if isinstance(message.get("client_id"), str) else None
 
     try:
         async with db_factory() as db:
@@ -216,6 +218,7 @@ async def _handle_combat_ws_action(
                 session["narrative_history"].append(f"DM: {narration}")
                 await repo.save_game_session(db, session)
                 await db.commit()
+                await _broadcast_player_action(session_id, message)
                 await manager.broadcast(session_id, {
                     "type": "turn_result",
                     "character_id": character_id,
@@ -229,15 +232,22 @@ async def _handle_combat_ws_action(
                 registered = storage.session_players.get(session_id) or []
                 owner = _owner_player_id(session_id, character_id, claimed_player, player_id)
                 if registered and owner is None:
+                    release_client_action(session_id, client_id)
                     await websocket.send_json({
                         "type": "error",
                         "message": "That isn't your character",
+                        "client_id": client_id,
                     })
                     return True
 
                 result = resolve_player_action(combat_state, character_id, kind, None)
                 if result.get("error"):
-                    await websocket.send_json({"type": "error", "message": result["error"]})
+                    release_client_action(session_id, client_id)
+                    await websocket.send_json({
+                        "type": "error",
+                        "message": result["error"],
+                        "client_id": client_id,
+                    })
                     return True
 
                 for ev in result.get("events") or []:
@@ -257,6 +267,7 @@ async def _handle_combat_ws_action(
                     await _sync_combatant_hp(db, combat_state)
                 await repo.save_game_session(db, session)
                 await db.commit()
+                await _broadcast_player_action(session_id, message)
                 await manager.broadcast(session_id, {
                     "type": "combat_update",
                     **result,
@@ -305,6 +316,7 @@ async def _handle_combat_ws_action(
             session["narrative_history"].append(f"DM: {narration}")
             await repo.save_game_session(db, session)
             await db.commit()
+            await _broadcast_player_action(session_id, message)
             await manager.broadcast(session_id, {
                 "type": "turn_result",
                 "character_id": character_id,
@@ -318,14 +330,90 @@ async def _handle_combat_ws_action(
             return True
     except Exception:
         logger.exception("Combat action failed for session %s", session_id)
+        release_client_action(session_id, client_id)
         try:
             await websocket.send_json({
                 "type": "error",
                 "message": "The action could not be resolved. Try again.",
+                "client_id": client_id,
             })
         except Exception:
             pass
         return True
+
+
+async def _broadcast_player_action(session_id: str, message: dict) -> None:
+    """Show the typed line on every screen, including the TV."""
+    text = message.get("action") or ""
+    if not text:
+        return
+    await manager.broadcast(session_id, {
+        "type": "player_action",
+        "client_id": message.get("client_id"),
+        "character_id": message.get("character_id"),
+        "text": text,
+        "sender": message.get("sender") or "",
+        "timestamp": datetime.now().isoformat(),
+    })
+
+
+async def _close_abandoned_narration(
+    session_id: str,
+    narration: str,
+    session_data: dict,
+    db,
+) -> None:
+    """End a reply that was streamed but must not be written over a newer row.
+
+    Every screen has the partial chunks. Without a terminal frame the TV
+    stays on that cutoff and the DM avatar stays on Waiting. If a monster is
+    still the current actor, resolve that turn on the live row first.
+    """
+    from app.api.routes.avatar import trigger_speaking
+
+    text = narration or ""
+    combat_state = dict(session_data.get("combat_state") or {})
+    phase = session_data.get("current_phase")
+    if phase == "combat" and combat_state.get("combatants"):
+        current = current_combatant(combat_state)
+        if current and not current.get("is_player"):
+            stuck = run_pending_monster_turns(combat_state)
+            events = list(stuck.get("events") or [])
+            note = announce_current_player(combat_state)
+            if note:
+                events.append(note)
+            if stuck.get("combat_over"):
+                session_data["current_phase"] = "exploration"
+                await _sync_combatants_to_characters(db, combat_state)
+                session_data["combat_state"] = None
+            else:
+                await _sync_combatant_hp(db, combat_state)
+                session_data["combat_state"] = combat_state
+            phase = session_data.get("current_phase")
+            try:
+                await repo.save_game_session(db, session_data)
+                await db.commit()
+            except Exception:
+                logger.exception("Failed to recover monster turn for %s", session_id)
+            if events:
+                await manager.broadcast(session_id, {
+                    "type": "combat_update",
+                    "events": events,
+                    "narration": " ".join(events),
+                    "combat_state": session_data.get("combat_state"),
+                    "phase": phase,
+                    "combat_over": bool(stuck.get("combat_over")),
+                    "hp_updates": hp_updates_from_state(combat_state),
+                })
+    if text:
+        trigger_speaking(session_id, text)
+    await manager.broadcast(session_id, {
+        "type": "narration_end",
+        "narration": text,
+        "phase": phase,
+        "combat_state": session_data.get("combat_state"),
+        "recover": True,
+    })
 
 
 @router.websocket("/game/{session_id}")
@@ -407,10 +495,29 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                 await manager.broadcast(session_id, chat_message)
             
             elif message_type == "action":
+                client_id = message.get("client_id") if isinstance(message.get("client_id"), str) else None
+                if not claim_client_action(session_id, client_id):
+                    await websocket.send_json({
+                        "type": "action_ack",
+                        "client_id": client_id,
+                        "duplicate": True,
+                    })
+                    continue
+                if client_id:
+                    # Ack as soon as the server has the line. The phone keeps
+                    # the bubble pending until this arrives, and retries with
+                    # the same id if it never does. A later error overrides it.
+                    await websocket.send_json({
+                        "type": "action_ack",
+                        "client_id": client_id,
+                    })
+                action_text = message.get("action") or ""
                 if await _handle_combat_ws_action(websocket, session_id, player_id, message):
                     continue
+                if action_text:
+                    await _broadcast_player_action(session_id, message)
                 character_id = message.get("character_id")
-                action = message.get("action") or ""
+                action = action_text
                 session_data: dict | None = None
 
                 # Use the unified narrator helper so the WS path graceful-falls
@@ -480,10 +587,22 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                             # the call. If the table moved on, drop that reply
                             # and hand this phone the current row instead of
                             # writing the old scene back.
+                            live_version = repo.session_version(session_data)
                             if (
                                 baseline_version is not None
-                                and repo.session_version(session_data) != baseline_version
+                                and live_version != baseline_version
                             ):
+                                # Chunks already went out. Closing the stream
+                                # here is what stops the TV on a half sentence
+                                # with the DM left on Waiting. A monster still
+                                # on the cursor is resolved on the live row so
+                                # the turn does not stay there. Send the row
+                                # already loaded — a second refresh on this
+                                # connection deadlocks aiosqlite and the
+                                # terminal frame never leaves the handler.
+                                await _close_abandoned_narration(
+                                    session_id, narration, session_data, db,
+                                )
                                 await websocket.send_json({"type": "game_state", **session_data})
                                 continue
                             combat_state = session_data.get("combat_state") or {}

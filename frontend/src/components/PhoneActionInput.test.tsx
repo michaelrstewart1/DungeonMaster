@@ -135,4 +135,36 @@ describe('PhoneActionInput', () => {
     expect(onSend).toHaveBeenCalledWith(FULL);
     expect(input().value).toBe('');
   });
+
+  it('sends a phone-keyboard Enter and the sword button through one path', async () => {
+    const onSend = vi.fn();
+    render(<PhoneActionInput onSend={onSend} onChat={vi.fn()} />);
+    const input = screen.getByRole('textbox', { name: 'What do you do?' }) as HTMLInputElement;
+
+    fireEvent.input(input, { target: { value: 'I swing my sword at the nearest skeleton' } });
+    await flushPostComposition();
+    // Android/iOS keyboards report Enter with an empty code.
+    fireEvent.keyDown(input, { key: 'Enter', code: '', keyCode: 13 });
+    expect(onSend).toHaveBeenCalledTimes(1);
+    expect(onSend).toHaveBeenCalledWith('I swing my sword at the nearest skeleton');
+    expect(input.value).toBe('');
+
+    fireEvent.input(input, { target: { value: 'I swing my sword at the nearest skeleton' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send action' }));
+    expect(onSend).toHaveBeenCalledTimes(2);
+    expect(onSend).toHaveBeenLastCalledWith('I swing my sword at the nearest skeleton');
+  });
+
+  it('uses the latest send handler for the button', () => {
+    const first = vi.fn();
+    const second = vi.fn();
+    const { rerender } = render(<PhoneActionInput onSend={first} onChat={vi.fn()} />);
+    rerender(<PhoneActionInput onSend={second} onChat={vi.fn()} />);
+    const input = screen.getByRole('textbox', { name: 'What do you do?' });
+    fireEvent.input(input, { target: { value: 'hello' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Send action' }));
+    expect(first).not.toHaveBeenCalled();
+    expect(second).toHaveBeenCalledTimes(1);
+    expect(second).toHaveBeenCalledWith('hello');
+  });
 });

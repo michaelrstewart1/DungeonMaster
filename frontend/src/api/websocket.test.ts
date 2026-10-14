@@ -87,6 +87,34 @@ describe('GameWebSocket', () => {
     expect(seen).toContain('reconnected');
   });
 
+  it('flushes a queued action after rejoin so the server does not drop it', () => {
+    const { gws, sock } = connect();
+    const order: string[] = [];
+    gws.onMessage((m) => {
+      if (m.type === 'reconnected') {
+        order.push('rejoin');
+        gws.send({ type: 'player_join', name: 'Bram' });
+      }
+    });
+    sock.simulateOpen();
+    sock.simulateClose();
+    gws.send({ type: 'action', action: 'I swing my sword', client_id: 'line-1' });
+
+    vi.advanceTimersByTime(1100);
+    const sock2 = FakeWebSocket.instances[1];
+    sock2.simulateOpen();
+
+    const sent = sock2.sent.map((s) => JSON.parse(s) as { type: string });
+    const types = sent.map((m) => m.type);
+    expect(order).toEqual(['rejoin']);
+    expect(types.indexOf('player_join')).toBeGreaterThanOrEqual(0);
+    expect(types.indexOf('player_join')).toBeLessThan(types.indexOf('action'));
+    expect(sent.find((m) => m.type === 'action')).toMatchObject({
+      action: 'I swing my sword',
+      client_id: 'line-1',
+    });
+  });
+
   it('queues messages sent while disconnected and flushes on reconnect', () => {
     const { gws, sock } = connect();
     sock.simulateOpen();
