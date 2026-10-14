@@ -86,6 +86,36 @@ class TestCharacterCreate:
         assert data["hp"] == 8  # Default
         assert data["ac"] == 10  # Default
 
+    async def test_omitted_hp_starts_at_max_hp(self, client: AsyncClient):
+        """max_hp without a current total means the hero is at full health."""
+        full = await client.post(
+            "/api/characters",
+            json={
+                "name": "Full",
+                "race": "dwarf",
+                "class_name": "fighter",
+                "level": 3,
+                "max_hp": 28,
+            },
+        )
+        assert full.status_code == 201, full.text
+        assert full.json()["hp"] == 28
+        assert full.json()["max_hp"] == 28
+
+        wounded = await client.post(
+            "/api/characters",
+            json={
+                "name": "Wounded",
+                "race": "dwarf",
+                "class_name": "fighter",
+                "level": 3,
+                "hp": 5,
+                "max_hp": 28,
+            },
+        )
+        assert wounded.status_code == 201, wounded.text
+        assert wounded.json()["hp"] == 5
+
     async def test_create_character_with_inventory(self, client: AsyncClient):
         """Creating a character with inventory should work."""
         response = await client.post(

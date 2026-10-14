@@ -4,7 +4,7 @@ Pydantic schemas for D&D 5e data models.
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from math import ceil
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.enums import Race, CharacterClass, GamePhase, TerrainType, Condition
 
@@ -99,6 +99,18 @@ class CharacterCreate(BaseModel):
         if v not in valid_classes:
             raise ValueError(f"Invalid class. Must be one of: {', '.join(valid_classes)}")
         return v
+
+    @model_validator(mode="after")
+    def current_hp_starts_at_max(self) -> "CharacterCreate":
+        """Start uninjured when the sheet names a maximum and omits current HP.
+
+        The field default is 8. A caller that only sends max_hp otherwise
+        enters combat at 8 HP, where a short run of misses and death saves
+        can lose to a 1 HP enemy.
+        """
+        if "hp" not in self.model_fields_set and self.max_hp is not None:
+            self.hp = self.max_hp
+        return self
 
     @property
     def strength_mod(self) -> int:
