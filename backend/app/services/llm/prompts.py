@@ -49,6 +49,23 @@ _NARRATION_MODES: dict[str, str] = {
 }
 
 
+def _absent_heroes_section(absent_characters: list[dict] | None) -> str:
+    """Heroes still on the campaign who have no player at the table tonight."""
+    if not absent_characters:
+        return ""
+    lines = ["## Not at the table\n"]
+    lines.append(
+        "These heroes are absent and have no player tonight. Do not narrate them "
+        "as acting, observing, detecting, speaking, or making discoveries. Do not "
+        "credit them with findings. Only the player characters listed above are here.\n"
+    )
+    for char in absent_characters:
+        name = char.get("name") or "Unknown"
+        lines.append(f"- {name} (absent)\n")
+    lines.append("\n")
+    return "".join(lines)
+
+
 class PromptTemplates:
     """Collection of prompt templates for D&D 5e Dungeon Master interactions."""
 
@@ -61,6 +78,7 @@ class PromptTemplates:
         narration_mode: str = "cinematic",
         compact: bool = False,
         npcs: list[dict] | None = None,
+        absent_characters: list[dict] | None = None,
     ) -> str:
         """Create a system prompt for the Dungeon Master role.
 
@@ -81,7 +99,8 @@ class PromptTemplates:
         """
         if compact:
             return PromptTemplates._compact_dm_prompt(
-                world_context, characters, game_state, tone, npcs=npcs
+                world_context, characters, game_state, tone, npcs=npcs,
+                absent_characters=absent_characters,
             )
         tone_text = _TONES.get(tone, _TONES["dark_fantasy"])
         mode_text = _NARRATION_MODES.get(narration_mode, _NARRATION_MODES["cinematic"])
@@ -201,6 +220,8 @@ class PromptTemplates:
                     prompt += f"  AC: {char['ac']}\n"
             prompt += "\n"
 
+        prompt += _absent_heroes_section(absent_characters)
+
         # NPC context injection — only established facts
         if npcs:
             prompt += "## Known NPCs in Scene\n"
@@ -315,6 +336,7 @@ class PromptTemplates:
         game_state: dict,
         tone: str = "dark_fantasy",
         npcs: list[dict] | None = None,
+        absent_characters: list[dict] | None = None,
     ) -> str:
         """Condensed DM prompt for local/slow LLMs (~800 tokens instead of ~2000)."""
         tone_text = _TONES.get(tone, _TONES["dark_fantasy"])
@@ -357,6 +379,7 @@ class PromptTemplates:
             f"Tone: {tone_text}\n\n"
             f"## World\n{world_context}\n\n"
             f"## Party\n{char_lines}\n"
+            f"{_absent_heroes_section(absent_characters)}"
             f"{npc_section}"
             f"## State\n{state_lines}"
             f"{bible_section}\n"
@@ -837,7 +860,9 @@ class PromptTemplates:
             prompt += f"## World: {world_context}\n\n"
 
         prompt += (
-            f"## Players Present: {char_names}\n\n"
+            f"## Players Present: {char_names}\n"
+            "Only address heroes named under Players Present. Do not greet, "
+            "credit, or narrate any other hero as if they were at the table.\n\n"
             f"## Your Task\n"
             f"{recap_instruction}\n\n"
             "Then set the scene for tonight's session. Where are they? What do they see, "

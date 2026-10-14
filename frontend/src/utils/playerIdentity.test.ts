@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { loadIdentity, loadIdentityForRoom, saveIdentity } from './playerIdentity';
+import {
+  clearClaimedThisSession,
+  getDeviceId,
+  hasClaimedThisSession,
+  loadIdentity,
+  loadIdentityForRoom,
+  markClaimedThisSession,
+  saveIdentity,
+} from './playerIdentity';
 
 describe('player identity scoping', () => {
   beforeEach(() => {
@@ -47,5 +55,15 @@ describe('player identity scoping', () => {
     });
     expect(sessionStorage.getItem('characterId')).toBeNull();
     expect(loadIdentity('sess-lighthouse')?.characterId).toBeUndefined();
+  });
+
+  it('keeps one device id and treats a claim as this visit only', () => {
+    const first = getDeviceId();
+    expect(getDeviceId()).toBe(first);
+    expect(hasClaimedThisSession('sess-live')).toBe(false);
+    markClaimedThisSession('sess-live');
+    expect(hasClaimedThisSession('sess-live')).toBe(true);
+    clearClaimedThisSession();
+    expect(hasClaimedThisSession('sess-live')).toBe(false);
   });
 });

@@ -288,15 +288,17 @@ async def resume_game_session(session_id: str, db: AsyncSession = Depends(get_db
     if mapped != session_id:
         storage.room_codes[room_code] = session_id
         storage.flush("room_codes")
-    if session_id not in storage.session_players:
-        storage.session_players[session_id] = []
-        storage.flush("session_players")
+    # Next night: one row per player, and last night's heroes are free until
+    # someone at the table claims them again.
+    from app.api.roster import prepare_rejoin_roster, visible_players
+
+    prepare_rejoin_roster(session_id)
 
     history = session.get("narrative_history") or []
     return {
         "session": session,
         "room_code": room_code,
-        "players": storage.session_players.get(session_id, []),
+        "players": visible_players(session_id),
         "recent_narrative": history[-10:],
     }
 
@@ -705,6 +707,12 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                 c = await repo.get_character(db, cid)
                 if c:
                     characters.append(c)
+            from app.services.game.party import absent_party_notice, party_for_table
+
+            characters, absent = party_for_table(characters, session.get("id", ""))
+            notice = absent_party_notice(absent)
+            if notice:
+                world_context = f"{world_context}\n\n{notice}"
             scene = {
                 "name": "Current Scene",
                 "description": session.get("current_scene", ""),
@@ -740,6 +748,7 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
                     session_history=session.get("narrative_history", []),
                     history_summary=session.get("history_summary", "") or "",
                     on_chunk=on_chunk,
+                    absent_characters=absent,
                 ),
                 timeout=90.0 if on_chunk is not None else 45.0,
             )
@@ -747,7 +756,11 @@ async def _generate_dm_response(player_action: str, session: dict, narrator=None
             stripped = _strip_action_echo(result, player_action)
             if stripped != result:
                 logger.info("Echo stripped: '%s...' → '%s...'", result[:60], stripped[:60])
-            return stripped
+            from app.services.game.party import uncredit_absent_heroes
+
+            return uncredit_absent_heroes(
+                stripped, [c.get("name", "") for c in absent]
+            )
         except asyncio.TimeoutError:
             logger.warning("Narrator timed out after 45s, falling back to keyword mock")
         except Exception as exc:
@@ -866,15 +879,23 @@ async def get_session_greeting(request: Request, session_id: str, db: AsyncSessi
                 pass
         asyncio.create_task(_gen_bible())
 
+    from app.services.game.party import absent_party_notice, party_for_table, uncredit_absent_heroes
+
+    present, absent = party_for_table(characters, session_id)
+    absent_names = [c.get("name", "") for c in absent]
+    notice = absent_party_notice(absent)
+
     if narrator is not None:
         greeting_world_context = world_context
         if existing_bible and not world_context:
             greeting_world_context = existing_bible.split("\n\n")[0] if "\n\n" in existing_bible else existing_bible[:300]
+        if notice:
+            greeting_world_context = f"{greeting_world_context}\n\n{notice}"
         try:
             greeting = await asyncio.wait_for(
                 narrator.generate_session_greeting(
                     campaign_name=campaign.get("name", "Adventure"),
-                    characters=characters,
+                    characters=present,
                     last_summary=last_summary,
                     world_context=greeting_world_context,
                 ),
@@ -899,6 +920,7 @@ async def get_session_greeting(request: Request, session_id: str, db: AsyncSessi
                 "Your legend begins tonight — what will history remember of you?"
             )
 
+    greeting = uncredit_absent_heroes(greeting, absent_names)
     return {"greeting": greeting}
 
 
@@ -2836,6 +2858,7 @@ class JoinRequest(BaseModel):
     player_name: str = Field(..., description="Player's display name")
     character_id: Optional[str] = Field(default=None, description="Optional character ID to use")
     player_id: Optional[str] = Field(default=None, description="Previous player ID for rejoin")
+    device_id: Optional[str] = Field(default=None, description="Stable id for this phone")
 
 
 @router.get("/sessions/{session_id}/room-code")
@@ -2867,48 +2890,26 @@ async def join_game(body: JoinRequest, db: AsyncSession = Depends(get_db)) -> di
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invalid room code")
 
-    if session_id not in storage.session_players:
-        storage.session_players[session_id] = []
-    players = storage.session_players[session_id]
+    # Same phone (player id or device) or the same name reclaims the stale
+    # row instead of adding a duplicate. A hero already on that seat is kept;
+    # picking a different one is select-character.
+    from app.api.roster import reconcile_seat
 
-    # Rejoin: reuse an existing roster entry (durable player_id from the
-    # client, or a same-name match after a phone refresh) instead of
-    # duplicating the player.
-    existing = None
-    if body.player_id:
-        existing = next((p for p in players if p.get("id") == body.player_id), None)
-    if existing is None:
-        existing = next(
-            (p for p in players if p.get("name", "").lower() == body.player_name.lower()),
-            None,
-        )
-
-    rejoined = existing is not None
-    if existing is not None:
-        player_id = existing["id"]
-        existing["name"] = body.player_name
-        # A reconnect may still be holding a character id from an older
-        # session. Never replace the hero this seat already claimed;
-        # an explicit change goes through select-character.
-        if body.character_id and not existing.get("character_id"):
-            existing["character_id"] = body.character_id
-        existing["rejoined_at"] = datetime.now(timezone.utc).isoformat()
-    else:
-        player_id = storage.generate_id()
-        players.append({
-            "id": player_id,
-            "name": body.player_name,
-            "character_id": body.character_id,
-            "joined_at": datetime.now(timezone.utc).isoformat(),
-        })
-    storage.flush("session_players")
+    seat, rejoined = reconcile_seat(
+        session_id,
+        name=body.player_name,
+        player_id=body.player_id,
+        device_id=body.device_id,
+        character_id=body.character_id,
+    )
 
     return {
         "session_id": session_id,
-        "player_id": player_id,
+        "player_id": seat["id"],
         "campaign_id": session.get("campaign_id", ""),
         "rejoined": rejoined,
-        "character_id": (existing or {}).get("character_id") or body.character_id,
+        "character_id": seat.get("character_id"),
+        "previous_character_id": seat.get("previous_character_id"),
     }
 
 
@@ -2935,7 +2936,9 @@ async def get_session_players(session_id: str, db: AsyncSession = Depends(get_db
     session = await repo.get_game_session(db, session_id)
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
-    return {"players": storage.session_players.get(session_id, [])}
+    from app.api.roster import visible_players
+
+    return {"players": visible_players(session_id)}
 
 
 class SelectCharacterRequest(BaseModel):
@@ -2957,15 +2960,21 @@ async def select_character(
     if session is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Game session not found")
 
+    from app.api.roster import release_character_from_absent, visible_players
+
     players = storage.session_players.get(session_id, [])
     me = next((p for p in players if p.get("id") == body.player_id), None)
     if me is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found in session")
 
+    # A seat that left the table does not keep the hero. Someone still here does.
+    release_character_from_absent(session_id, body.character_id, body.player_id)
     taken_by = next(
         (
             p for p in players
-            if p.get("character_id") == body.character_id and p.get("id") != body.player_id
+            if p.get("character_id") == body.character_id
+            and p.get("id") != body.player_id
+            and p.get("present") is not False
         ),
         None,
     )
@@ -2976,12 +2985,13 @@ async def select_character(
         )
 
     me["character_id"] = body.character_id
+    me["present"] = True
     storage.flush("session_players")
 
     from app.api.websockets.game_ws import manager
     await manager.broadcast(session_id, {
         "type": "player_update",
-        "players": players,
+        "players": visible_players(session_id),
         "connection_count": manager.get_connection_count(session_id),
     })
 

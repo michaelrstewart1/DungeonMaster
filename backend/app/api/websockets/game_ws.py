@@ -741,57 +741,31 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
             elif message_type == "player_join":
                 name = message.get("name") or "Unknown"
                 character_id = message.get("character_id") or None
-                supplied_id = message.get("player_id")
-                if session_id not in storage.session_players:
-                    storage.session_players[session_id] = []
-                players = storage.session_players[session_id]
-
+                supplied_id = message.get("player_id") if isinstance(message.get("player_id"), str) else None
+                device_id = message.get("device_id") if isinstance(message.get("device_id"), str) else None
                 # Rebind this socket to the existing seat. A phone reload or a
                 # QR rejoin opens a new connection (new id) but the player is
                 # the same: prefer the id they already joined with, then the
-                # same display name. Never wipe a claimed character when the
-                # new socket doesn't repeat it, and never steal one.
-                existing = None
-                if isinstance(supplied_id, str) and supplied_id:
-                    existing = next((p for p in players if p.get("id") == supplied_id), None)
-                if existing is None and name and name != "Unknown":
-                    existing = next(
-                        (p for p in players if str(p.get("name", "")).lower() == name.lower()),
-                        None,
-                    )
+                # device, then the display name. Never wipe a claimed hero
+                # when the new socket doesn't repeat it, and never steal one
+                # that someone still at the table holds.
+                from app.api.roster import reconcile_seat, visible_players
 
-                if existing is not None:
-                    player_id = existing["id"]
-                    bound = existing.get("character_id")
-                    if bound:
-                        # Keep the claimed hero. A phone that woke up holding
-                        # an older session's character id must not overwrite it.
-                        character_id = bound
-                    elif character_id and any(
-                        p.get("character_id") == character_id and p.get("id") != existing["id"]
-                        for p in players
-                    ):
-                        character_id = None
-                    existing["name"] = name
-                    existing["character_id"] = character_id
-                    existing["rejoined_at"] = datetime.now().isoformat()
-                else:
-                    if character_id and any(p.get("character_id") == character_id for p in players):
-                        character_id = None
-                    players.append({
-                        "id": player_id,
-                        "name": name,
-                        "character_id": character_id,
-                        "is_ready": False,
-                        "joined_at": datetime.now().isoformat(),
-                    })
-                storage.flush("session_players")
+                seat, _rejoined = reconcile_seat(
+                    session_id,
+                    name=name,
+                    player_id=supplied_id,
+                    device_id=device_id,
+                    character_id=character_id if isinstance(character_id, str) else None,
+                    assign_id=player_id,
+                )
+                player_id = seat["id"]
                 # Bind player_id -> this websocket so the server can send
                 # private messages (e.g. trade offers) to a specific player.
                 manager.register_player(session_id, player_id, websocket)
                 await manager.broadcast(session_id, {
                     "type": "player_update",
-                    "players": storage.session_players[session_id],
+                    "players": visible_players(session_id),
                     "connection_count": manager.get_connection_count(session_id),
                 })
 
@@ -832,9 +806,11 @@ async def websocket_game_endpoint(websocket: WebSocket, session_id: str):
                         p["is_ready"] = ready
                         break
                 _storage.flush("session_players")
+                from app.api.roster import visible_players
+
                 await manager.broadcast(session_id, {
                     "type": "player_update",
-                    "players": players,
+                    "players": visible_players(session_id),
                     "connection_count": manager.get_connection_count(session_id),
                 })
 

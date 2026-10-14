@@ -3,13 +3,15 @@
  */
 import { useEffect, useRef, useState, useCallback } from 'react';
 import { GameWebSocket, type WSMessage } from '../api/websocket';
-import { loadIdentity } from '../utils/playerIdentity';
+import { getDeviceId, loadIdentity } from '../utils/playerIdentity';
 
 export interface PlayerInfo {
   id: string;
   name: string;
   characterId?: string;
   isReady: boolean;
+  /** False when the seat is left over from a previous night. */
+  present?: boolean;
 }
 
 export interface UseGameSocketReturn {
@@ -66,6 +68,7 @@ export function useGameSocket(
             name: identity.playerName,
             character_id: identity.characterId,
             player_id: identity.playerId,
+            device_id: getDeviceId(),
           });
         }
       }
@@ -96,7 +99,7 @@ export function useGameSocket(
           name?: string;
           characterId?: string;
           isReady?: boolean;
-          players?: Array<{ id: string; name?: string; character_id?: string; is_ready?: boolean }>;
+          players?: Array<{ id: string; name?: string; character_id?: string; is_ready?: boolean; present?: boolean }>;
           connection_count?: number;
         };
         if (p.connection_count !== undefined) setConnectionCount(p.connection_count);
@@ -110,6 +113,7 @@ export function useGameSocket(
               name: sp.name || 'Adventurer',
               characterId: sp.character_id ?? undefined,
               isReady: !!sp.is_ready,
+              present: sp.present,
             })),
           );
         } else if (p.player_id) {
@@ -163,7 +167,13 @@ export function useGameSocket(
     // existing seat. A playerId left in sessionStorage by another table is
     // not a fallback — loadIdentity only returns it when the session matches.
     const playerId = sessionId ? loadIdentity(sessionId)?.playerId : undefined;
-    send({ type: 'player_join', name, character_id: characterId, player_id: playerId });
+    send({
+      type: 'player_join',
+      name,
+      character_id: characterId,
+      player_id: playerId,
+      device_id: getDeviceId(),
+    });
   }, [send, sessionId]);
 
   const setReady = useCallback((ready: boolean) => {

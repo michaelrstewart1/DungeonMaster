@@ -3,9 +3,9 @@
  * Supports push-to-talk voice input via audio WebSocket.
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, Navigate } from 'react-router-dom';
 import { uuid } from '../utils/uuid';
-import { loadIdentity, updateIdentity } from '../utils/playerIdentity';
+import { hasClaimedThisSession, loadIdentity, updateIdentity } from '../utils/playerIdentity';
 import { acceptSessionSnapshot, fetchSessionState } from '../game/sessionSync';
 import {
   diceRollLine,
@@ -86,6 +86,19 @@ const COMBAT_ACTIONS: QuickAction[] = [
 ];
 
 export function PlayerView() {
+  const { sessionId } = useParams<{ sessionId: string }>();
+  // The play screen is only for a hero claimed on this visit. Landing here
+  // from a stored seat — or for a moment while the join form is opening —
+  // used to flash last night's character with a red disconnected dot.
+  if (!hasClaimedThisSession(sessionId)) {
+    const roomCode = sessionId ? loadIdentity(sessionId)?.roomCode : undefined;
+    const to = roomCode ? `/join?code=${encodeURIComponent(roomCode)}` : '/join';
+    return <Navigate to={to} replace />;
+  }
+  return <PlayerSession />;
+}
+
+function PlayerSession() {
   const { sessionId } = useParams<{ sessionId: string }>();
   const identity = sessionId ? loadIdentity(sessionId) : null;
   const playerName = identity?.playerName || 'Adventurer';

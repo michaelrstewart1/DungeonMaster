@@ -3,7 +3,15 @@ import { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { PRE_MADE_CHARACTERS } from '../data/premadeCharacters';
 import { joinHeroOffers, premadeCreateBody, type HeroOffer, type PartyHero } from '../game/joinOffers';
-import { saveIdentity, loadLastIdentity, loadIdentityForRoom, updateIdentity } from '../utils/playerIdentity';
+import {
+  saveIdentity,
+  loadLastIdentity,
+  loadIdentityForRoom,
+  updateIdentity,
+  getDeviceId,
+  markClaimedThisSession,
+  clearClaimedThisSession,
+} from '../utils/playerIdentity';
 
 const API_BASE = import.meta.env.VITE_API_URL || '/api';
 
@@ -24,6 +32,7 @@ export function JoinGame() {
   const [takenBy, setTakenBy] = useState<Record<string, string>>({});
   const [claiming, setClaiming] = useState(false);
   const [pickError, setPickError] = useState('');
+  const [previousCharacterId, setPreviousCharacterId] = useState('');
 
   /** Map character_id -> claiming player's name (excluding ourselves). */
   async function fetchTaken(sid: string, myPlayerId: string): Promise<Record<string, string>> {
@@ -33,6 +42,8 @@ export function JoinGame() {
       const data = await res.json();
       const map: Record<string, string> = {};
       for (const p of data.players || []) {
+        // A seat left over from last night does not hold the hero.
+        if (p.present === false) continue;
         if (p.character_id && p.id !== myPlayerId) map[p.character_id] = p.name || 'another player';
       }
       return map;
@@ -44,6 +55,12 @@ export function JoinGame() {
   async function refreshTaken(sid: string, myPlayerId: string) {
     setTakenBy(await fetchTaken(sid, myPlayerId));
   }
+
+  // Opening this form means the hero has not been claimed on this visit.
+  // A stale "/play" route must not paint last night's screen over the join.
+  useEffect(() => {
+    clearClaimedThisSession();
+  }, []);
 
   // Auto-join if code + name are both in URL
   useEffect(() => {
@@ -98,6 +115,7 @@ export function JoinGame() {
           room_code: finalCode,
           player_name: finalName,
           player_id: previous?.roomCode === finalCode ? previous.playerId : undefined,
+          device_id: getDeviceId(),
         }),
       });
 
@@ -117,12 +135,9 @@ export function JoinGame() {
       setSessionId(data.session_id);
       setPlayerId(data.player_id);
       setCampaignId(data.campaign_id || '');
-
-      // Rejoining with a character already selected — skip the picker
-      if (data.rejoined && data.character_id) {
-        navigate(`/play/${data.session_id}`);
-        return;
-      }
+      // Offer last night's hero, but do not skip the claim step. A rejoin
+      // used to land straight on that character and hide the picker.
+      setPreviousCharacterId(data.previous_character_id || data.character_id || '');
 
       // Party rows plus every unclaimed pre-made hero. The character list
       // alone is only who is already in the campaign, which hid the roster
@@ -142,6 +157,7 @@ export function JoinGame() {
       }
 
       // No characters to pick — go straight to player view
+      markClaimedThisSession(data.session_id);
       navigate(`/play/${data.session_id}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to join');
@@ -204,6 +220,7 @@ export function JoinGame() {
         return;
       }
       updateIdentity(sessionId, { characterId: charId });
+      markClaimedThisSession(sessionId);
       navigate(`/play/${sessionId}`);
     } catch (err) {
       setPickError(err instanceof Error ? err.message : 'Failed to claim character — check your connection');
@@ -221,10 +238,14 @@ export function JoinGame() {
           <p className="join-game-subtitle">Select the character you'll be playing</p>
           {pickError && <div className="join-error">{pickError}</div>}
           <div className="character-picker-grid">
-            {joinHeroOffers(party, PRE_MADE_CHARACTERS, takenBy).map((offer) => (
+            {joinHeroOffers(party, PRE_MADE_CHARACTERS, takenBy).map((offer) => {
+              const previous = !!previousCharacterId && (
+                offer.characterId === previousCharacterId || offer.key === previousCharacterId
+              );
+              return (
               <button
                 key={offer.key}
-                className="character-picker-card"
+                className={`character-picker-card${previous ? ' character-picker-card-previous' : ''}`}
                 onClick={() => selectOffer(offer)}
                 disabled={claiming}
                 data-testid={`join-hero-${offer.key}`}
@@ -239,9 +260,11 @@ export function JoinGame() {
                 <div className="character-picker-info">
                   <strong>{offer.name}</strong>
                   <span>Lvl {offer.level} {offer.race} {offer.class_name}</span>
+                  {previous && <span className="character-picker-last">Last night</span>}
                 </div>
               </button>
-            ))}
+              );
+            })}
           </div>
         </div>
       </div>

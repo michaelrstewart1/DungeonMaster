@@ -92,3 +92,73 @@ describe('JoinGame hero picker', () => {
     expect(JSON.parse(String(claim![1].body)).character_id).toBe('char-lyra');
   });
 });
+
+describe('JoinGame claim step on rejoin', () => {
+  beforeEach(() => {
+    mockNavigate.mockReset();
+    localStorage.clear();
+    sessionStorage.clear();
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/game/join')) {
+        return json({
+          session_id: 'sess-live',
+          player_id: 'p-cyra',
+          campaign_id: 'camp-1',
+          rejoined: true,
+          character_id: null,
+          previous_character_id: 'char-lyra',
+        });
+      }
+      if (url.includes('/characters?campaign_id=')) {
+        return json([
+          {
+            id: 'char-lyra',
+            name: 'Lyra Moonwhisper',
+            race: 'elf',
+            class_name: 'wizard',
+            level: 3,
+          },
+          {
+            id: 'char-thorne',
+            name: 'Thorne Ironfist',
+            race: 'dwarf',
+            class_name: 'fighter',
+            level: 3,
+          },
+        ]);
+      }
+      if (url.endsWith('/players')) {
+        return json({
+          players: [
+            { id: 'p-stale', name: 'Cyra', character_id: 'char-lyra', present: false },
+            { id: 'p-bram', name: 'Bram', character_id: 'char-thorne', present: true },
+          ],
+        });
+      }
+      return json({ detail: 'not found' }, 404);
+    }));
+  });
+
+  it('offers a hero held only by a stale seat and does not skip the claim step', async () => {
+    sessionStorage.setItem('dm_claimed_sess-live', '1');
+    render(
+      <MemoryRouter initialEntries={['/join?code=LIVE']}>
+        <JoinGame />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(sessionStorage.getItem('dm_claimed_sess-live')).toBeNull();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText(/Cohen, Brody, Kit/), { target: { value: 'Cyra' } });
+    fireEvent.click(screen.getByRole('button', { name: /Enter the Dungeon/ }));
+
+    expect(await screen.findByRole('heading', { name: 'Choose Your Character' })).toBeInTheDocument();
+    expect(screen.getByText('Lyra Moonwhisper')).toBeInTheDocument();
+    expect(screen.getByText('Last night')).toBeInTheDocument();
+    expect(screen.queryByText('Thorne Ironfist')).not.toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+});

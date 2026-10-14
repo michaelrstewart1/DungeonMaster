@@ -299,6 +299,7 @@ class DMNarrator:
         session_history: list[str] | None = None,
         history_summary: str = "",
         on_chunk=None,
+        absent_characters: list[dict] | None = None,
     ) -> str:
         """Narrate an exploration action.
         
@@ -335,6 +336,7 @@ class DMNarrator:
                 game_state=game_state,
                 compact=self._compact,
                 npcs=npcs,
+                absent_characters=absent_characters,
             )
 
             # Frame player input — distinguish speech/claims from actions
